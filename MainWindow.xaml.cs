@@ -7,6 +7,10 @@ using System.Threading.Tasks;
 using System.Windows;
 using TEAMS2HA.API;
 using TEAMS2HA.Properties;
+using Hardcodet.Wpf.TaskbarNotification;
+using System.Windows.Controls;
+using System.Windows.Media.Imaging;
+using System.ComponentModel;
 
 namespace TEAMS2HA
 {
@@ -23,6 +27,7 @@ namespace TEAMS2HA
         private string _teamsApiKey;
         private API.WebSocketClient _teamsClient;
         private bool isDarkTheme = false;
+
         #endregion Private Fields
 
         #region Public Constructors
@@ -35,13 +40,15 @@ namespace TEAMS2HA
                 Properties.Settings.Default.FirstTimeRunningThisVersion = false;
                 Properties.Settings.Default.Save();
             }
+
             this.InitializeComponent();
             ApplyTheme(Properties.Settings.Default.Theme);
             this.Loaded += MainPage_Loaded;
-            LoadSettingsAsync();
+            string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
+            MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
             InitializeConnections();
-
         }
+
 
         #endregion Public Constructors
 
@@ -73,8 +80,46 @@ namespace TEAMS2HA
         #endregion Public Methods
 
         #region Private Methods
+        private void MyNotifyIcon_Click(object sender, EventArgs e)
+        {
+            if (this.WindowState == WindowState.Minimized)
+            {
+                // Restore the window if it's minimized
+                this.Show();
+                this.WindowState = WindowState.Normal;
+            }
+            else
+            {
+                // Minimize the window if it's currently normal or maximized
+                this.WindowState = WindowState.Minimized;
+            }
+        }
 
-        // Get credentials
+
+        protected override void OnClosing(CancelEventArgs e)
+        {
+            MyNotifyIcon.Dispose();
+            base.OnClosing(e);
+        }
+
+        protected override void OnStateChanged(EventArgs e)
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                // Only hide the window and show the NotifyIcon when minimized
+                this.Hide();
+                MyNotifyIcon.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // Ensure the NotifyIcon is hidden when the window is not minimized
+                MyNotifyIcon.Visibility = Visibility.Collapsed;
+            }
+
+            base.OnStateChanged(e);
+        }
+
+
         private async Task LoadSettingsAsync()
         {
             // Assuming you have settings like HomeassistantURL, RunAtWindowsBoot, and RunMinimised defined
@@ -85,8 +130,16 @@ namespace TEAMS2HA
 
             // Load CheckBox values
             RunAtWindowsBootCheckBox.IsChecked = Properties.Settings.Default.RunAtWindowsBoot;
+            
             RunMinimisedCheckBox.IsChecked = Properties.Settings.Default.RunMinimised;
 
+            if (RunMinimisedCheckBox.IsChecked == true)
+            {
+                // Start the window minimized and hide it
+                this.WindowState = WindowState.Minimized;
+                this.Hide();
+                MyNotifyIcon.Visibility = Visibility.Visible; // Show the NotifyIcon in the system tray
+            }
             // Load Homeassistant Token (assuming you're using TokenStorage for this)
             _homeassistantToken = TokenStorage.GetHomeassistantToken();
             HomeassistantTokenBox.Text = _homeassistantToken;
@@ -204,7 +257,7 @@ namespace TEAMS2HA
             };
         }
 
-        #endregion Private Methods
+      
         private void ApplyTheme(string theme)
         {
             Uri themeUri;
@@ -285,5 +338,6 @@ namespace TEAMS2HA
             }
             SaveSettings();
         }
+        #endregion Private Methods
     }
 }

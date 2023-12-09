@@ -1,6 +1,7 @@
 ﻿<Window x:Class="TEAMS2HA.MainWindow"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:tb="http://www.hardcodet.net/taskbar"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         Title="Teams2HA" Height="302" Width="774"
         TextElement.Foreground="{DynamicResource MaterialDesignBody}"
@@ -67,6 +68,6 @@
             <TextBlock x:Name="TeamsConnectionStatus" Text="Teams: Disconnected" Margin="0,0,10,0"/>
             <TextBlock x:Name="HomeassistantConnectionStatus" Text="Homeassistant: Disconnected"/>
         </StackPanel>
-
+        <tb:TaskbarIcon x:Name="MyNotifyIcon" ToolTipText="TEAMS2HA" Visibility="Collapsed" TrayMouseDoubleClick="MyNotifyIcon_Click"/>
     </Grid>
 </Window>
