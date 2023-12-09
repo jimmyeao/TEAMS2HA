@@ -92,7 +92,7 @@ namespace TEAMS2HA.API
         {
             try
             {
-                string token = TokenStorage.GetToken();
+                string token = TokenStorage.GetTeamsToken();
 
                 if (!string.IsNullOrEmpty(token))
                 {
@@ -120,7 +120,7 @@ namespace TEAMS2HA.API
             if (message.Contains("tokenRefresh")) // Adjust based on the actual message format
             {
                 var tokenUpdate = JsonConvert.DeserializeObject<TokenUpdate>(message);
-                TokenStorage.SaveToken(tokenUpdate.NewToken);
+                TokenStorage.SaveTeamsToken(tokenUpdate.NewToken);
             }
             // Update the Message property of the State class
             var settings = new JsonSerializerSettings

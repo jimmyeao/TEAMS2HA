@@ -1,10 +1,12 @@
 ﻿using System;
 using System.Diagnostics;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using TEAMS2HA.API;
+using TEAMS2HA.Properties;
 
 namespace TEAMS2HA
 {
@@ -20,7 +22,7 @@ namespace TEAMS2HA
         private string _homeassistantURL;
         private string _teamsApiKey;
         private API.WebSocketClient _teamsClient;
-
+        private bool isDarkTheme = false;
         #endregion Private Fields
 
         #region Public Constructors
@@ -34,6 +36,7 @@ namespace TEAMS2HA
                 Properties.Settings.Default.Save();
             }
             this.InitializeComponent();
+            ApplyTheme(Properties.Settings.Default.Theme);
             this.Loaded += MainPage_Loaded;
             LoadSettingsAsync();
             InitializeConnections();
@@ -51,7 +54,7 @@ namespace TEAMS2HA
             {
                 return; // Already connected, no need to reinitialize
             }
-            string teamsToken = TokenStorage.GetToken();
+            string teamsToken = TokenStorage.GetTeamsToken();
             if (string.IsNullOrEmpty(teamsToken))
             {
                 // If the Teams token is not set, then we can't connect to Teams
@@ -85,9 +88,11 @@ namespace TEAMS2HA
             RunMinimisedCheckBox.IsChecked = Properties.Settings.Default.RunMinimised;
 
             // Load Homeassistant Token (assuming you're using TokenStorage for this)
-            _homeassistantToken = TokenStorage.GetToken();
+            _homeassistantToken = TokenStorage.GetHomeassistantToken();
             HomeassistantTokenBox.Text = _homeassistantToken;
-
+            // Load Teams Token
+            _teamsApiKey = TokenStorage.GetTeamsToken();
+            TeamsApiKeyBox.Text = _teamsApiKey;
             // Rest of your logic...
             if (!string.IsNullOrEmpty(_homeassistantURL) && !string.IsNullOrEmpty(_homeassistantToken))
             {
@@ -100,6 +105,7 @@ namespace TEAMS2HA
                     await _homeAssistant.Start();
                 }
             }
+            
         }
 
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
@@ -120,29 +126,23 @@ namespace TEAMS2HA
 
         private void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
+            SaveSettings();
+        }
+        private void SaveSettings()
+        {
             // Check if the Teams API key has changed
-            string currentToken = TokenStorage.GetToken();
-            bool tokenChanged = currentToken != TeamsApiKeyBox.Text;
-
-            if (tokenChanged)
+            string currentTeamsToken = TokenStorage.GetTeamsToken();
+            bool teamsTokenChanged = currentTeamsToken != TeamsApiKeyBox.Text;
+            if (teamsTokenChanged)
             {
-                TokenStorage.SaveToken(TeamsApiKeyBox.Text);
-                if (tokenChanged)
-                {
-                    InitializeConnections();
-                }
+                TokenStorage.SaveTeamsToken(TeamsApiKeyBox.Text);
+                InitializeConnections();
             }
 
             // Store the Homeassistant token securely
             if (!string.IsNullOrEmpty(HomeassistantTokenBox.Text))
             {
-                byte[] encryptedToken = ProtectedData.Protect(
-                    Encoding.UTF8.GetBytes(HomeassistantTokenBox.Text),
-                    null,
-                    DataProtectionScope.CurrentUser);
-                // Save the encrypted token to a secure place For example, to a file, database, or
-                // use Properties.Settings.Default for simplicity
-                Properties.Settings.Default.HomeassistantToken = Convert.ToBase64String(encryptedToken);
+                TokenStorage.SaveHomeassistantToken(HomeassistantTokenBox.Text);
             }
 
             _homeassistantToken = HomeassistantTokenBox.Text;
@@ -154,9 +154,9 @@ namespace TEAMS2HA
             // Save CheckBox values
             Properties.Settings.Default.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked.Value;
             Properties.Settings.Default.RunMinimised = RunMinimisedCheckBox.IsChecked.Value;
+            Properties.Settings.Default.Theme = isDarkTheme ? "Dark" : "Light";
             Properties.Settings.Default.Save();
         }
-
         private void TeamsConnectionStatusChanged(bool isConnected)
         {
             // The UI needs to be updated on the main thread.
@@ -188,7 +188,7 @@ namespace TEAMS2HA
 
         private void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {
-            string teamsToken = TokenStorage.GetToken();
+            string teamsToken = TokenStorage.GetTeamsToken();
             // Implement the code to test the connection to Teams If the connection is successful,
             // update the TeamsConnectionStatus
             // Example: TeamsConnectionStatus.Text = "Teams: Connected";
@@ -205,5 +205,85 @@ namespace TEAMS2HA
         }
 
         #endregion Private Methods
+        private void ApplyTheme(string theme)
+        {
+            Uri themeUri;
+            if (theme == "Dark")
+            {
+                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
+                isDarkTheme = true;
+            }
+            else
+            {
+                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml");
+                isDarkTheme = false;
+            }
+
+            // Update the theme
+            var existingTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == themeUri);
+            if (existingTheme == null)
+            {
+                existingTheme = new ResourceDictionary() { Source = themeUri };
+                Application.Current.Resources.MergedDictionaries.Add(existingTheme);
+            }
+
+            // Remove the other theme
+            var otherThemeUri = isDarkTheme
+                ? new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml")
+                : new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
+
+            var currentTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == otherThemeUri);
+            if (currentTheme != null)
+            {
+                Application.Current.Resources.MergedDictionaries.Remove(currentTheme);
+            }
+        }
+        private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Toggle the theme
+            isDarkTheme = !isDarkTheme;
+
+            // Update the theme setting
+            Properties.Settings.Default.Theme = isDarkTheme ? "Dark" : "Light";
+            
+
+            // Define the URIs for the dark and light themes
+            var darkThemeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
+            var lightThemeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml");
+
+            // Determine the current theme URI based on the toggle
+            var themeUri = isDarkTheme ? darkThemeUri : lightThemeUri;
+
+            // Print the current merged dictionaries before the toggle
+            System.Diagnostics.Debug.WriteLine("Before toggle:");
+            foreach (var dictionary in Application.Current.Resources.MergedDictionaries)
+            {
+                System.Diagnostics.Debug.WriteLine($" - {dictionary.Source}");
+            }
+
+            // Check if the new theme already exists in the merged dictionaries
+            var existingTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == themeUri);
+            if (existingTheme == null)
+            {
+                // If the new theme does not exist, add it to the merged dictionaries
+                existingTheme = new ResourceDictionary() { Source = themeUri };
+                Application.Current.Resources.MergedDictionaries.Add(existingTheme);
+            }
+
+            // Remove the current theme from the merged dictionaries
+            var currentTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == (isDarkTheme ? lightThemeUri : darkThemeUri));
+            if (currentTheme != null)
+            {
+                Application.Current.Resources.MergedDictionaries.Remove(currentTheme);
+            }
+
+            // Print the current merged dictionaries after the toggle
+            System.Diagnostics.Debug.WriteLine("After toggle:");
+            foreach (var dictionary in Application.Current.Resources.MergedDictionaries)
+            {
+                System.Diagnostics.Debug.WriteLine($" - {dictionary.Source}");
+            }
+            SaveSettings();
+        }
     }
 }
