@@ -11,6 +11,7 @@ using Hardcodet.Wpf.TaskbarNotification;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.ComponentModel;
+using Microsoft.Win32;
 
 namespace TEAMS2HA
 {
@@ -160,7 +161,30 @@ namespace TEAMS2HA
             }
             
         }
+        private async Task SetStartupAsync(bool startWithWindows)
+        {
+            await Task.Run(() =>
+            {
+                const string appName = "TEAMS2HA"; // Your application's name
+                string exePath = System.Windows.Forms.Application.ExecutablePath;
 
+                // Open the registry key for the current user's startup programs
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (startWithWindows)
+                    {
+                        // Set the application to start with Windows startup by adding a registry value
+                        key.SetValue(appName, exePath);
+                    }
+                    else
+                    {
+                        // Remove the registry value to prevent the application from starting with
+                        // Windows startup
+                        key.DeleteValue(appName, false);
+                    }
+                }
+            });
+        }
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
             await LoadSettingsAsync();
@@ -203,10 +227,11 @@ namespace TEAMS2HA
             // Store the Homeassistant URL
             Properties.Settings.Default.HomeassistantURL = HomeassistantURLBox.Text;
             _homeassistantURL = HomeassistantURLBox.Text;
-
+           
             // Save CheckBox values
             Properties.Settings.Default.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked.Value;
             Properties.Settings.Default.RunMinimised = RunMinimisedCheckBox.IsChecked.Value;
+            _ = SetStartupAsync(Properties.Settings.Default.RunAtWindowsBoot);
             Properties.Settings.Default.Theme = isDarkTheme ? "Dark" : "Light";
             Properties.Settings.Default.Save();
         }
