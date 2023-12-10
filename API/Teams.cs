@@ -6,26 +6,30 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO;
 
 namespace TEAMS2HA.API
 {
     public class WebSocketClient
     {
         #region Private Fields
-
+        private AppSettings _appSettings;
         private readonly ClientWebSocket _clientWebSocket;
         private readonly State _state;
-
+        private readonly string _settingsFilePath;
         private bool _isConnected;
 
         #endregion Private Fields
 
         #region Public Constructors
 
-        public WebSocketClient(Uri uri, State state)
+        public WebSocketClient(Uri uri, State state, string settingsFilePath)
         {
             _clientWebSocket = new ClientWebSocket();
             _state = state;
+            _settingsFilePath = settingsFilePath;
+            _appSettings = LoadAppSettings(settingsFilePath);
+
             Task.Run(() => ConnectAsync(uri));
 
             // Subscribe to the MessageReceived event
@@ -92,7 +96,7 @@ namespace TEAMS2HA.API
         {
             try
             {
-                string token = TokenStorage.GetTeamsToken();
+                string token = _appSettings.TeamsToken;
 
                 if (!string.IsNullOrEmpty(token))
                 {
@@ -114,13 +118,31 @@ namespace TEAMS2HA.API
 
             await ReceiveLoopAsync();
         }
-
+        private AppSettings LoadAppSettings(string filePath)
+        {
+            if (File.Exists(filePath))
+            {
+                string json = File.ReadAllText(filePath);
+                return JsonConvert.DeserializeObject<AppSettings>(json);
+            }
+            else
+            {
+                return new AppSettings(); // Defaults if file does not exist
+            }
+        }
+        private void SaveAppSettings(AppSettings settings)
+        {
+            string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
+            File.WriteAllText(_settingsFilePath, json);
+        }
         private void OnMessageReceived(object sender, string message)
         {
+          
             if (message.Contains("tokenRefresh")) // Adjust based on the actual message format
             {
                 var tokenUpdate = JsonConvert.DeserializeObject<TokenUpdate>(message);
-                TokenStorage.SaveTeamsToken(tokenUpdate.NewToken);
+                _appSettings.TeamsToken = tokenUpdate.NewToken;
+                SaveAppSettings(_appSettings);
             }
             // Update the Message property of the State class
             var settings = new JsonSerializerSettings
