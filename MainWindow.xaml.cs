@@ -42,9 +42,9 @@ namespace TEAMS2HA
         public MainWindow()
         {
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var appDataFolder = Path.Combine(localAppData, "YourAppName");
+            var appDataFolder = Path.Combine(localAppData, "Teams2HA");
             Directory.CreateDirectory(appDataFolder); // Ensure the directory exists
-            _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
+            _settingsFilePath = Path.Combine(appDataFolder, "t2ha_settings.json");
             _settings = LoadSettings();
 
             this.InitializeComponent();
