@@ -5,8 +5,8 @@
     <TargetFramework>net7.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
-    <AssemblyVersion>1.0.1.24</AssemblyVersion>
-    <FileVersion>1.0.1.24</FileVersion>
+    <AssemblyVersion>1.1.1.26</AssemblyVersion>
+    <FileVersion>1.1.1.26</FileVersion>
     <ApplicationIcon>Assets\Square150x150Logo.scale-200.ico</ApplicationIcon>
     <Title>Teams2HA</Title>
     <PackageIcon>Square150x150Logo.scale-200.png</PackageIcon>
