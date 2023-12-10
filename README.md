@@ -14,3 +14,7 @@ The application will minimize to the system stray.
 
 feedback is welcome, this is an early beta, but works ok for me :)
 
+sensors in Home Assistant are all prefixed with "hats."
+
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/0bec90ee-8761-4308-bbc8-2001d170078a)
+
