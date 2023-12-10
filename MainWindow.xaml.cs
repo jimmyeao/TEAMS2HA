@@ -2,6 +2,7 @@
 using Newtonsoft.Json;
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -34,7 +35,7 @@ namespace TEAMS2HA
         private bool isDarkTheme = false;
         private string _settingsFilePath;
         private AppSettings _settings;
-
+        private FileSystemWatcher _settingsWatcher;
         #endregion Private Fields
 
         #region Public Constructors
@@ -53,6 +54,7 @@ namespace TEAMS2HA
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
             InitializeConnections();
+            InitializeSettingsWatcher();
         }
 
         #endregion Public Constructors
@@ -83,7 +85,8 @@ namespace TEAMS2HA
             //var uri = new Uri("ws://localhost:8124?protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
             var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
             var state = new API.State();  // You would initialize this as necessary
-            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath);
+            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
+
 
             _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
         }
@@ -91,7 +94,34 @@ namespace TEAMS2HA
         #endregion Public Methods
 
         #region Private Methods
+        private void InitializeSettingsWatcher()
+        {
+            _settingsWatcher = new FileSystemWatcher
+            {
+                Path = Path.GetDirectoryName(_settingsFilePath),
+                Filter = Path.GetFileName(_settingsFilePath),
+                NotifyFilter = NotifyFilters.LastWrite
+            };
 
+            _settingsWatcher.Changed += OnSettingsChanged;
+            _settingsWatcher.EnableRaisingEvents = true;
+        }
+
+        private void OnSettingsChanged(object sender, FileSystemEventArgs e)
+        {
+            // Reload settings and update UI
+            Dispatcher.Invoke(() =>
+            {
+                _settings = LoadSettings();
+                UpdateUI();
+            });
+        }
+        private void UpdateUI()
+        {
+            // Update UI elements based on _settings
+            TeamsApiKeyBox.Text = _settings.TeamsToken;
+            // ... other UI updates
+        }
         private AppSettings LoadSettings()
         {
             if (File.Exists(_settingsFilePath))
@@ -136,6 +166,7 @@ namespace TEAMS2HA
         protected override void OnClosing(CancelEventArgs e)
         {
             MyNotifyIcon.Dispose();
+            _settingsWatcher?.Dispose();
             base.OnClosing(e);
         }
 
@@ -253,20 +284,25 @@ namespace TEAMS2HA
         // This method is called when the TestTeamsConnection button is clicked
         private void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {
-            string teamsToken = _settings.TeamsToken; // Get the Teams token from the settings
-
-            // Create a URI with the necessary parameters for the WebSocket connection
+            try
+            {
+                InitializeWebSocketClient();
+                Debug.WriteLine("WebSocket client initialized");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error initializing WebSocket client: {ex.Message}");
+            }
+        }
+        private void InitializeWebSocketClient()
+        {
+            string teamsToken = _settings.TeamsToken;
             var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+            
+            _teamsClient = new API.WebSocketClient(uri, new API.State(), _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
 
-            var state = new API.State();  // You would initialize this as necessary
-
-            // Create a new WebSocketClient with the URI, state, and settings file path
-            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath);
-
-            // Subscribe to the ConnectionStatusChanged event of the WebSocketClient
             _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
         }
-
         private void ApplyTheme(string theme)
         {
             isDarkTheme = theme == "Dark";
