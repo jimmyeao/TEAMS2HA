@@ -68,6 +68,6 @@
             <TextBlock x:Name="TeamsConnectionStatus" Text="Teams: Disconnected" Margin="0,0,10,0"/>
             <TextBlock x:Name="HomeassistantConnectionStatus" Text="Homeassistant: Disconnected"/>
         </StackPanel>
-        <tb:TaskbarIcon x:Name="MyNotifyIcon" ToolTipText="TEAMS2HA" Visibility="Collapsed" TrayMouseDoubleClick="MyNotifyIcon_Click"/>
+        <tb:TaskbarIcon x:Name="MyNotifyIcon"  Visibility="Collapsed" TrayMouseDoubleClick="MyNotifyIcon_Click"/>
     </Grid>
 </Window>
