@@ -1,6 +1,6 @@
 #Teams2HA
 
-This is an agent that runs on windows and uses the teams API to retrieve the status of the user (In a meeting, Video On, Mute, blur etc) and push these into homeassistant sensors
+This is an agent that runs on windows and uses the Local teams API (https://support.microsoft.com/en-gb/office/connect-to-third-party-devices-in-microsoft-teams-aabca9f2-47bb-407f-9f9b-81a104a883d6?wt.mc_id=SEC-MVP-5004985) to retrieve the status of the user (In a meeting, Video On, Mute, blur etc) and push these into homeassistant sensors
 
 ![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/8b98c494-a3c0-41f7-8f9b-4716037910cc)
 
