@@ -7,6 +7,10 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
+using System.Diagnostics;
+using System.Windows.Threading;
+using System.Windows;
+
 
 namespace TEAMS2HA.API
 {
@@ -24,18 +28,19 @@ namespace TEAMS2HA.API
         private readonly State _state;
         private readonly string _settingsFilePath;
         private bool _isConnected;
-
+        
+        private readonly Action<string> _updateTokenAction;
         #endregion Private Fields
 
         #region Public Constructors
 
-        public WebSocketClient(Uri uri, State state, string settingsFilePath)
+        public WebSocketClient(Uri uri, State state, string settingsFilePath, Action<string> updateTokenAction)
         {
             _clientWebSocket = new ClientWebSocket();
             _state = state;
             _settingsFilePath = settingsFilePath;
             _appSettings = LoadAppSettings(settingsFilePath);
-
+            
             Task.Run(() => ConnectAsync(uri));
 
             // Subscribe to the MessageReceived event
@@ -143,12 +148,20 @@ namespace TEAMS2HA.API
         }
         private void OnMessageReceived(object sender, string message)
         {
-          
-            if (message.Contains("tokenRefresh")) // Adjust based on the actual message format
+
+            Debug.WriteLine($"Message received: {message}"); // Add this line
+
+            if (message.Contains("tokenRefresh"))
             {
                 var tokenUpdate = JsonConvert.DeserializeObject<TokenUpdate>(message);
                 _appSettings.TeamsToken = tokenUpdate.NewToken;
                 SaveAppSettings(_appSettings);
+
+                // Update the UI on the main thread
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    _updateTokenAction?.Invoke(_appSettings.TeamsToken);
+                });
             }
             // Update the Message property of the State class
             var settings = new JsonSerializerSettings
@@ -243,11 +256,14 @@ namespace TEAMS2HA.API
         {
             if (_isConnected)
             {
-                string pairingCommand = "{\"action\":\"pair\",\"parameters\":{},\"requestId\":1}"; // Construct the pairing command as per API documentation
+                string pairingCommand = "{\"action\":\"pair\",\"parameters\":{},\"requestId\":1}";
                 await SendMessageAsync(pairingCommand);
-                // You might also want to handle the response to this pairing command
+
+                // Handle the response here
+                // For example: Check if the response contains a success message or token
             }
         }
+
 
         private async Task ReceiveLoopAsync(CancellationToken cancellationToken = default)
         {
