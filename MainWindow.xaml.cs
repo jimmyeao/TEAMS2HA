@@ -126,7 +126,7 @@ namespace TEAMS2HA
             //var uri = new Uri("ws://localhost:8124?protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
             var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
             var state = new API.State();  // You would initialize this as necessary
-            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath);
+            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
             _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
             _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
         }
@@ -134,11 +134,18 @@ namespace TEAMS2HA
         {
             if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
             {
+                string baseTopic = "TEAMS2HA/TEAMS"; // Replace with your base MQTT topic
+                string muteSwitchTopic = $"{baseTopic}/mute";
+                string videoSwitchTopic = $"{baseTopic}/video";
+
+
+
                 // Format the message as per your requirements
                 string mqttPayload = JsonConvert.SerializeObject(e.MeetingUpdate);
-                string mqttTopic = "TEAMS2HA/mqtt/topic"; // Set your MQTT topic
+                string mqttTopic = "TEAMS2HA/TEAMS/topic"; // Set your MQTT topic
 
-                await mqttClientWrapper.PublishAsync(mqttTopic, mqttPayload);
+                await mqttClientWrapper.PublishAsync(muteSwitchTopic, mqttPayload);
+                await mqttClientWrapper.PublishAsync(videoSwitchTopic, mqttPayload);
             }
         }
 
@@ -383,7 +390,7 @@ namespace TEAMS2HA
             var state = new API.State();  // You would initialize this as necessary
 
             // Create a new WebSocketClient with the URI, state, and settings file path
-            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath);
+            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
 
             // Subscribe to the ConnectionStatusChanged event of the WebSocketClient
             _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
