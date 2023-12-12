@@ -62,6 +62,12 @@ namespace TEAMS2HA
             this.Loaded += MainPage_Loaded;
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
+            mqttClientWrapper = new MqttClientWrapper(
+                "TEAMS2HA",
+                _settings.MqttAddress,
+                _settings.MqttUsername,
+                _settings.EncryptedMqttPassword
+            );
             InitializeConnections();
             mqttKeepAliveTimer = new System.Timers.Timer(60000); // Set interval to 60 seconds (60000 ms)
             mqttKeepAliveTimer.Elapsed += OnTimedEvent;
@@ -134,20 +140,29 @@ namespace TEAMS2HA
         {
             if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
             {
-                string baseTopic = "TEAMS2HA/TEAMS"; // Replace with your base MQTT topic
+                string baseTopic = "TEAMS2HA/TEAMS";
+
+                // Topics for each state
                 string muteSwitchTopic = $"{baseTopic}/mute";
                 string videoSwitchTopic = $"{baseTopic}/video";
+                string handRaisedTopic = $"{baseTopic}/handRaised";
+                string inMeetingTopic = $"{baseTopic}/inMeeting";
+                string recordingOnTopic = $"{baseTopic}/recordingOn";
+                string backgroundBlurredTopic = $"{baseTopic}/backgroundBlurred";
+                string sharingTopic = $"{baseTopic}/sharing";
 
-
-
-                // Format the message as per your requirements
-                string mqttPayload = JsonConvert.SerializeObject(e.MeetingUpdate);
-                string mqttTopic = "TEAMS2HA/TEAMS/topic"; // Set your MQTT topic
-
-                await mqttClientWrapper.PublishAsync(muteSwitchTopic, mqttPayload);
-                await mqttClientWrapper.PublishAsync(videoSwitchTopic, mqttPayload);
+                // Publishing specific properties
+                await mqttClientWrapper.PublishAsync(muteSwitchTopic, JsonConvert.SerializeObject(e.MeetingUpdate.MeetingState.IsMuted));
+                await mqttClientWrapper.PublishAsync(videoSwitchTopic, JsonConvert.SerializeObject(e.MeetingUpdate.MeetingState.IsVideoOn));
+                await mqttClientWrapper.PublishAsync(handRaisedTopic, JsonConvert.SerializeObject(e.MeetingUpdate.MeetingState.IsHandRaised));
+                await mqttClientWrapper.PublishAsync(inMeetingTopic, JsonConvert.SerializeObject(e.MeetingUpdate.MeetingState.IsInMeeting));
+                await mqttClientWrapper.PublishAsync(recordingOnTopic, JsonConvert.SerializeObject(e.MeetingUpdate.MeetingState.IsRecordingOn));
+                await mqttClientWrapper.PublishAsync(backgroundBlurredTopic, JsonConvert.SerializeObject(e.MeetingUpdate.MeetingState.IsBackgroundBlurred));
+                await mqttClientWrapper.PublishAsync(sharingTopic, JsonConvert.SerializeObject(e.MeetingUpdate.MeetingState.IsSharing));
             }
         }
+
+
 
         #endregion Public Methods
 
@@ -159,14 +174,16 @@ namespace TEAMS2HA
                 try
                 {
                     await mqttClientWrapper.ConnectAsync();
-                    // Handle successful reconnection
+                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
                 }
                 catch
                 {
-                    // Handle reconnection failure
+                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected");
                 }
             }
         }
+
+
         private void InitializeMqttPublishTimer()
         {
             mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
@@ -178,11 +195,13 @@ namespace TEAMS2HA
         {
             if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
             {
-                // Publish your MQTT message here
-                // Example: _ = mqttClientWrapper.PublishAsync("your/topic", "your message");
-                
+                // Example: Publish a keep-alive message
+                string keepAliveTopic = "TEAMS2HA/keepalive";
+                string keepAliveMessage = "alive";
+                _ = mqttClientWrapper.PublishAsync(keepAliveTopic, keepAliveMessage);
             }
         }
+
 
         // This method is called when the timer event is triggered
         private void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)
@@ -208,32 +227,21 @@ namespace TEAMS2HA
         }
         private async Task PublishSensorConfiguration()
         {
-            // Create a dynamic object to hold the sensor configuration data
-            //var sensorConfig = new
-            //{
-            //    name = $"HAGameSpy {deviceId}", // Set the name of the sensor
-            //    state_topic = $"HAGameSpy/{deviceId}/state", // Set the topic for publishing the sensor state
-            //    json_attributes_topic = $"HAGameSpy/{deviceId}/attributes", // Set the topic for publishing additional sensor attributes
-            //    unique_id = $"hagamespy_{deviceId}", // Set a unique ID for the sensor
-            //    device = new
-            //    {
-            //        identifiers = new string[] { $"hagamespy_{deviceId}" }, // Set the identifiers for the device
-            //        name = "HAGameSpy", // Set the name of the device
-            //        manufacturer = "Jimmy White", // Set the manufacturer of the device
-            //        model = "0.0.1" // Set the model of the device
-            //    },
-            //    device_id = deviceId // Set a custom attribute for the device ID
-            //};
+            // Example: Publishing a sensor configuration
+            var sensorConfig = new
+            {
+                name = "Example Sensor",
+                state_topic = "TEAMS2HA/sensor/state",
+                unit_of_measurement = "units",
+                device_class = "sensor",
+                // Add other sensor configuration properties as needed
+            };
 
-            //// Set the topic for publishing the sensor configuration
-            //string sensorConfigTopic = $"homeassistant/sensor/{deviceId}/config";
-
-            //// Serialize the sensor configuration object to JSON
-            //string sensorConfigPayload = JsonConvert.SerializeObject(sensorConfig);
-
-            // Publish the sensor configuration to the MQTT broker
-           // await mqttClientWrapper.PublishAsync(sensorConfigTopic, sensorConfigPayload);
+            string configTopic = "TEAMS2HA/sensor/config";
+            string configPayload = JsonConvert.SerializeObject(sensorConfig);
+            await mqttClientWrapper.PublishAsync(configTopic, configPayload);
         }
+
 
         private void SaveSettings()
         {
@@ -272,7 +280,10 @@ namespace TEAMS2HA
             {
                 _teamsClient.TeamsUpdateReceived -= TeamsClient_TeamsUpdateReceived;
             }
-            base.OnClosing(e);
+            if (mqttClientWrapper != null)
+            {
+                mqttClientWrapper.Dispose();
+            }
             MyNotifyIcon.Dispose();
             base.OnClosing(e);
         }
@@ -431,26 +442,35 @@ namespace TEAMS2HA
             }
         }
 
-        private async Task InitializeMQTTConnection()
+        public async Task InitializeMQTTConnection()
         {
-            mqttClientWrapper = new MqttClientWrapper(
-            "TEAMS2HA",            _settings.MqttAddress,
-            _settings.MqttUsername,
-            _settings.EncryptedMqttPassword);
+            int retryCount = 0;
+            int maxRetries = 5;
 
-
-            try
+            while (retryCount < maxRetries && (mqttClientWrapper == null || !mqttClientWrapper.IsConnected))
             {
-                await mqttClientWrapper.ConnectAsync();
-                MQTTConnectionStatus.Text = "MQTT Status: Connected";
-            }
-            catch (Exception ex)
-            {
-                // Handle or log the exception
-                MQTTConnectionStatus.Text = "MQTT Status: Disconnected";
+                try
+                {
+                    await mqttClientWrapper.ConnectAsync();
+                    MQTTConnectionStatus.Text = "MQTT Status: Connected";
+                    break; // Exit the loop if connected
+                }
+                catch (Exception ex)
+                {
+                    MQTTConnectionStatus.Text = $"MQTT Status: Disconnected (Retry {retryCount + 1})";
+                    Console.WriteLine($"Retry {retryCount + 1}: {ex.Message}");
+                    retryCount++;
+                    await Task.Delay(2000); // Wait for 2 seconds before retrying
+                }
             }
 
+            if (mqttClientWrapper == null || !mqttClientWrapper.IsConnected)
+            {
+                MQTTConnectionStatus.Text = "MQTT Status: Disconnected (Failed to connect)";
+            }
         }
+
+
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
         {
