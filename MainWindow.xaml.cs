@@ -4,8 +4,12 @@ using System;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using TEAMS2HA.API;
+using System.Timers;
+using TEAMS2HA.Properties;
 
 namespace TEAMS2HA
 {
@@ -20,20 +24,26 @@ namespace TEAMS2HA
         public string HomeAssistantToken { get; set; }
         public string HomeAssistantURL { get; set; }
         public string TeamsToken { get; set; }
+        public string MqttAddress { get; set; }
+        public string MqttUsername { get; set; }
+        public string EncryptedMqttPassword { get; set; }
+
     }
 
     public partial class MainWindow : Window
     {
         #region Private Fields
 
-        private TEAMS2HA.API.HomeAssistant _homeAssistant;
-        private string _homeassistantToken;
-        private string _homeassistantURL;
+        
+        
         private string _teamsApiKey;
         private API.WebSocketClient _teamsClient;
         private bool isDarkTheme = false;
         private string _settingsFilePath;
         private AppSettings _settings;
+        private MqttClientWrapper mqttClientWrapper;
+        private System.Timers.Timer mqttKeepAliveTimer;
+        private System.Timers.Timer mqttPublishTimer;
 
         #endregion Private Fields
 
@@ -53,6 +63,39 @@ namespace TEAMS2HA
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
             InitializeConnections();
+            mqttKeepAliveTimer = new System.Timers.Timer(60000); // Set interval to 60 seconds (60000 ms)
+            mqttKeepAliveTimer.Elapsed += OnTimedEvent;
+            mqttKeepAliveTimer.AutoReset = true;
+            mqttKeepAliveTimer.Enabled = true;
+            InitializeMqttPublishTimer();
+            if (!string.IsNullOrEmpty(_settings.MqttAddress))
+            {
+                // Connect to MQTT broker if address is provided
+                mqttClientWrapper = new MqttClientWrapper(
+                "TEAMS2HA",
+                _settings.MqttAddress,
+                    _settings.MqttUsername,
+                    _settings.EncryptedMqttPassword);
+
+                try
+                {
+                    _ = mqttClientWrapper.ConnectAsync();
+
+                    if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
+                    {
+                        MQTTConnectionStatus.Text = "MQTT Status: Connected";
+                        _ = PublishSensorConfiguration();
+                    }
+                    else
+                    {
+                        MQTTConnectionStatus.Text = "MQTT Status: Disconnected";
+                    }
+                }
+                catch
+                {
+                    // Optionally handle connection failure on startup
+                }
+            }
         }
 
         #endregion Public Constructors
@@ -63,7 +106,7 @@ namespace TEAMS2HA
         {
             // Other initialization code...
             await initializeteamsconnection();
-            await InitializeHomeAssistantConnection();
+            await InitializeMQTTConnection();
             // Other initialization code...
         }
 
@@ -84,13 +127,65 @@ namespace TEAMS2HA
             var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
             var state = new API.State();  // You would initialize this as necessary
             _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath);
-
+            _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
             _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+        }
+        private async void TeamsClient_TeamsUpdateReceived(object sender, WebSocketClient.TeamsUpdateEventArgs e)
+        {
+            if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
+            {
+                // Format the message as per your requirements
+                string mqttPayload = JsonConvert.SerializeObject(e.MeetingUpdate);
+                string mqttTopic = "TEAMS2HA/mqtt/topic"; // Set your MQTT topic
+
+                await mqttClientWrapper.PublishAsync(mqttTopic, mqttPayload);
+            }
         }
 
         #endregion Public Methods
 
         #region Private Methods
+        private async void CheckMqttConnection()
+        {
+            if (mqttClientWrapper != null && !mqttClientWrapper.IsConnected)
+            {
+                try
+                {
+                    await mqttClientWrapper.ConnectAsync();
+                    // Handle successful reconnection
+                }
+                catch
+                {
+                    // Handle reconnection failure
+                }
+            }
+        }
+        private void InitializeMqttPublishTimer()
+        {
+            mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
+            mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
+            mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
+            mqttPublishTimer.Enabled = true; // Enable the timer
+        }
+        private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e)
+        {
+            if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
+            {
+                // Publish your MQTT message here
+                // Example: _ = mqttClientWrapper.PublishAsync("your/topic", "your message");
+                
+            }
+        }
+
+        // This method is called when the timer event is triggered
+        private void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)
+        {
+            // Check the MQTT connection
+            CheckMqttConnection();
+
+            // Publish the sensor configuration
+          
+        }
 
         private AppSettings LoadSettings()
         {
@@ -104,13 +199,44 @@ namespace TEAMS2HA
                 return new AppSettings(); // Defaults if file does not exist
             }
         }
+        private async Task PublishSensorConfiguration()
+        {
+            // Create a dynamic object to hold the sensor configuration data
+            //var sensorConfig = new
+            //{
+            //    name = $"HAGameSpy {deviceId}", // Set the name of the sensor
+            //    state_topic = $"HAGameSpy/{deviceId}/state", // Set the topic for publishing the sensor state
+            //    json_attributes_topic = $"HAGameSpy/{deviceId}/attributes", // Set the topic for publishing additional sensor attributes
+            //    unique_id = $"hagamespy_{deviceId}", // Set a unique ID for the sensor
+            //    device = new
+            //    {
+            //        identifiers = new string[] { $"hagamespy_{deviceId}" }, // Set the identifiers for the device
+            //        name = "HAGameSpy", // Set the name of the device
+            //        manufacturer = "Jimmy White", // Set the manufacturer of the device
+            //        model = "0.0.1" // Set the model of the device
+            //    },
+            //    device_id = deviceId // Set a custom attribute for the device ID
+            //};
+
+            //// Set the topic for publishing the sensor configuration
+            //string sensorConfigTopic = $"homeassistant/sensor/{deviceId}/config";
+
+            //// Serialize the sensor configuration object to JSON
+            //string sensorConfigPayload = JsonConvert.SerializeObject(sensorConfig);
+
+            // Publish the sensor configuration to the MQTT broker
+           // await mqttClientWrapper.PublishAsync(sensorConfigTopic, sensorConfigPayload);
+        }
 
         private void SaveSettings()
         {
             _settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
             _settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
-            _settings.HomeAssistantToken = HomeassistantTokenBox.Text;
-            _settings.HomeAssistantURL = HomeassistantURLBox.Text;
+            _settings.MqttAddress = MqttAddress.Text;
+            _settings.MqttUsername = MqttUserNameBox.Text;
+            _settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
+            _settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
+           
             _settings.TeamsToken = TeamsApiKeyBox.Text;
             _settings.Theme = isDarkTheme ? "Dark" : "Light";
 
@@ -135,6 +261,11 @@ namespace TEAMS2HA
 
         protected override void OnClosing(CancelEventArgs e)
         {
+            if (_teamsClient != null)
+            {
+                _teamsClient.TeamsUpdateReceived -= TeamsClient_TeamsUpdateReceived;
+            }
+            base.OnClosing(e);
             MyNotifyIcon.Dispose();
             base.OnClosing(e);
         }
@@ -187,8 +318,9 @@ namespace TEAMS2HA
 
             RunAtWindowsBootCheckBox.IsChecked = _settings.RunAtWindowsBoot;
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
-            HomeassistantTokenBox.Text = _settings.HomeAssistantToken;
-            HomeassistantURLBox.Text = _settings.HomeAssistantURL;
+            MqttUserNameBox.Text = _settings.MqttUsername;
+            MQTTPasswordBox.Text = _settings.EncryptedMqttPassword;
+            MqttAddress.Text = _settings.MqttAddress;
             TeamsApiKeyBox.Text = _settings.TeamsToken;
             ApplyTheme(_settings.Theme);
             if (RunMinimisedCheckBox.IsChecked == true)
@@ -209,6 +341,17 @@ namespace TEAMS2HA
         {
             SaveSettings();
         }
+        private async void PublishTeamsUpdateToMqtt(MeetingUpdate meetingUpdate)
+        {
+            if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
+            {
+                string topic = "your/mqtt/topic";
+                string payload = JsonConvert.SerializeObject(meetingUpdate);
+                await mqttClientWrapper.PublishAsync(topic, payload);
+            }
+        }
+
+
 
         private void TeamsConnectionStatusChanged(bool isConnected)
         {
@@ -220,34 +363,13 @@ namespace TEAMS2HA
         }
 
         // This method is called when the TestHomeassistantConnection button is clicked
-        private async void TestHomeassistantConnection_Click(object sender, RoutedEventArgs e)
+        private async void TestMQTTConnection_Click(object sender, RoutedEventArgs e)
         {
             // Get the Homeassistant token from the HomeassistantTokenBox
-            _homeassistantToken = HomeassistantTokenBox.Text;
+           // _homeassistantToken = HomeassistantTokenBox.Text;
 
             // If the token is empty or null, return and do nothing
-            if (string.IsNullOrEmpty(_homeassistantToken))
-            {
-                return;
-            }
-
-            // Create a new instance of the HomeAssistant class with the Homeassistant URL and token
-            var homeAssistant = new TEAMS2HA.API.HomeAssistant(_settings.HomeAssistantURL, _homeassistantToken);
-
-            // Set the _homeAssistant variable to the same instance of the HomeAssistant class
-            _homeAssistant = new TEAMS2HA.API.HomeAssistant(_settings.HomeAssistantURL, _homeassistantToken);
-
-            // Check the connection to Homeassistant asynchronously and get the result
-            var connectionSuccessful = await homeAssistant.CheckConnectionAsync();
-
-            // Update the HomeassistantConnectionStatus text based on the connection result
-            HomeassistantConnectionStatus.Text = connectionSuccessful ? "Homeassistant: Connected" : "Homeassistant: Disconnected";
-
-            // If the connection is successful, start the HomeAssistant instance
-            if (connectionSuccessful)
-            {
-                await _homeAssistant.Start();
-            }
+           
         }
 
         // This method is called when the TestTeamsConnection button is clicked
@@ -302,18 +424,25 @@ namespace TEAMS2HA
             }
         }
 
-        private async Task InitializeHomeAssistantConnection()
+        private async Task InitializeMQTTConnection()
         {
-            // Initialize HomeAssistant client with settings
-            _homeAssistant = new TEAMS2HA.API.HomeAssistant(_settings.HomeAssistantURL, _settings.HomeAssistantToken);
+            mqttClientWrapper = new MqttClientWrapper(
+            "TEAMS2HA",            _settings.MqttAddress,
+            _settings.MqttUsername,
+            _settings.EncryptedMqttPassword);
 
-            // Check the connection and update UI accordingly
-            var connectionSuccessful = await _homeAssistant.CheckConnectionAsync();
-            HomeassistantConnectionStatus.Text = connectionSuccessful ? "Homeassistant: Connected" : "Homeassistant: Disconnected";
-            if (connectionSuccessful)
+
+            try
             {
-                await _homeAssistant.Start();
+                await mqttClientWrapper.ConnectAsync();
+                MQTTConnectionStatus.Text = "MQTT Status: Connected";
             }
+            catch (Exception ex)
+            {
+                // Handle or log the exception
+                MQTTConnectionStatus.Text = "MQTT Status: Disconnected";
+            }
+
         }
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)

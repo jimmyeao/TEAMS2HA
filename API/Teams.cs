@@ -10,8 +10,14 @@ using System.IO;
 
 namespace TEAMS2HA.API
 {
+   
     public class WebSocketClient
     {
+        public event EventHandler<TeamsUpdateEventArgs> TeamsUpdateReceived;
+        public class TeamsUpdateEventArgs : EventArgs
+        {
+            public MeetingUpdate MeetingUpdate { get; set; }
+        }
         #region Private Fields
         private AppSettings _appSettings;
         private readonly ClientWebSocket _clientWebSocket;
@@ -228,7 +234,7 @@ namespace TEAMS2HA.API
                 {
                     State.Instance.issharing = "Not Sharing";
                 }
-
+                TeamsUpdateReceived?.Invoke(this, new TeamsUpdateEventArgs { MeetingUpdate = meetingUpdate });
                 // need to edit state class to add handraised, recording, and backgroundblur
             }
         }
