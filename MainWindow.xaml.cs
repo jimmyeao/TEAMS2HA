@@ -1,4 +1,6 @@
 ﻿using Microsoft.Win32;
+using MQTTnet.Client;
+using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
@@ -6,6 +8,7 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Windows;
@@ -91,6 +94,11 @@ namespace TEAMS2HA
             mqttKeepAliveTimer.AutoReset = true;
             mqttKeepAliveTimer.Enabled = true;
             InitializeMqttPublishTimer();
+            mqttClientWrapper.MessageReceived += async (e) =>
+            {
+                HandleIncomingCommand(this, e);
+            };
+
         }
 
         #endregion Public Constructors
@@ -122,6 +130,7 @@ namespace TEAMS2HA
                 {
                     await mqttClientWrapper.ConnectAsync();
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                    await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     return; // Exit the method if connected
                 }
                 catch (Exception ex)
@@ -174,6 +183,51 @@ namespace TEAMS2HA
         #endregion Protected Methods
 
         #region Private Methods
+        private void HandleIncomingCommand(object sender, MqttApplicationMessageReceivedEventArgs e)
+        {
+            string topic = e.ApplicationMessage.Topic;
+            // Check if it's a command topic and handle accordingly
+            if (topic.StartsWith("homeassistant/switch/") && topic.EndsWith("/set"))
+            {
+                string command = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                // Parse and handle the command
+                HandleSwitchCommand(topic, command);
+            }
+        }
+        private async void HandleSwitchCommand(string topic, string command)
+        {
+            // Determine which switch is being controlled based on the topic
+            string switchName = topic.Split('/')[2]; // Assuming topic format is "homeassistant/switch/{switchName}/set"
+            int underscoreIndex = switchName.IndexOf('_');
+            if (underscoreIndex != -1 && underscoreIndex < switchName.Length - 1)
+            {
+                switchName = switchName.Substring(underscoreIndex + 1);
+            }
+            string jsonMessage = "";
+            switch (switchName)
+            {
+                case "ismuted":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+                case "isvideoon":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+                case "isbackgroundblurred":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+                case "ishandraised":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                    // Add other cases as needed
+            }
+
+            if (!string.IsNullOrEmpty(jsonMessage))
+            {
+                // Send the message to Teams
+                await _teamsClient.SendMessageAsync(jsonMessage);
+            }
+        }
 
         private void ApplyTheme(string theme)
         {

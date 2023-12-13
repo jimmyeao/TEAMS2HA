@@ -1,5 +1,6 @@
 ﻿using MQTTnet;
 using MQTTnet.Client;
+using MQTTnet.Protocol;
 using System;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -12,7 +13,7 @@ namespace TEAMS2HA.API
         private MqttClientOptions _mqttOptions;
 
         public bool IsConnected => _mqttClient.IsConnected;
-
+        public event Func<MqttApplicationMessageReceivedEventArgs, Task> MessageReceived;
         public MqttClientWrapper(string clientId, string mqttBroker, string username, string password)
         {
             var factory = new MqttFactory();
@@ -29,13 +30,14 @@ namespace TEAMS2HA.API
         }
         private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
         {
-            // Example processing of the message
             Debug.WriteLine($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
 
-            // Implement your specific message handling logic here
+            // Trigger the event to notify subscribers
+            MessageReceived?.Invoke(e);
 
             return Task.CompletedTask;
         }
+
         public void Dispose()
         {
             if (_mqttClient != null)
@@ -44,7 +46,20 @@ namespace TEAMS2HA.API
                 _mqttClient.Dispose();
             }
         }
+        public MqttClientWrapper(/* parameters */)
+        {
+            // Existing initialization code...
 
+            _mqttClient.ApplicationMessageReceivedAsync += HandleReceivedApplicationMessage;
+        }
+
+        private async Task HandleReceivedApplicationMessage(MqttApplicationMessageReceivedEventArgs e)
+        {
+            if (MessageReceived != null)
+            {
+                await MessageReceived(e);
+            }
+        }
 
         public async Task ConnectAsync()
         {
@@ -114,15 +129,16 @@ namespace TEAMS2HA.API
         }
 
 
-        public async Task SubscribeAsync(string topic)
+        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
         {
             var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
-                .WithTopicFilter(topic)
+                .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
                 .Build();
 
             await _mqttClient.SubscribeAsync(subscribeOptions);
         }
 
+
     }
-        
+
 }
