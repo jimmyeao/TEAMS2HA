@@ -10,7 +10,7 @@ using System.IO;
 using System.Diagnostics;
 using System.Windows.Threading;
 using System.Windows;
-
+using Serilog;
 
 namespace TEAMS2HA.API
 {
@@ -43,7 +43,7 @@ namespace TEAMS2HA.API
             _appSettings = LoadAppSettings(settingsFilePath);
             
             Task.Run(() => ConnectAsync(uri));
-
+            Log.Debug("Websocket Client Started");
             // Subscribe to the MessageReceived event
             MessageReceived += OnMessageReceived;
         }
@@ -59,6 +59,7 @@ namespace TEAMS2HA.API
                 {
                     _isConnected = value;
                     ConnectionStatusChanged?.Invoke(_isConnected);
+                    Log.Debug($"Connection Status Changed: {_isConnected}");
                 }
             }
         }
@@ -69,7 +70,8 @@ namespace TEAMS2HA.API
             if (_clientWebSocket.State == WebSocketState.Open)
             {
                 await _clientWebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Connection closed by client", cancellationToken);
-                Console.WriteLine("WebSocket connection closed");
+                
+                Log.Debug("Websocket Connection Closed");
             }
         }
 
@@ -87,7 +89,7 @@ namespace TEAMS2HA.API
         {
             byte[] messageBytes = Encoding.UTF8.GetBytes(message);
             await _clientWebSocket.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, cancellationToken);
-            Console.WriteLine($"Message sent: {message}");
+            Log.Debug($"Message Sent: {message}");
         }
 
         #endregion Public Methods
@@ -113,18 +115,20 @@ namespace TEAMS2HA.API
                 if (!string.IsNullOrEmpty(token))
                 {
                     // Modify the URI to include the token
+                    Log.Debug($"Token: {token}");
                     var builder = new UriBuilder(uri) { Query = $"token={token}&{uri.Query.TrimStart('?')}" };
                     uri = builder.Uri;
                 }
 
                 await _clientWebSocket.ConnectAsync(uri, CancellationToken.None);
-                Console.WriteLine("WebSocket connected");
+                Log.Debug($"Connected to {uri}");
                 IsConnected = _clientWebSocket.State == WebSocketState.Open;
+                Log.Debug($"IsConnected: {IsConnected}");
             }
             catch (Exception ex)
             {
                 IsConnected = false;
-                Console.WriteLine($"Connection failed: {ex.Message}");
+                Log.Error(ex, "ConnectAsync: Error connecting to WebSocket");
                 // Other error handling...
             }
 
@@ -149,15 +153,15 @@ namespace TEAMS2HA.API
         }
         private void OnMessageReceived(object sender, string message)
         {
-        
-            Debug.WriteLine($"Message received: {message}"); // Add this line
+
+            Log.Debug($"Message Received: {message}");
 
             if (message.Contains("tokenRefresh"))
             {
                 var tokenUpdate = JsonConvert.DeserializeObject<TokenUpdate>(message);
                 _appSettings.TeamsToken = tokenUpdate.NewToken;
                 SaveAppSettings(_appSettings);
-
+                Log.Debug($"Token Updated: {_appSettings.TeamsToken}");
                 // Update the UI on the main thread
                 Application.Current.Dispatcher.Invoke(() =>
                 {
@@ -166,99 +170,105 @@ namespace TEAMS2HA.API
             }
             else if (message.Contains("Success")) // Replace with actual keyword/structure
             {
-                // Logic to handle pairing response
+                Log.Debug("Pairing Success");
                 // Update UI, save settings, reinitialize connection as needed
-            }
-            else
-            {
-                // Update the Message property of the State class
-                var settings = new JsonSerializerSettings
+                Application.Current.Dispatcher.Invoke(() =>
                 {
-                    Converters = new List<JsonConverter> { new MeetingUpdateConverter() }
-                };
+                    //update the texbox with the new token
 
-                MeetingUpdate meetingUpdate = JsonConvert.DeserializeObject<MeetingUpdate>(message, settings);
+                });
+                
+                    // Update the Message property of the State class
+                    var settings = new JsonSerializerSettings
+                    {
+                        Converters = new List<JsonConverter> { new MeetingUpdateConverter() }
+                    };
 
-                if (meetingUpdate?.MeetingPermissions?.CanPair == true)
-                {
-                    // The 'canPair' permission is true, initiate pairing
-                    PairWithTeamsAsync();
+                    MeetingUpdate meetingUpdate = JsonConvert.DeserializeObject<MeetingUpdate>(message, settings);
+
+                    if (meetingUpdate?.MeetingPermissions?.CanPair == true)
+                    {
+                        // The 'canPair' permission is true, initiate pairing
+                        Log.Debug("Pairing with Teams");
+                        PairWithTeamsAsync();
+                    }
+                    // Update the meeting state dictionary
+                    if (meetingUpdate.MeetingState != null)
+                    {
+                        meetingState["isMuted"] = meetingUpdate.MeetingState.IsMuted;
+                        meetingState["isCameraOn"] = meetingUpdate.MeetingState.IsVideoOn;
+                        meetingState["isHandRaised"] = meetingUpdate.MeetingState.IsHandRaised;
+                        meetingState["isInMeeting"] = meetingUpdate.MeetingState.IsInMeeting;
+                        meetingState["isRecordingOn"] = meetingUpdate.MeetingState.IsRecordingOn;
+                        meetingState["isBackgroundBlurred"] = meetingUpdate.MeetingState.IsBackgroundBlurred;
+                        meetingState["isSharing"] = meetingUpdate.MeetingState.IsSharing;
+                        if (meetingUpdate.MeetingState.IsVideoOn)
+                        {
+                            State.Instance.Camera = "On";
+                        }
+                        else
+                        {
+                            State.Instance.Camera = "Off";
+                        }
+
+                        if (meetingUpdate.MeetingState.IsInMeeting)
+                        {
+                            State.Instance.Activity = "In a meeting";
+                        }
+                        else
+                        {
+                            State.Instance.Activity = "Not in a Call";
+                        }
+
+                        if (meetingUpdate.MeetingState.IsMuted)
+                        {
+                            State.Instance.Microphone = "On";
+                        }
+                        else
+                        {
+                            State.Instance.Microphone = "Off";
+                        }
+
+                        if (meetingUpdate.MeetingState.IsHandRaised)
+                        {
+                            State.Instance.Handup = "Raised";
+                        }
+                        else
+                        {
+                            State.Instance.Handup = "Lowered";
+                        }
+
+                        if (meetingUpdate.MeetingState.IsRecordingOn)
+                        {
+                            State.Instance.Recording = "On";
+                        }
+                        else
+                        {
+                            State.Instance.Recording = "Off";
+                        }
+
+                        if (meetingUpdate.MeetingState.IsBackgroundBlurred)
+                        {
+                            State.Instance.Blurred = "Blurred";
+                        }
+                        else
+                        {
+                            State.Instance.Blurred = "Not Blurred";
+                        }
+                        if (meetingUpdate.MeetingState.IsSharing)
+                        {
+                            State.Instance.issharing = "Sharing";
+                        }
+                        else
+                        {
+                            State.Instance.issharing = "Not Sharing";
+                        }
+                        TeamsUpdateReceived?.Invoke(this, new TeamsUpdateEventArgs { MeetingUpdate = meetingUpdate });
+                        Log.Debug($"Meeting State Updated: {meetingState}");
+                    }
                 }
-                // Update the meeting state dictionary
-                if (meetingUpdate.MeetingState != null)
-                {
-                    meetingState["isMuted"] = meetingUpdate.MeetingState.IsMuted;
-                    meetingState["isCameraOn"] = meetingUpdate.MeetingState.IsVideoOn;
-                    meetingState["isHandRaised"] = meetingUpdate.MeetingState.IsHandRaised;
-                    meetingState["isInMeeting"] = meetingUpdate.MeetingState.IsInMeeting;
-                    meetingState["isRecordingOn"] = meetingUpdate.MeetingState.IsRecordingOn;
-                    meetingState["isBackgroundBlurred"] = meetingUpdate.MeetingState.IsBackgroundBlurred;
-                    meetingState["isSharing"] = meetingUpdate.MeetingState.IsSharing;
-                    if (meetingUpdate.MeetingState.IsVideoOn)
-                    {
-                        State.Instance.Camera = "On";
-                    }
-                    else
-                    {
-                        State.Instance.Camera = "Off";
-                    }
+            
 
-                    if (meetingUpdate.MeetingState.IsInMeeting)
-                    {
-                        State.Instance.Activity = "In a meeting";
-                    }
-                    else
-                    {
-                        State.Instance.Activity = "Not in a Call";
-                    }
-
-                    if (meetingUpdate.MeetingState.IsMuted)
-                    {
-                        State.Instance.Microphone = "On";
-                    }
-                    else
-                    {
-                        State.Instance.Microphone = "Off";
-                    }
-
-                    if (meetingUpdate.MeetingState.IsHandRaised)
-                    {
-                        State.Instance.Handup = "Raised";
-                    }
-                    else
-                    {
-                        State.Instance.Handup = "Lowered";
-                    }
-
-                    if (meetingUpdate.MeetingState.IsRecordingOn)
-                    {
-                        State.Instance.Recording = "On";
-                    }
-                    else
-                    {
-                        State.Instance.Recording = "Off";
-                    }
-
-                    if (meetingUpdate.MeetingState.IsBackgroundBlurred)
-                    {
-                        State.Instance.Blurred = "Blurred";
-                    }
-                    else
-                    {
-                        State.Instance.Blurred = "Not Blurred";
-                    }
-                    if (meetingUpdate.MeetingState.IsSharing)
-                    {
-                        State.Instance.issharing = "Sharing";
-                    }
-                    else
-                    {
-                        State.Instance.issharing = "Not Sharing";
-                    }
-                    TeamsUpdateReceived?.Invoke(this, new TeamsUpdateEventArgs { MeetingUpdate = meetingUpdate });
-
-                }
-            }
         }
 
         public async Task PairWithTeamsAsync()
@@ -272,8 +282,8 @@ namespace TEAMS2HA.API
 
                 // Await the response
                 string response = await _pairingResponseTaskSource.Task;
-
-                // Check the response content to determine if pairing was successful
+                 
+               Log.Debug($"Pairing response: {response}");
                 // Handle the response as needed
             }
         }
@@ -293,7 +303,7 @@ namespace TEAMS2HA.API
                 if (result.EndOfMessage)
                 {
                     string messageReceived = Encoding.UTF8.GetString(buffer, 0, totalBytesReceived);
-                    Console.WriteLine($"Message received: {messageReceived}");
+                    Log.Debug($"ReceiveLoopAsync: Message Received: {messageReceived}");
 
                     if (!cancellationToken.IsCancellationRequested && !string.IsNullOrEmpty(messageReceived))
                     {
@@ -310,6 +320,7 @@ namespace TEAMS2HA.API
                 }
             }
             IsConnected = _clientWebSocket.State == WebSocketState.Open;
+            Log.Debug($"IsConnected: {IsConnected}");
         }
 
         public class MeetingUpdateConverter : JsonConverter<MeetingUpdate>

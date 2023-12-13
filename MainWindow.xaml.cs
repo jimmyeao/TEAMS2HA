@@ -12,6 +12,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Windows;
+using Serilog;
 using TEAMS2HA.API;
 
 namespace TEAMS2HA
@@ -71,11 +72,14 @@ namespace TEAMS2HA
         public MainWindow()
         {
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            LoggingConfig.Configure();
             var appDataFolder = Path.Combine(localAppData, "TEAMS2HA");
+            Log.Debug("Set Folder Path to {path}", appDataFolder);
             Directory.CreateDirectory(appDataFolder); // Ensure the directory exists
             _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
             _settings = LoadSettings();
             deviceid = System.Environment.MachineName;
+            Log.Debug("Settings file path is  {path}", _settingsFilePath);
             this.InitializeComponent();
             //ApplyTheme(Properties.Settings.Default.Theme);
             var Mqtttopic = deviceid;
@@ -119,6 +123,7 @@ namespace TEAMS2HA
             {
                 Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Client Not Initialized");
                 return;
+                Log.Debug("MQTT Client Not Initialized");
             }
 
             int retryCount = 0;
@@ -132,18 +137,21 @@ namespace TEAMS2HA
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     SetupMqttSensors();
+                    Log.Debug("MQTT Client Connected");
                     return; // Exit the method if connected
                 }
                 catch (Exception ex)
                 {
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = $"MQTT Status: Disconnected (Retry {retryCount + 1})");
-                    Debug.WriteLine($"Retry {retryCount + 1}: {ex.Message}");
+                    
+                    Log.Debug("MQTT Retrty Count {count} {message}", retryCount, ex.Message);
                     retryCount++;
                     await Task.Delay(2000); // Wait for 2 seconds before retrying
                 }
             }
 
             Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected (Failed to connect)");
+            Log.Debug("MQTT Client Failed to Connect");
         }
 
         #endregion Public Methods
@@ -155,10 +163,12 @@ namespace TEAMS2HA
             if (_teamsClient != null)
             {
                 _teamsClient.TeamsUpdateReceived -= TeamsClient_TeamsUpdateReceived;
+                Log.Debug("Teams Client Disconnected");
             }
             if (mqttClientWrapper != null)
             {
                 mqttClientWrapper.Dispose();
+                Log.Debug("MQTT Client Disposed");
             }
             MyNotifyIcon.Dispose();
             base.OnClosing(e);
@@ -187,12 +197,14 @@ namespace TEAMS2HA
         private void HandleIncomingCommand(object sender, MqttApplicationMessageReceivedEventArgs e)
         {
             string topic = e.ApplicationMessage.Topic;
+            Log.Debug("HandleIncomingCommand: MQTT Topic {topic}", topic);
             // Check if it's a command topic and handle accordingly
             if (topic.StartsWith("homeassistant/switch/") && topic.EndsWith("/set"))
             {
                 string command = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
                 // Parse and handle the command
                 HandleSwitchCommand(topic, command);
+
             }
         }
         private async void SetupMqttSensors()
@@ -292,14 +304,17 @@ namespace TEAMS2HA
         {
             if (mqttClientWrapper != null && !mqttClientWrapper.IsConnected)
             {
+                Log.Debug("CheckMqttConnection: MQTT Client Not Connected");
                 try
                 {
                     await mqttClientWrapper.ConnectAsync();
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                    Log.Debug("CheckMqttConnection: MQTT Client Connected");
                 }
                 catch
                 {
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected");
+                    Log.Debug("CheckMqttConnection: MQTT Client Failed to Connect");
                 }
             }
         }
@@ -386,19 +401,24 @@ namespace TEAMS2HA
             mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
             mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
             mqttPublishTimer.Enabled = true; // Enable the timer
+            Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
         }
 
         private async Task initializeteamsconnection()
         {
             if (_teamsClient != null && _teamsClient.IsConnected)
             {
-                return; // Already connected, no need to reinitialize
+                Log.Debug("initializeteamsconnection: Teams Client is already connected");
+                return; //
+               
             }
             string teamsToken = _settings.TeamsToken;
             if (string.IsNullOrEmpty(teamsToken))
             {
+                Log.Debug("initializeteamsconnection: Teams Token is not set");
                 // If the Teams token is not set, then we can't connect to Teams
                 return;
+                
             }
             // Initialize the Teams WebSocket connection
             //var uri = new Uri("ws://localhost:8124?protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
@@ -407,6 +427,7 @@ namespace TEAMS2HA
             _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
             _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
             _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+            Log.Debug("initializeteamsconnection: Teams Client is connected");
         }
 
         private AppSettings LoadSettings()
@@ -415,10 +436,12 @@ namespace TEAMS2HA
             {
                 string json = File.ReadAllText(_settingsFilePath);
                 return JsonConvert.DeserializeObject<AppSettings>(json);
+                Log.Debug("LoadSettings: Settings file loaded");
             }
             else
             {
                 return new AppSettings(); // Defaults if file does not exist
+                Log.Debug("LoadSettings: Settings file does not exist");
             }
         }
 
@@ -445,6 +468,7 @@ namespace TEAMS2HA
         {
             // Unsubscribe when the page is unloaded
             _teamsClient.ConnectionStatusChanged -= TeamsConnectionStatusChanged;
+            Log.Debug("MainPage_Unloaded: Teams Client Connection Status unsubscribed");
         }
 
         private void MyNotifyIcon_Click(object sender, EventArgs e)
@@ -470,6 +494,7 @@ namespace TEAMS2HA
                 string keepAliveTopic = "TEAMS2HA/keepalive";
                 string keepAliveMessage = "alive";
                 _ = mqttClientWrapper.PublishAsync(keepAliveTopic, keepAliveMessage);
+                Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
             }
         }
 
@@ -573,9 +598,11 @@ namespace TEAMS2HA
           
             string json = JsonConvert.SerializeObject(_settings, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
+            Log.Debug("SaveSettings: Settings file saved");
             return oldMqttAddress != _settings.MqttAddress ||
          oldMqttUsername != _settings.MqttUsername ||
          oldMqttPassword != _settings.EncryptedMqttPassword;
+            
         }
 
         private void SaveSettings_Click(object sender, RoutedEventArgs e)
@@ -590,7 +617,8 @@ namespace TEAMS2HA
                     _settings.MqttUsername,
                     _settings.EncryptedMqttPassword
                 );
-                InitializeMQTTConnection();
+                _ = InitializeMQTTConnection();
+                Log.Debug("SaveSettings_Click: MQTT Settings Changed and initialze called");
             }
         }
 
@@ -617,19 +645,20 @@ namespace TEAMS2HA
                     }
                 }
             });
+            Log.Debug("SetStartupAsync: Startup set");
         }
 
         private async void TeamsClient_TeamsUpdateReceived(object sender, WebSocketClient.TeamsUpdateEventArgs e)
         {
             if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
             {
+                
                 // Store the latest update
                 _latestMeetingUpdate = e.MeetingUpdate;
-
+                Log.Debug("TeamsClient_TeamsUpdateReceived: Teams Update Received {update}", _latestMeetingUpdate);
                 // Update sensor configurations
                 await PublishConfigurations(_latestMeetingUpdate, _settings);
 
-                // If you need to publish state messages, add that logic here as well
             }
         }
 
@@ -639,14 +668,43 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() =>
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
+                Log.Debug("TeamsConnectionStatusChanged: Teams Connection Status Changed {status}", TeamsConnectionStatus.Text);
             });
         }
 
         private async void TestMQTTConnection_Click(object sender, RoutedEventArgs e)
         {
-            // Get the Homeassistant token from the HomeassistantTokenBox _homeassistantToken = HomeassistantTokenBox.Text;
+            Log.Debug("Testing MQTT COnnection");
+            if (mqttClientWrapper == null)
+            {
+                Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Client Not Initialized");
+                Log.Debug("TestMQTTConnection_Click: MQTT Client Not Initialized");
+                return;
+            }
 
-            // If the token is empty or null, return and do nothing
+            int retryCount = 0;
+            const int maxRetries = 5;
+
+            while (retryCount < maxRetries && !mqttClientWrapper.IsConnected)
+            {
+                try
+                {
+                    await mqttClientWrapper.ConnectAsync();
+                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                    Log.Debug("TestMQTTConnection_Click: MQTT Client Connected");
+                    return; // Exit the method if connected
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = $"MQTT Status: Disconnected (Retry {retryCount + 1})");
+                    Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect {message}", ex.Message);
+                    retryCount++;
+                    await Task.Delay(2000); // Wait for 2 seconds before retrying
+                }
+            }
+
+            Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected (Failed to connect)");
+            Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect");
         }
 
         private void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
@@ -655,10 +713,12 @@ namespace TEAMS2HA
             {
                 string teamsToken = _settings.TeamsToken;
                 // If Teams is not paired, initiate pairing process
+                Log.Debug("TestTeamsConnection_Click: Teams Client Not Connected");
                 var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
                 var state = new API.State();  // Initialize state
                 _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
                 _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+                Log.Debug("TestTeamsConnection_Click: Teams Client Connected");
             }
             else
             {

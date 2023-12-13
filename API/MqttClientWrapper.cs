@@ -2,6 +2,7 @@
 using MQTTnet.Client;
 using MQTTnet.Protocol;
 using System;
+using Serilog;
 using System.Diagnostics;
 using System.Threading.Tasks;
 
@@ -27,11 +28,12 @@ namespace TEAMS2HA.API
                 .Build();
 
             _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+            Log.Information("MQTT Client Created");
         }
         private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
         {
-            Debug.WriteLine($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-
+            
+            Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
             // Trigger the event to notify subscribers
             MessageReceived?.Invoke(e);
 
@@ -44,6 +46,7 @@ namespace TEAMS2HA.API
             {
                 _ = _mqttClient.DisconnectAsync(); // Disconnect asynchronously
                 _mqttClient.Dispose();
+                Log.Information("MQTT Client Disposed");
             }
         }
         public MqttClientWrapper(/* parameters */)
@@ -51,6 +54,7 @@ namespace TEAMS2HA.API
             // Existing initialization code...
 
             _mqttClient.ApplicationMessageReceivedAsync += HandleReceivedApplicationMessage;
+            Log.Information("MQTT Client Created");
         }
 
         private async Task HandleReceivedApplicationMessage(MqttApplicationMessageReceivedEventArgs e)
@@ -58,6 +62,7 @@ namespace TEAMS2HA.API
             if (MessageReceived != null)
             {
                 await MessageReceived(e);
+                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
             }
         }
 
@@ -65,19 +70,21 @@ namespace TEAMS2HA.API
         {
             if (_mqttClient.IsConnected)
             {
-                Debug.WriteLine("MQTT client is already connected.");
+                Log.Information("MQTT client is already connected.");
                 return;
             }
 
             try
             {
-                Debug.WriteLine("Attempting to connect to MQTT broker...");
+                Log.Information("attempting to connect to mqtt");
                 await _mqttClient.ConnectAsync(_mqttOptions);
-                Debug.WriteLine("Connected to MQTT broker.");
+               
+                Log.Information("Connected to MQTT broker.");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Failed to connect to MQTT broker: {ex.Message}");
+               
+                Log.Debug($"Failed to connect to MQTT broker: {ex.Message}");
             }
         }
 
@@ -86,15 +93,16 @@ namespace TEAMS2HA.API
         {
             if (!_mqttClient.IsConnected)
             {
-                Debug.WriteLine("MQTT client is not connected.");
+                
+                Log.Debug("MQTTClient is not connected");
                 return;
             }
 
             try
             {
-                Debug.WriteLine("Disconnecting from MQTT broker...");
+                
                 await _mqttClient.DisconnectAsync();
-                Debug.WriteLine("Disconnected from MQTT broker.");
+                Log.Information("MQTT Disconnected");
             }
             catch (Exception ex)
             {
@@ -107,10 +115,10 @@ namespace TEAMS2HA.API
         {
             try
             {
-                Debug.WriteLine($"Publishing to topic: {topic}");
-                Debug.WriteLine($"Payload: {payload}");
-                Debug.WriteLine($"Retain flag: {retain}");
-
+                Log.Information($"Publishing to topic: {topic}");
+                Log.Information($"Payload: {payload}");
+                Log.Information($"Retain flag: {retain}");
+                
                 var message = new MqttApplicationMessageBuilder()
                     .WithTopic(topic)
                     .WithPayload(payload)
@@ -119,11 +127,11 @@ namespace TEAMS2HA.API
                     .Build();
 
                 await _mqttClient.PublishAsync(message);
-                Debug.WriteLine("Publish successful.");
+                Log.Information("Publish successful.");
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Error during MQTT publish: {ex.Message}");
+                Log.Information($"Error during MQTT publish: {ex.Message}");
                 // Depending on the severity, you might want to rethrow the exception or handle it here.
             }
         }
@@ -136,7 +144,7 @@ namespace TEAMS2HA.API
                 .Build();
 
             await _mqttClient.SubscribeAsync(subscribeOptions);
-            Debug.WriteLine("Subscribing." + subscribeOptions);
+            Log.Information("Subscribing." + subscribeOptions);
         }
 
 
