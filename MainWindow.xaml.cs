@@ -131,6 +131,7 @@ namespace TEAMS2HA
                     await mqttClientWrapper.ConnectAsync();
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                    SetupMqttSensors();
                     return; // Exit the method if connected
                 }
                 catch (Exception ex)
@@ -194,6 +195,29 @@ namespace TEAMS2HA
                 HandleSwitchCommand(topic, command);
             }
         }
+        private async void SetupMqttSensors()
+        {
+            // Create a dummy MeetingUpdate with default values
+            var dummyMeetingUpdate = new MeetingUpdate
+            {
+                MeetingState = new MeetingState
+                {
+                    IsMuted = false,
+                    IsVideoOn = false,
+                    IsHandRaised = false,
+                    IsInMeeting = false,
+                    IsRecordingOn = false,
+                    IsBackgroundBlurred = false,
+                    IsSharing = false,
+                    HasUnreadMessages = false
+                }
+            };
+
+            // Call PublishConfigurations with the dummy MeetingUpdate
+            await PublishConfigurations(dummyMeetingUpdate, _settings);
+        }
+
+
         private async void HandleSwitchCommand(string topic, string command)
         {
             // Determine which switch is being controlled based on the topic
@@ -627,19 +651,21 @@ namespace TEAMS2HA
 
         private void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {
-            string teamsToken = _settings.TeamsToken; // Get the Teams token from the settings
-
-            // Create a URI with the necessary parameters for the WebSocket connection
-            var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
-
-            var state = new API.State();  // You would initialize this as necessary
-
-            // Create a new WebSocketClient with the URI, state, and settings file path
-            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
-
-            // Subscribe to the ConnectionStatusChanged event of the WebSocketClient
-            _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+            if (_teamsClient == null || !_teamsClient.IsConnected)
+            {
+                string teamsToken = _settings.TeamsToken;
+                // If Teams is not paired, initiate pairing process
+                var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+                var state = new API.State();  // Initialize state
+                _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
+                _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+            }
+            else
+            {
+                // Teams is already paired, handle accordingly
+            }
         }
+
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
         {

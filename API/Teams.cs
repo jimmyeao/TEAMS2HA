@@ -14,9 +14,10 @@ using System.Windows;
 
 namespace TEAMS2HA.API
 {
-   
+    
     public class WebSocketClient
     {
+        private TaskCompletionSource<string> _pairingResponseTaskSource;
         public event EventHandler<TeamsUpdateEventArgs> TeamsUpdateReceived;
         public class TeamsUpdateEventArgs : EventArgs
         {
@@ -148,7 +149,7 @@ namespace TEAMS2HA.API
         }
         private void OnMessageReceived(object sender, string message)
         {
-
+        
             Debug.WriteLine($"Message received: {message}"); // Add this line
 
             if (message.Contains("tokenRefresh"))
@@ -163,104 +164,117 @@ namespace TEAMS2HA.API
                     _updateTokenAction?.Invoke(_appSettings.TeamsToken);
                 });
             }
-            // Update the Message property of the State class
-            var settings = new JsonSerializerSettings
+            else if (message.Contains("Success")) // Replace with actual keyword/structure
             {
-                Converters = new List<JsonConverter> { new MeetingUpdateConverter() }
-            };
-
-            MeetingUpdate meetingUpdate = JsonConvert.DeserializeObject<MeetingUpdate>(message, settings);
-
-            if (meetingUpdate?.MeetingPermissions?.CanPair == true)
-            {
-                // The 'canPair' permission is true, initiate pairing
-                PairWithTeamsAsync();
+                // Logic to handle pairing response
+                // Update UI, save settings, reinitialize connection as needed
             }
-            // Update the meeting state dictionary
-            if (meetingUpdate.MeetingState != null)
+            else
             {
-                meetingState["isMuted"] = meetingUpdate.MeetingState.IsMuted;
-                meetingState["isCameraOn"] = meetingUpdate.MeetingState.IsVideoOn;
-                meetingState["isHandRaised"] = meetingUpdate.MeetingState.IsHandRaised;
-                meetingState["isInMeeting"] = meetingUpdate.MeetingState.IsInMeeting;
-                meetingState["isRecordingOn"] = meetingUpdate.MeetingState.IsRecordingOn;
-                meetingState["isBackgroundBlurred"] = meetingUpdate.MeetingState.IsBackgroundBlurred;
-                meetingState["isSharing"] = meetingUpdate.MeetingState.IsSharing;
-                if (meetingUpdate.MeetingState.IsVideoOn)
+                // Update the Message property of the State class
+                var settings = new JsonSerializerSettings
                 {
-                    State.Instance.Camera = "On";
-                }
-                else
-                {
-                    State.Instance.Camera = "Off";
-                }
+                    Converters = new List<JsonConverter> { new MeetingUpdateConverter() }
+                };
 
-                if (meetingUpdate.MeetingState.IsInMeeting)
-                {
-                    State.Instance.Activity = "In a meeting";
-                }
-                else
-                {
-                    State.Instance.Activity = "Not in a Call";
-                }
+                MeetingUpdate meetingUpdate = JsonConvert.DeserializeObject<MeetingUpdate>(message, settings);
 
-                if (meetingUpdate.MeetingState.IsMuted)
+                if (meetingUpdate?.MeetingPermissions?.CanPair == true)
                 {
-                    State.Instance.Microphone = "On";
+                    // The 'canPair' permission is true, initiate pairing
+                    PairWithTeamsAsync();
                 }
-                else
+                // Update the meeting state dictionary
+                if (meetingUpdate.MeetingState != null)
                 {
-                    State.Instance.Microphone = "Off";
-                }
+                    meetingState["isMuted"] = meetingUpdate.MeetingState.IsMuted;
+                    meetingState["isCameraOn"] = meetingUpdate.MeetingState.IsVideoOn;
+                    meetingState["isHandRaised"] = meetingUpdate.MeetingState.IsHandRaised;
+                    meetingState["isInMeeting"] = meetingUpdate.MeetingState.IsInMeeting;
+                    meetingState["isRecordingOn"] = meetingUpdate.MeetingState.IsRecordingOn;
+                    meetingState["isBackgroundBlurred"] = meetingUpdate.MeetingState.IsBackgroundBlurred;
+                    meetingState["isSharing"] = meetingUpdate.MeetingState.IsSharing;
+                    if (meetingUpdate.MeetingState.IsVideoOn)
+                    {
+                        State.Instance.Camera = "On";
+                    }
+                    else
+                    {
+                        State.Instance.Camera = "Off";
+                    }
 
-                if (meetingUpdate.MeetingState.IsHandRaised)
-                {
-                    State.Instance.Handup = "Raised";
-                }
-                else
-                {
-                    State.Instance.Handup = "Lowered";
-                }
+                    if (meetingUpdate.MeetingState.IsInMeeting)
+                    {
+                        State.Instance.Activity = "In a meeting";
+                    }
+                    else
+                    {
+                        State.Instance.Activity = "Not in a Call";
+                    }
 
-                if (meetingUpdate.MeetingState.IsRecordingOn)
-                {
-                    State.Instance.Recording = "On";
-                }
-                else
-                {
-                    State.Instance.Recording = "Off";
-                }
+                    if (meetingUpdate.MeetingState.IsMuted)
+                    {
+                        State.Instance.Microphone = "On";
+                    }
+                    else
+                    {
+                        State.Instance.Microphone = "Off";
+                    }
 
-                if (meetingUpdate.MeetingState.IsBackgroundBlurred)
-                {
-                    State.Instance.Blurred = "Blurred";
+                    if (meetingUpdate.MeetingState.IsHandRaised)
+                    {
+                        State.Instance.Handup = "Raised";
+                    }
+                    else
+                    {
+                        State.Instance.Handup = "Lowered";
+                    }
+
+                    if (meetingUpdate.MeetingState.IsRecordingOn)
+                    {
+                        State.Instance.Recording = "On";
+                    }
+                    else
+                    {
+                        State.Instance.Recording = "Off";
+                    }
+
+                    if (meetingUpdate.MeetingState.IsBackgroundBlurred)
+                    {
+                        State.Instance.Blurred = "Blurred";
+                    }
+                    else
+                    {
+                        State.Instance.Blurred = "Not Blurred";
+                    }
+                    if (meetingUpdate.MeetingState.IsSharing)
+                    {
+                        State.Instance.issharing = "Sharing";
+                    }
+                    else
+                    {
+                        State.Instance.issharing = "Not Sharing";
+                    }
+                    TeamsUpdateReceived?.Invoke(this, new TeamsUpdateEventArgs { MeetingUpdate = meetingUpdate });
+
                 }
-                else
-                {
-                    State.Instance.Blurred = "Not Blurred";
-                }
-                if (meetingUpdate.MeetingState.IsSharing)
-                {
-                    State.Instance.issharing = "Sharing";
-                }
-                else
-                {
-                    State.Instance.issharing = "Not Sharing";
-                }
-                TeamsUpdateReceived?.Invoke(this, new TeamsUpdateEventArgs { MeetingUpdate = meetingUpdate });
-              
             }
         }
 
-        private async Task PairWithTeamsAsync()
+        public async Task PairWithTeamsAsync()
         {
             if (_isConnected)
             {
+                _pairingResponseTaskSource = new TaskCompletionSource<string>();
+
                 string pairingCommand = "{\"action\":\"pair\",\"parameters\":{},\"requestId\":1}";
                 await SendMessageAsync(pairingCommand);
 
-                // Handle the response here
-                // For example: Check if the response contains a success message or token
+                // Await the response
+                string response = await _pairingResponseTaskSource.Task;
+
+                // Check the response content to determine if pairing was successful
+                // Handle the response as needed
             }
         }
 
