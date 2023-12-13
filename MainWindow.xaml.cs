@@ -71,7 +71,7 @@ namespace TEAMS2HA
         public MainWindow()
         {
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            var appDataFolder = Path.Combine(localAppData, "YourAppName");
+            var appDataFolder = Path.Combine(localAppData, "TEAMS2HA");
             Directory.CreateDirectory(appDataFolder); // Ensure the directory exists
             _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
             _settings = LoadSettings();
@@ -532,8 +532,11 @@ namespace TEAMS2HA
 
 
 
-        private void SaveSettings()
+        private bool SaveSettings()
         {
+            var oldMqttAddress = _settings.MqttAddress;
+            var oldMqttUsername = _settings.MqttUsername;
+            var oldMqttPassword = _settings.EncryptedMqttPassword;
             _settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
             _settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
             _settings.MqttAddress = MqttAddress.Text;
@@ -543,14 +546,28 @@ namespace TEAMS2HA
 
             _settings.TeamsToken = TeamsApiKeyBox.Text;
             _settings.Theme = isDarkTheme ? "Dark" : "Light";
-
+          
             string json = JsonConvert.SerializeObject(_settings, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
+            return oldMqttAddress != _settings.MqttAddress ||
+         oldMqttUsername != _settings.MqttUsername ||
+         oldMqttPassword != _settings.EncryptedMqttPassword;
         }
 
         private void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
-            SaveSettings();
+            bool mqttSettingsChanged = SaveSettings();
+            if (mqttSettingsChanged)
+            {
+                // Retry MQTT connection with new settings
+                mqttClientWrapper = new MqttClientWrapper(
+                    "TEAMS2HA",
+                    _settings.MqttAddress,
+                    _settings.MqttUsername,
+                    _settings.EncryptedMqttPassword
+                );
+                InitializeMQTTConnection();
+            }
         }
 
         private async Task SetStartupAsync(bool startWithWindows)

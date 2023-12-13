@@ -136,6 +136,7 @@ namespace TEAMS2HA.API
                 .Build();
 
             await _mqttClient.SubscribeAsync(subscribeOptions);
+            Debug.WriteLine("Subscribing." + subscribeOptions);
         }
 
 
