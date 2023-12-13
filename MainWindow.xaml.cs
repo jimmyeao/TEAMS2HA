@@ -11,6 +11,8 @@ using TEAMS2HA.API;
 using System.Timers;
 using TEAMS2HA.Properties;
 using System.Diagnostics;
+using System.Collections.Generic;
+using Microsoft.VisualBasic.Logging;
 
 namespace TEAMS2HA
 {
@@ -34,9 +36,10 @@ namespace TEAMS2HA
     public partial class MainWindow : Window
     {
         #region Private Fields
-
-        
-        
+        List<string> sensorNames = new List<string>
+        {
+            "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages"
+        };
         private string _teamsApiKey;
         private API.WebSocketClient _teamsClient;
         private bool isDarkTheme = false;
@@ -45,6 +48,9 @@ namespace TEAMS2HA
         private MqttClientWrapper mqttClientWrapper;
         private System.Timers.Timer mqttKeepAliveTimer;
         private System.Timers.Timer mqttPublishTimer;
+        private string deviceid;
+        private string Mqtttopic;
+        private MeetingUpdate _latestMeetingUpdate;
 
         #endregion Private Fields
 
@@ -57,9 +63,10 @@ namespace TEAMS2HA
             Directory.CreateDirectory(appDataFolder); // Ensure the directory exists
             _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
             _settings = LoadSettings();
-
+            deviceid = System.Environment.MachineName;
             this.InitializeComponent();
             //ApplyTheme(Properties.Settings.Default.Theme);
+            var Mqtttopic = deviceid;
             this.Loaded += MainPage_Loaded;
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
@@ -75,34 +82,35 @@ namespace TEAMS2HA
             mqttKeepAliveTimer.AutoReset = true;
             mqttKeepAliveTimer.Enabled = true;
             InitializeMqttPublishTimer();
-            if (!string.IsNullOrEmpty(_settings.MqttAddress))
-            {
-                // Connect to MQTT broker if address is provided
-                mqttClientWrapper = new MqttClientWrapper(
-                "TEAMS2HA",
-                _settings.MqttAddress,
-                    _settings.MqttUsername,
-                    _settings.EncryptedMqttPassword);
+            //if (!string.IsNullOrEmpty(_settings.MqttAddress))
+            //{
+            //    // Connect to MQTT broker if address is provided
+            //    mqttClientWrapper = new MqttClientWrapper(
+            //    "TEAMS2HA",
+            //    _settings.MqttAddress,
+            //        _settings.MqttUsername,
+            //        _settings.EncryptedMqttPassword);
 
-                try
-                {
-                    _ = mqttClientWrapper.ConnectAsync();
+            //    try
+            //    {
+            //        _ = mqttClientWrapper.ConnectAsync();
 
-                    if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
-                    {
-                        MQTTConnectionStatus.Text = "MQTT Status: Connected";
-                        _ = PublishSensorConfiguration();
-                    }
-                    else
-                    {
-                        MQTTConnectionStatus.Text = "MQTT Status: Disconnected";
-                    }
-                }
-                catch
-                {
-                    // Optionally handle connection failure on startup
-                }
-            }
+            //        if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
+            //        {
+            //            MQTTConnectionStatus.Text = "MQTT Status: Connected";
+            //            _ = PublishSensorConfiguration();
+            //        }
+            //        else
+            //        {
+            //            MQTTConnectionStatus.Text = "MQTT Status: Disconnected";
+            //        }
+            //    }
+            //    catch
+            //    {
+            //        // Optionally handle connection failure on startup
+            //        Debug.WriteLine("Error connecting to MQTT broker");
+            //    }
+            //}
         }
 
         #endregion Public Constructors
@@ -141,15 +149,16 @@ namespace TEAMS2HA
         {
             if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
             {
-                string baseTopic = "TEAMS2HA/TEAMS";
-                string muteStateTopic = $"{baseTopic}/mute";
-                string videoStateTopic = $"{baseTopic}/video";
+                // Store the latest update
+                _latestMeetingUpdate = e.MeetingUpdate;
 
-                // Publish state messages
-                await mqttClientWrapper.PublishAsync(muteStateTopic, e.MeetingUpdate.MeetingState.IsMuted ? "true" : "false");
-                await mqttClientWrapper.PublishAsync(videoStateTopic, e.MeetingUpdate.MeetingState.IsVideoOn ? "true" : "false");
+                // Update sensor configurations
+                await PublishConfigurations(_latestMeetingUpdate, _settings);
+
+                // If you need to publish state messages, add that logic here as well
             }
         }
+
 
 
 
@@ -218,7 +227,7 @@ namespace TEAMS2HA
             CheckMqttConnection();
 
             // Publish the sensor configuration
-          
+
         }
 
         private AppSettings LoadSettings()
@@ -249,6 +258,148 @@ namespace TEAMS2HA
             string configPayload = JsonConvert.SerializeObject(sensorConfig);
             await mqttClientWrapper.PublishAsync(configTopic, configPayload);
         }
+        private string DetermineDeviceClass(string sensor)
+        {
+            switch (sensor)
+            {
+                case "IsMuted":
+                case "IsVideoOn":
+                case "IsHandRaised":
+                case "IsBackgroundBlurred":
+                    return "switch"; // These are ON/OFF switches
+                case "IsInMeeting":
+                case "HasUnreadMessages":
+                case "IsRecordingOn":
+                case "IsSharing":
+                    return "sensor"; // These are true/false sensors
+                default:
+                    return null; // Or a default device class if appropriate
+            }
+        }
+
+
+        private async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings)
+        {
+            foreach (var sensor in sensorNames)
+            {
+                var device = new Device()
+                {
+                    Identifiers = deviceid,
+                    Name = deviceid,
+                    SwVersion = "1.0.0",
+                    Model = "Teams2HA",
+                    Manufacturer = "JimmyWhite",
+                };
+
+                string sensorName = $"{deviceid}_{sensor}".ToLower().Replace(" ", "_");
+                string deviceClass = DetermineDeviceClass(sensor);
+                string icon = DetermineIcon(sensor, meetingUpdate.MeetingState);
+                string stateValue = GetStateValue(sensor, meetingUpdate);
+
+                if (deviceClass == "switch")
+                {
+                    string stateTopic = $"homeassistant/switch/{sensorName}/state";
+                    string commandTopic = $"homeassistant/switch/{sensorName}/set";
+                    var switchConfig = new
+                    {
+                        name = sensorName,
+                        unique_id = sensorName,
+                        state_topic = stateTopic,
+                        command_topic = commandTopic,
+                        payload_on = "ON",
+                        payload_off = "OFF",
+                        icon = icon
+                    };
+                    string configTopic = $"homeassistant/switch/{sensorName}/config";
+                    await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(switchConfig));
+                    await mqttClientWrapper.PublishAsync(stateTopic, stateValue);
+                }
+                else if (deviceClass == "sensor") // Use else-if for binary_sensor
+                {
+                    string stateTopic = $"homeassistant/sensor/{sensorName}/state"; // Corrected state topic
+                    var binarySensorConfig = new
+                    {
+                        name = sensorName,
+                        unique_id = sensorName,
+                        state_topic = stateTopic,
+                       
+                        icon = icon,
+                        Device = device,
+
+                    };
+                    string configTopic = $"homeassistant/sensor/{sensorName}/config";
+                    await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(binarySensorConfig), true);
+                    await mqttClientWrapper.PublishAsync(stateTopic, stateValue); // Publish the state
+                }
+
+            }
+        }
+
+
+        private string GetStateValue(string sensor, MeetingUpdate meetingUpdate)
+        {
+            switch (sensor)
+            {
+                case "IsMuted":
+                case "IsVideoOn":
+                case "IsBackgroundBlurred":
+                case "IsHandRaised":
+                    // Cast to bool and then check the value
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
+                case "IsInMeeting":
+                case "HasUnreadMessages":
+                case "IsRecordingOn":
+                case "IsSharing":
+                    // Similar casting for these properties
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
+                default:
+                    return "unknown";
+            }
+        }
+
+
+
+
+
+
+        private string DetermineIcon(string sensor, MeetingState state)
+        {
+            return sensor switch
+            {
+                "IsMuted" => state.IsMuted ? "mdi:microphone-off" : "mdi:microphone",
+                "IsVideoOn" => state.IsVideoOn ? "mdi:camera" : "mdi:camera-off",
+                "IsHandRaised" => state.IsHandRaised ? "mdi:hand-back-left" : "mdi:hand-back-left-off",
+                "IsInMeeting" => state.IsInMeeting ? "mdi:account-group" : "mdi:account-off", // Example icons
+                "IsRecordingOn" => state.IsRecordingOn ? "mdi:record-rec" : "mdi:record",
+                "IsBackgroundBlurred" => state.IsBackgroundBlurred ? "mdi:blur" : "mdi:blur-off",
+                "IsSharing" => state.IsSharing ? "mdi:screen-share" : "mdi:screen-share-off", // Example icons
+                "HasUnreadMessages" => state.HasUnreadMessages ? "mdi:message-alert" : "mdi:message-outline", // Example icons
+                _ => "mdi:eye"
+            };
+        }
+
+        private async void PublishSensorState(MeetingUpdate meetingUpdate)
+        {
+            var statePayload = new
+            {
+                IsMuted = meetingUpdate.MeetingState.IsMuted, // Access through MeetingState
+                IsVideoOn = meetingUpdate.MeetingState.IsVideoOn
+                // ... other properties ...
+            };
+
+            string jsonStatePayload = JsonConvert.SerializeObject(statePayload);
+
+            try
+            {
+                string stateTopic = $"homeassistant/sensor/{Mqtttopic.ToLower().Replace(" ", "_")}sensor/state";
+                await mqttClientWrapper.PublishAsync(stateTopic, jsonStatePayload, retain: true);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine("Error publishing MQTT state: {0}", ex.Message);
+            }
+        }
+
 
 
         private void SaveSettings()
@@ -259,7 +410,7 @@ namespace TEAMS2HA
             _settings.MqttUsername = MqttUserNameBox.Text;
             _settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
             _settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
-           
+
             _settings.TeamsToken = TeamsApiKeyBox.Text;
             _settings.Theme = isDarkTheme ? "Dark" : "Light";
 
@@ -392,10 +543,10 @@ namespace TEAMS2HA
         private async void TestMQTTConnection_Click(object sender, RoutedEventArgs e)
         {
             // Get the Homeassistant token from the HomeassistantTokenBox
-           // _homeassistantToken = HomeassistantTokenBox.Text;
+            // _homeassistantToken = HomeassistantTokenBox.Text;
 
             // If the token is empty or null, return and do nothing
-           
+
         }
 
         // This method is called when the TestTeamsConnection button is clicked
@@ -454,12 +605,12 @@ namespace TEAMS2HA
         {
             if (mqttClientWrapper == null)
             {
-                MQTTConnectionStatus.Text = "MQTT Client Not Initialized";
+                Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Client Not Initialized");
                 return;
             }
 
             int retryCount = 0;
-            int maxRetries = 5;
+            const int maxRetries = 5;
 
             while (retryCount < maxRetries && !mqttClientWrapper.IsConnected)
             {
@@ -467,7 +618,6 @@ namespace TEAMS2HA
                 {
                     await mqttClientWrapper.ConnectAsync();
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
-
                     return; // Exit the method if connected
                 }
                 catch (Exception ex)
@@ -481,6 +631,7 @@ namespace TEAMS2HA
 
             Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected (Failed to connect)");
         }
+
 
 
 

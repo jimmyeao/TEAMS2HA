@@ -88,16 +88,31 @@ namespace TEAMS2HA.API
         }
 
 
-        public async Task PublishAsync(string topic, string payload)
+        public async Task PublishAsync(string topic, string payload, bool retain = false)
         {
-            var message = new MqttApplicationMessageBuilder()
-                .WithTopic(topic)
-                .WithPayload(payload)
-                .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce)
-                .Build();
+            try
+            {
+                Debug.WriteLine($"Publishing to topic: {topic}");
+                Debug.WriteLine($"Payload: {payload}");
+                Debug.WriteLine($"Retain flag: {retain}");
 
-            await _mqttClient.PublishAsync(message);
+                var message = new MqttApplicationMessageBuilder()
+                    .WithTopic(topic)
+                    .WithPayload(payload)
+                    .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithRetainFlag(retain)
+                    .Build();
+
+                await _mqttClient.PublishAsync(message);
+                Debug.WriteLine("Publish successful.");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error during MQTT publish: {ex.Message}");
+                // Depending on the severity, you might want to rethrow the exception or handle it here.
+            }
         }
+
 
         public async Task SubscribeAsync(string topic)
         {

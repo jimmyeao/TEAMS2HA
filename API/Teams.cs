@@ -248,7 +248,7 @@ namespace TEAMS2HA.API
                     State.Instance.issharing = "Not Sharing";
                 }
                 TeamsUpdateReceived?.Invoke(this, new TeamsUpdateEventArgs { MeetingUpdate = meetingUpdate });
-                // need to edit state class to add handraised, recording, and backgroundblur
+              
             }
         }
 
