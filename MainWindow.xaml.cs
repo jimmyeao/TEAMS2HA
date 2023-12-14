@@ -12,6 +12,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
+
 using System.Windows;
 using TEAMS2HA.API;
 
@@ -72,6 +73,11 @@ namespace TEAMS2HA
             }
         }
 
+        [JsonIgnore]
+        public string MqttPassword { get; set; }
+
+        [JsonIgnore]
+        public string PlainTeamsToken { get; set; }
         // Properties
         public string EncryptedMqttPassword { get; set; }
 
@@ -98,9 +104,20 @@ namespace TEAMS2HA
         // Save settings to file
         public void SaveSettingsToFile()
         {
+            // Encrypt sensitive data
+            if (!String.IsNullOrEmpty(this.MqttPassword))
+            {
+                this.EncryptedMqttPassword = CryptoHelper.EncryptString(this.MqttPassword);
+            }
+            if (!String.IsNullOrEmpty(this.PlainTeamsToken))
+            {
+                this.TeamsToken = CryptoHelper.EncryptString(this.PlainTeamsToken);
+            }
+            // Serialize and save
             string json = JsonConvert.SerializeObject(this, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
         }
+
 
         #endregion Public Methods
 
@@ -113,12 +130,23 @@ namespace TEAMS2HA
             {
                 string json = File.ReadAllText(_settingsFilePath);
                 JsonConvert.PopulateObject(json, this);
+
+                // Decrypt sensitive data
+                if (!String.IsNullOrEmpty(this.EncryptedMqttPassword))
+                {
+                    this.MqttPassword = CryptoHelper.DecryptString(this.EncryptedMqttPassword);
+                }
+                if (!String.IsNullOrEmpty(this.TeamsToken))
+                {
+                    this.PlainTeamsToken = CryptoHelper.DecryptString(this.TeamsToken);
+                }
             }
             else
             {
                 // Set default values if the file does not exist
             }
         }
+
 
         #endregion Private Methods
     }
@@ -195,7 +223,7 @@ namespace TEAMS2HA
                 "TEAMS2HA",
                 _settings.MqttAddress,
                 _settings.MqttUsername,
-                _settings.EncryptedMqttPassword
+                _settings.MqttPassword
             );
 
             // Set the action to be performed when a new token is updated
@@ -520,7 +548,7 @@ namespace TEAMS2HA
 
         private async Task initializeteamsconnection()
         {
-            string teamsToken = _settings.TeamsToken;
+            string teamsToken = _settings.PlainTeamsToken;
             var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
 
             // Initialize the WebSocketClient only if it's not already created
@@ -586,9 +614,9 @@ namespace TEAMS2HA
             RunAtWindowsBootCheckBox.IsChecked = _settings.RunAtWindowsBoot;
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
             MqttUserNameBox.Text = _settings.MqttUsername;
-            MQTTPasswordBox.Text = _settings.EncryptedMqttPassword;
+            MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
-            if (_settings.TeamsToken == null)
+            if (_settings.PlainTeamsToken == null)
             {
                 TeamsApiKeyBox.Text = "Not Paired";
                 PairButton.IsEnabled = true;
@@ -729,13 +757,13 @@ namespace TEAMS2HA
             bool mqttSettingsChanged =
                 settings.MqttAddress != MqttAddress.Text ||
                 settings.MqttUsername != MqttUserNameBox.Text ||
-                settings.EncryptedMqttPassword != MQTTPasswordBox.Text;
+                settings.MqttPassword != MQTTPasswordBox.Password;
 
             settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
             settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
             settings.MqttAddress = MqttAddress.Text;
             settings.MqttUsername = MqttUserNameBox.Text;
-            settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
+            settings.MqttPassword = MQTTPasswordBox.Password;
             settings.Theme = isDarkTheme ? "Dark" : "Light";
 
             // Save the updated settings to file
@@ -755,7 +783,7 @@ namespace TEAMS2HA
                     "TEAMS2HA",
                     _settings.MqttAddress,
                     _settings.MqttUsername,
-                    _settings.EncryptedMqttPassword
+                    _settings.MqttPassword
                 );
                 _ = InitializeMQTTConnection();
                 Log.Debug("SaveSettings_Click: MQTT Settings Changed and initialze called");
@@ -892,9 +920,9 @@ namespace TEAMS2HA
             else if (!_teamsClient.IsConnected)
             {
                 // If the client exists but is not connected, try reconnecting
-                await _teamsClient.StartConnectionAsync(new Uri($"ws://localhost:8124?token={_settings.TeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26"));
+                await _teamsClient.StartConnectionAsync(new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26"));
             }
-            else if (_settings.TeamsToken == null)
+            else if (_settings.PlainTeamsToken == null)
             {
                 // If connected but not paired, attempt to pair
                 await _teamsClient.PairWithTeamsAsync();

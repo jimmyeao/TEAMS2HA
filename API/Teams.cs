@@ -94,7 +94,7 @@ namespace TEAMS2HA.API
                     return;
                 }
 
-                string token = AppSettings.Instance.TeamsToken;
+                string token = AppSettings.Instance.PlainTeamsToken;
 
                 if (!string.IsNullOrEmpty(token))
                 {
@@ -134,7 +134,7 @@ namespace TEAMS2HA.API
                 {
                     var response = await _pairingResponseTaskSource.Task;
                     var newToken = JsonConvert.DeserializeObject<TokenUpdate>(response).NewToken;
-                    AppSettings.Instance.TeamsToken = newToken;
+                    AppSettings.Instance.PlainTeamsToken = newToken;
                     AppSettings.Instance.SaveSettingsToFile();
 
                     _updateTokenAction?.Invoke(newToken); // Invoke the action to update UI
@@ -194,13 +194,13 @@ namespace TEAMS2HA.API
                 _pairingResponseTaskSource?.SetResult(message);
                 Log.Information("Result Message {message}", message);
                 var tokenUpdate = JsonConvert.DeserializeObject<TokenUpdate>(message);
-                AppSettings.Instance.TeamsToken = tokenUpdate.NewToken;
+                AppSettings.Instance.PlainTeamsToken = tokenUpdate.NewToken;
                 AppSettings.Instance.SaveSettingsToFile();
-                Log.Debug($"Token Updated: {AppSettings.Instance.TeamsToken}");
+                Log.Debug($"Token Updated: {AppSettings.Instance.PlainTeamsToken}");
                 // Update the UI on the main thread
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    _updateTokenAction?.Invoke(AppSettings.Instance.TeamsToken);
+                    _updateTokenAction?.Invoke(AppSettings.Instance.PlainTeamsToken);
                 });
             }
             else if (message.Contains("meetingPermissions")) // Replace with actual keyword/structure
