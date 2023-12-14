@@ -2,6 +2,7 @@
 using MQTTnet.Client;
 using MQTTnet.Protocol;
 using Newtonsoft.Json;
+using Serilog;
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -12,7 +13,6 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Timers;
 using System.Windows;
-using Serilog;
 using TEAMS2HA.API;
 
 namespace TEAMS2HA
@@ -42,6 +42,8 @@ namespace TEAMS2HA
 
         private AppSettings _settings;
 
+        private bool teamspaired = false;
+
         private string _settingsFilePath;
 
         private string _teamsApiKey;
@@ -51,7 +53,7 @@ namespace TEAMS2HA
         private string deviceid;
 
         private bool isDarkTheme = false;
-
+        private Action<string> _updateTokenAction;
         private MqttClientWrapper mqttClientWrapper;
 
         private System.Timers.Timer mqttKeepAliveTimer;
@@ -71,6 +73,7 @@ namespace TEAMS2HA
 
         public MainWindow()
         {
+            
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
             LoggingConfig.Configure();
             var appDataFolder = Path.Combine(localAppData, "TEAMS2HA");
@@ -92,6 +95,14 @@ namespace TEAMS2HA
                 _settings.MqttUsername,
                 _settings.EncryptedMqttPassword
             );
+            _updateTokenAction = newToken =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    TeamsApiKeyBox.Text = "Paired";
+                    PairButton.IsEnabled = false;
+                });
+            };
             InitializeConnections();
             mqttKeepAliveTimer = new System.Timers.Timer(60000); // Set interval to 60 seconds (60000 ms)
             mqttKeepAliveTimer.Elapsed += OnTimedEvent;
@@ -102,7 +113,6 @@ namespace TEAMS2HA
             {
                 HandleIncomingCommand(this, e);
             };
-
         }
 
         #endregion Public Constructors
@@ -125,7 +135,13 @@ namespace TEAMS2HA
                 return;
                 Log.Debug("MQTT Client Not Initialized");
             }
-
+            //check we have at least an mqtt server address
+            if (string.IsNullOrEmpty(_settings.MqttAddress))
+            {
+                Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Server Address Not Set");
+                Log.Debug("MQTT Server Address Not Set");
+                return;
+            }
             int retryCount = 0;
             const int maxRetries = 5;
 
@@ -138,12 +154,25 @@ namespace TEAMS2HA
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     SetupMqttSensors();
                     Log.Debug("MQTT Client Connected");
+                    // Ensure this is executed on the UI thread
+                    Dispatcher.Invoke(() =>
+                    {
+                        if (mqttClientWrapper.IsConnected)
+                        {
+                            TestMQTTConnection.IsEnabled = false;
+                        }
+                        else
+                        {
+                            TestMQTTConnection.IsEnabled = true;
+                        }
+                    });
+
                     return; // Exit the method if connected
                 }
                 catch (Exception ex)
                 {
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = $"MQTT Status: Disconnected (Retry {retryCount + 1})");
-                    
+
                     Log.Debug("MQTT Retrty Count {count} {message}", retryCount, ex.Message);
                     retryCount++;
                     await Task.Delay(2000); // Wait for 2 seconds before retrying
@@ -194,76 +223,6 @@ namespace TEAMS2HA
         #endregion Protected Methods
 
         #region Private Methods
-        private void HandleIncomingCommand(object sender, MqttApplicationMessageReceivedEventArgs e)
-        {
-            string topic = e.ApplicationMessage.Topic;
-            Log.Debug("HandleIncomingCommand: MQTT Topic {topic}", topic);
-            // Check if it's a command topic and handle accordingly
-            if (topic.StartsWith("homeassistant/switch/") && topic.EndsWith("/set"))
-            {
-                string command = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
-                // Parse and handle the command
-                HandleSwitchCommand(topic, command);
-
-            }
-        }
-        private async void SetupMqttSensors()
-        {
-            // Create a dummy MeetingUpdate with default values
-            var dummyMeetingUpdate = new MeetingUpdate
-            {
-                MeetingState = new MeetingState
-                {
-                    IsMuted = false,
-                    IsVideoOn = false,
-                    IsHandRaised = false,
-                    IsInMeeting = false,
-                    IsRecordingOn = false,
-                    IsBackgroundBlurred = false,
-                    IsSharing = false,
-                    HasUnreadMessages = false
-                }
-            };
-
-            // Call PublishConfigurations with the dummy MeetingUpdate
-            await PublishConfigurations(dummyMeetingUpdate, _settings);
-        }
-
-
-        private async void HandleSwitchCommand(string topic, string command)
-        {
-            // Determine which switch is being controlled based on the topic
-            string switchName = topic.Split('/')[2]; // Assuming topic format is "homeassistant/switch/{switchName}/set"
-            int underscoreIndex = switchName.IndexOf('_');
-            if (underscoreIndex != -1 && underscoreIndex < switchName.Length - 1)
-            {
-                switchName = switchName.Substring(underscoreIndex + 1);
-            }
-            string jsonMessage = "";
-            switch (switchName)
-            {
-                case "ismuted":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-                case "isvideoon":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-                case "isbackgroundblurred":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-                case "ishandraised":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-
-                    // Add other cases as needed
-            }
-
-            if (!string.IsNullOrEmpty(jsonMessage))
-            {
-                // Send the message to Teams
-                await _teamsClient.SendMessageAsync(jsonMessage);
-            }
-        }
 
         private void ApplyTheme(string theme)
         {
@@ -343,28 +302,36 @@ namespace TEAMS2HA
         {
             return sensor switch
             {
-                // If the sensor is "IsMuted", return "mdi:microphone-off" if state.IsMuted is true, otherwise return "mdi:microphone"
+                // If the sensor is "IsMuted", return "mdi:microphone-off" if state.IsMuted is true,
+                // otherwise return "mdi:microphone"
                 "IsMuted" => state.IsMuted ? "mdi:microphone-off" : "mdi:microphone",
 
-                // If the sensor is "IsVideoOn", return "mdi:camera" if state.IsVideoOn is true, otherwise return "mdi:camera-off"
+                // If the sensor is "IsVideoOn", return "mdi:camera" if state.IsVideoOn is true,
+                // otherwise return "mdi:camera-off"
                 "IsVideoOn" => state.IsVideoOn ? "mdi:camera" : "mdi:camera-off",
 
-                // If the sensor is "IsHandRaised", return "mdi:hand-back-left" if state.IsHandRaised is true, otherwise return "mdi:hand-back-left-off"
+                // If the sensor is "IsHandRaised", return "mdi:hand-back-left" if
+                // state.IsHandRaised is true, otherwise return "mdi:hand-back-left-off"
                 "IsHandRaised" => state.IsHandRaised ? "mdi:hand-back-left" : "mdi:hand-back-left-off",
 
-                // If the sensor is "IsInMeeting", return "mdi:account-group" if state.IsInMeeting is true, otherwise return "mdi:account-off"
+                // If the sensor is "IsInMeeting", return "mdi:account-group" if state.IsInMeeting
+                // is true, otherwise return "mdi:account-off"
                 "IsInMeeting" => state.IsInMeeting ? "mdi:account-group" : "mdi:account-off",
 
-                // If the sensor is "IsRecordingOn", return "mdi:record-rec" if state.IsRecordingOn is true, otherwise return "mdi:record"
+                // If the sensor is "IsRecordingOn", return "mdi:record-rec" if state.IsRecordingOn
+                // is true, otherwise return "mdi:record"
                 "IsRecordingOn" => state.IsRecordingOn ? "mdi:record-rec" : "mdi:record",
 
-                // If the sensor is "IsBackgroundBlurred", return "mdi:blur" if state.IsBackgroundBlurred is true, otherwise return "mdi:blur-off"
+                // If the sensor is "IsBackgroundBlurred", return "mdi:blur" if
+                // state.IsBackgroundBlurred is true, otherwise return "mdi:blur-off"
                 "IsBackgroundBlurred" => state.IsBackgroundBlurred ? "mdi:blur" : "mdi:blur-off",
 
-                // If the sensor is "IsSharing", return "mdi:monitor-share" if state.IsSharing is true, otherwise return "mdi:monitor-off"
+                // If the sensor is "IsSharing", return "mdi:monitor-share" if state.IsSharing is
+                // true, otherwise return "mdi:monitor-off"
                 "IsSharing" => state.IsSharing ? "mdi:monitor-share" : "mdi:monitor-off",
 
-                // If the sensor is "HasUnreadMessages", return "mdi:message-alert" if state.HasUnreadMessages is true, otherwise return "mdi:message-outline"
+                // If the sensor is "HasUnreadMessages", return "mdi:message-alert" if
+                // state.HasUnreadMessages is true, otherwise return "mdi:message-outline"
                 "HasUnreadMessages" => state.HasUnreadMessages ? "mdi:message-alert" : "mdi:message-outline",
 
                 // If the sensor does not match any of the above cases, return "mdi:eye"
@@ -395,6 +362,57 @@ namespace TEAMS2HA
             }
         }
 
+        private void HandleIncomingCommand(object sender, MqttApplicationMessageReceivedEventArgs e)
+        {
+            string topic = e.ApplicationMessage.Topic;
+            Log.Debug("HandleIncomingCommand: MQTT Topic {topic}", topic);
+            // Check if it's a command topic and handle accordingly
+            if (topic.StartsWith("homeassistant/switch/") && topic.EndsWith("/set"))
+            {
+                string command = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                // Parse and handle the command
+                HandleSwitchCommand(topic, command);
+            }
+        }
+
+        private async void HandleSwitchCommand(string topic, string command)
+        {
+            // Determine which switch is being controlled based on the topic
+            string switchName = topic.Split('/')[2]; // Assuming topic format is "homeassistant/switch/{switchName}/set"
+            int underscoreIndex = switchName.IndexOf('_');
+            if (underscoreIndex != -1 && underscoreIndex < switchName.Length - 1)
+            {
+                switchName = switchName.Substring(underscoreIndex + 1);
+            }
+            string jsonMessage = "";
+            switch (switchName)
+            {
+                case "ismuted":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "isvideoon":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "isbackgroundblurred":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "ishandraised":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                    // Add other cases as needed
+            }
+
+            if (!string.IsNullOrEmpty(jsonMessage))
+            {
+                // Send the message to Teams
+                await _teamsClient.SendMessageAsync(jsonMessage);
+            }
+        }
+
         private void InitializeMqttPublishTimer()
         {
             mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
@@ -403,32 +421,52 @@ namespace TEAMS2HA
             mqttPublishTimer.Enabled = true; // Enable the timer
             Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
         }
+       
+        private void UpdateTokenUI(string newToken)
+        {
+            // Update the Teams token textbox and change status to "Paired"
+            TeamsApiKeyBox.Text = "Paired";
+
+            // Disable the Pair button
+            PairButton.IsEnabled = false;
+
+            // Log the new token
+            Log.Debug($"Token updated in UI: {newToken}");
+        }
+
+
 
         private async Task initializeteamsconnection()
         {
-            if (_teamsClient != null && _teamsClient.IsConnected)
-            {
-                Log.Debug("initializeteamsconnection: Teams Client is already connected");
-                return; //
-               
-            }
             string teamsToken = _settings.TeamsToken;
-            if (string.IsNullOrEmpty(teamsToken))
-            {
-                Log.Debug("initializeteamsconnection: Teams Token is not set");
-                // If the Teams token is not set, then we can't connect to Teams
-                return;
-                
-            }
-            // Initialize the Teams WebSocket connection
-            //var uri = new Uri("ws://localhost:8124?protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
             var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
-            var state = new API.State();  // You would initialize this as necessary
-            _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
-            _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
-            _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
-            Log.Debug("initializeteamsconnection: Teams Client is connected");
+
+            // Initialize the WebSocketClient only if it's not already created
+            if (_teamsClient == null)
+            {
+                _teamsClient = new API.WebSocketClient(
+                    uri,
+                    new API.State(),
+                    _settingsFilePath,
+                    _updateTokenAction // Pass the action here
+                );
+                _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+                _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+            }
+
+            // Connect if not already connected
+            if (!_teamsClient.IsConnected)
+            {
+                await _teamsClient.StartConnectionAsync(uri);
+            }
+            else
+            {
+                Log.Debug("initializeteamsconnection: WebSocketClient is already connected or in the process of connecting");
+            }
         }
+
+
+
 
         private AppSettings LoadSettings()
         {
@@ -454,7 +492,17 @@ namespace TEAMS2HA
             MqttUserNameBox.Text = _settings.MqttUsername;
             MQTTPasswordBox.Text = _settings.EncryptedMqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
-            TeamsApiKeyBox.Text = _settings.TeamsToken;
+            if(_settings.TeamsToken == null)
+            {
+                TeamsApiKeyBox.Text = "Not Paired";
+                PairButton.IsEnabled = true;
+            }
+            else
+            {
+                TeamsApiKeyBox.Text ="Paired";
+                PairButton.IsEnabled = false;
+            }
+           
             ApplyTheme(_settings.Theme);
             if (RunMinimisedCheckBox.IsChecked == true)
             {// Start the window minimized and hide it
@@ -502,7 +550,6 @@ namespace TEAMS2HA
         {
             // Check the MQTT connection
             CheckMqttConnection();
-
         }
 
         private async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings)
@@ -579,8 +626,6 @@ namespace TEAMS2HA
             // Repeat for other entities like video
         }
 
-
-
         private bool SaveSettings()
         {
             var oldMqttAddress = _settings.MqttAddress;
@@ -592,17 +637,14 @@ namespace TEAMS2HA
             _settings.MqttUsername = MqttUserNameBox.Text;
             _settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
             _settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
-
-            _settings.TeamsToken = TeamsApiKeyBox.Text;
             _settings.Theme = isDarkTheme ? "Dark" : "Light";
-          
+
             string json = JsonConvert.SerializeObject(_settings, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
             Log.Debug("SaveSettings: Settings file saved");
             return oldMqttAddress != _settings.MqttAddress ||
-         oldMqttUsername != _settings.MqttUsername ||
-         oldMqttPassword != _settings.EncryptedMqttPassword;
-            
+                 oldMqttUsername != _settings.MqttUsername ||
+                 oldMqttPassword != _settings.EncryptedMqttPassword;
         }
 
         private void SaveSettings_Click(object sender, RoutedEventArgs e)
@@ -619,6 +661,20 @@ namespace TEAMS2HA
                 );
                 _ = InitializeMQTTConnection();
                 Log.Debug("SaveSettings_Click: MQTT Settings Changed and initialze called");
+                //if mqtt is connected, disable the test mqtt connection button
+                // Ensure this is executed on the UI thread
+                Dispatcher.Invoke(() =>
+                {
+                    if (mqttClientWrapper.IsConnected)
+                    {
+                        TestMQTTConnection.IsEnabled = false;
+                    }
+                    else
+                    {
+                        TestMQTTConnection.IsEnabled = true;
+                    }
+                });
+
             }
         }
 
@@ -648,17 +704,37 @@ namespace TEAMS2HA
             Log.Debug("SetStartupAsync: Startup set");
         }
 
+        private async void SetupMqttSensors()
+        {
+            // Create a dummy MeetingUpdate with default values
+            var dummyMeetingUpdate = new MeetingUpdate
+            {
+                MeetingState = new MeetingState
+                {
+                    IsMuted = false,
+                    IsVideoOn = false,
+                    IsHandRaised = false,
+                    IsInMeeting = false,
+                    IsRecordingOn = false,
+                    IsBackgroundBlurred = false,
+                    IsSharing = false,
+                    HasUnreadMessages = false
+                }
+            };
+
+            // Call PublishConfigurations with the dummy MeetingUpdate
+            await PublishConfigurations(dummyMeetingUpdate, _settings);
+        }
+
         private async void TeamsClient_TeamsUpdateReceived(object sender, WebSocketClient.TeamsUpdateEventArgs e)
         {
             if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
             {
-                
                 // Store the latest update
                 _latestMeetingUpdate = e.MeetingUpdate;
                 Log.Debug("TeamsClient_TeamsUpdateReceived: Teams Update Received {update}", _latestMeetingUpdate);
                 // Update sensor configurations
                 await PublishConfigurations(_latestMeetingUpdate, _settings);
-
             }
         }
 
@@ -681,7 +757,21 @@ namespace TEAMS2HA
                 Log.Debug("TestMQTTConnection_Click: MQTT Client Not Initialized");
                 return;
             }
-
+            //we need to test to see if we are already connected
+            if (mqttClientWrapper.IsConnected)
+            {
+                Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                Log.Debug("TestMQTTConnection_Click: MQTT Client Connected");
+                return;
+            }
+            //make sure we have an mqtt address
+            if (string.IsNullOrEmpty(_settings.MqttAddress))
+            {
+                Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Server Address Not Set");
+                Log.Debug("TestMQTTConnection_Click: MQTT Server Address Not Set");
+                return;
+            }
+            //we are not connected so lets try to connect
             int retryCount = 0;
             const int maxRetries = 5;
 
@@ -711,20 +801,42 @@ namespace TEAMS2HA
         {
             if (_teamsClient == null || !_teamsClient.IsConnected)
             {
-                string teamsToken = _settings.TeamsToken;
-                // If Teams is not paired, initiate pairing process
-                Log.Debug("TestTeamsConnection_Click: Teams Client Not Connected");
-                var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
-                var state = new API.State();  // Initialize state
-                _teamsClient = new API.WebSocketClient(uri, state, _settingsFilePath, token => this.Dispatcher.Invoke(() => TeamsApiKeyBox.Text = token));
-                _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
-                Log.Debug("TestTeamsConnection_Click: Teams Client Connected");
-            }
-            else
-            {
-                // Teams is already paired, handle accordingly
+                // Initialize and connect the WebSocket client
+                initializeteamsconnection();
             }
         }
+       
+        //private void InitializeAndPairTeamsClient()
+        //{
+        //    // Logic to initialize and pair the _teamsClient
+        //    // Example:
+        //    string teamsToken = _settings.TeamsToken;
+        //    var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+        //    var state = new API.State();
+        //    // When initializing the WebSocketClient
+        //    _teamsClient = new API.WebSocketClient(
+        //        uri,
+        //        new API.State(),
+        //        _settingsFilePath,
+        //        token => this.Dispatcher.Invoke(() =>
+        //        {
+        //            // Update the token in settings
+        //            _settings.TeamsToken = token;
+
+        //            // Update UI elements
+        //            TeamsApiKeyBox.Text = "Paired";
+        //            PairButton.IsEnabled = false;
+
+        //            // Log the new token
+        //            Log.Debug($"Token updated in UI: {token}");
+        //        })
+        //    );
+        //    _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+        //    _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+
+        //    // Pairing logic
+        //    _teamsClient.PairWithTeamsAsync();
+        //}
 
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
@@ -739,5 +851,38 @@ namespace TEAMS2HA
         }
 
         #endregion Private Methods
+
+        private void LogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Path to the log file
+            string logFile = LoggingConfig.logFileFullPath;
+
+            if (File.Exists(logFile))
+            {
+                try
+                {
+                    // Use ProcessStartInfo to start the default application for .log files
+                    ProcessStartInfo processStartInfo = new ProcessStartInfo
+                    {
+                        FileName = logFile,
+                        UseShellExecute = true
+                    };
+
+                    // Start the process
+                    Process.Start(processStartInfo);
+                }
+                catch (Exception ex)
+                {
+                    // Handle exceptions (e.g., log or show a message to the user)
+                    Log.Error($"Error opening log file: {ex.Message}");
+                }
+            }
+            else
+            {
+                // Handle the case where the log file does not exist
+                Log.Error("Log file does not exist.");
+            }
+        }
+
     }
 }

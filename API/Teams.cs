@@ -42,12 +42,20 @@ namespace TEAMS2HA.API
             _settingsFilePath = settingsFilePath;
             _appSettings = LoadAppSettings(settingsFilePath);
             
-            Task.Run(() => ConnectAsync(uri));
+           // Task.Run(() => ConnectAsync(uri));
             Log.Debug("Websocket Client Started");
             // Subscribe to the MessageReceived event
             MessageReceived += OnMessageReceived;
+            _updateTokenAction = updateTokenAction;
         }
-
+        // Public method to initiate connection
+        public async Task StartConnectionAsync(Uri uri)
+        {
+            if (!_isConnected && _clientWebSocket.State != WebSocketState.Open)
+            {
+                await ConnectAsync(uri);
+            }
+        }
         public event Action<bool> ConnectionStatusChanged;
 
         public bool IsConnected
@@ -106,10 +114,18 @@ namespace TEAMS2HA.API
             { "isBackgroundBlurred", false },
         };
 
-        private async Task ConnectAsync(Uri uri)
+        public async Task ConnectAsync(Uri uri)
         {
             try
             {
+                // Check if the WebSocket is already connecting or connected
+                if (_clientWebSocket.State != WebSocketState.None &&
+                    _clientWebSocket.State != WebSocketState.Closed)
+                {
+                    Log.Debug("ConnectAsync: WebSocket is already connecting or connected.");
+                    return;
+                }
+
                 string token = _appSettings.TeamsToken;
 
                 if (!string.IsNullOrEmpty(token))
@@ -129,11 +145,15 @@ namespace TEAMS2HA.API
             {
                 IsConnected = false;
                 Log.Error(ex, "ConnectAsync: Error connecting to WebSocket");
-                // Other error handling...
             }
 
+            // Start receiving messages
             await ReceiveLoopAsync();
         }
+
+
+
+
         private AppSettings LoadAppSettings(string filePath)
         {
             if (File.Exists(filePath))
@@ -151,13 +171,25 @@ namespace TEAMS2HA.API
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
         }
+        private bool IsPairingResponse(string message)
+        {
+            // Implement logic to determine if the message is a response to the pairing request
+            // This could be based on message content, format, etc.
+            return message.Contains("tokenRefresh");
+        }
         private void OnMessageReceived(object sender, string message)
         {
 
             Log.Debug($"Message Received: {message}");
-
+            if (IsPairingResponse(message))
+            {
+                // Complete the task with the received message
+                _pairingResponseTaskSource?.SetResult(message);
+            }
             if (message.Contains("tokenRefresh"))
             {
+                _pairingResponseTaskSource?.SetResult(message);
+                Log.Information("Result Message {message}", message);
                 var tokenUpdate = JsonConvert.DeserializeObject<TokenUpdate>(message);
                 _appSettings.TeamsToken = tokenUpdate.NewToken;
                 SaveAppSettings(_appSettings);
@@ -168,15 +200,11 @@ namespace TEAMS2HA.API
                     _updateTokenAction?.Invoke(_appSettings.TeamsToken);
                 });
             }
-            else if (message.Contains("Success")) // Replace with actual keyword/structure
+            else if (message.Contains("meetingPermissions")) // Replace with actual keyword/structure
             {
-                Log.Debug("Pairing Success");
+                Log.Debug("Pairing...");
                 // Update UI, save settings, reinitialize connection as needed
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    //update the texbox with the new token
-
-                });
+               
                 
                     // Update the Message property of the State class
                     var settings = new JsonSerializerSettings
@@ -280,13 +308,24 @@ namespace TEAMS2HA.API
                 string pairingCommand = "{\"action\":\"pair\",\"parameters\":{},\"requestId\":1}";
                 await SendMessageAsync(pairingCommand);
 
-                // Await the response
-                string response = await _pairingResponseTaskSource.Task;
-                 
-               Log.Debug($"Pairing response: {response}");
-                // Handle the response as needed
+                var responseTask = await Task.WhenAny(_pairingResponseTaskSource.Task, Task.Delay(TimeSpan.FromSeconds(30)));
+
+                if (responseTask == _pairingResponseTaskSource.Task)
+                {
+                    var response = await _pairingResponseTaskSource.Task;
+                    var newToken = JsonConvert.DeserializeObject<TokenUpdate>(response).NewToken;
+                    _appSettings.TeamsToken = newToken;
+                    SaveAppSettings(_appSettings);
+
+                    _updateTokenAction?.Invoke(newToken); // Invoke the action to update UI
+                }
+                else
+                {
+                    Log.Warning("Pairing response timed out.");
+                }
             }
         }
+
 
 
         private async Task ReceiveLoopAsync(CancellationToken cancellationToken = default)
