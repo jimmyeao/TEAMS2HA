@@ -168,7 +168,7 @@ namespace TEAMS2HA
             mqttKeepAliveTimer.AutoReset = true;
             mqttKeepAliveTimer.Enabled = true;
             InitializeMqttPublishTimer();
-            mqttClientWrapper.MessageReceived += HandleIncomingCommand;
+            
 
         }
 
@@ -212,7 +212,7 @@ namespace TEAMS2HA
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     SetupMqttSensors();
                     Log.Debug("MQTT Client Connected");
-                                    
+                    mqttClientWrapper.MessageReceived += HandleIncomingCommand;
 
                     return; // Exit the method if connected
                 }
