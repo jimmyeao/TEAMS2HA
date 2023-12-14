@@ -160,7 +160,10 @@ namespace TEAMS2HA
         private MeetingUpdate _latestMeetingUpdate;
 
         private AppSettings _settings;
-
+        private MenuItem _mqttStatusMenuItem;
+        private MenuItem _teamsStatusMenuItem;
+        private MenuItem _logMenuItem;
+        private MenuItem _aboutMenuItem;
         private string _settingsFilePath;
         private string _teamsApiKey;
         private API.WebSocketClient _teamsClient;
@@ -351,21 +354,66 @@ namespace TEAMS2HA
         #region Private Methods
         private void CreateNotifyIconContextMenu()
         {
-            // Create a context menu
             ContextMenu contextMenu = new ContextMenu();
 
-            // Create menu item for exit
+            // Show/Hide Window
+            MenuItem showHideMenuItem = new MenuItem();
+            showHideMenuItem.Header = "Show/Hide";
+            showHideMenuItem.Click += ShowHideMenuItem_Click;
+
+            // MQTT Status
+            _mqttStatusMenuItem = new MenuItem { Header = "MQTT Status: Unknown", IsEnabled = false };
+
+            // Teams Status
+            _teamsStatusMenuItem = new MenuItem { Header = "Teams Status: Unknown", IsEnabled = false };
+
+            // Logs
+            _logMenuItem = new MenuItem { Header = "View Logs" };
+            _logMenuItem.Click += LogsButton_Click; // Reuse existing event handler
+
+            // About
+            _aboutMenuItem = new MenuItem { Header = "About" };
+            _aboutMenuItem.Click += AboutMenuItem_Click;
+
+            // Exit
             MenuItem exitMenuItem = new MenuItem();
             exitMenuItem.Header = "Exit";
             exitMenuItem.Click += ExitMenuItem_Click;
 
-            // Add menu item to context menu
+            contextMenu.Items.Add(showHideMenuItem);
+            contextMenu.Items.Add(_mqttStatusMenuItem);
+            contextMenu.Items.Add(_teamsStatusMenuItem);
+            contextMenu.Items.Add(_logMenuItem);
+            contextMenu.Items.Add(_aboutMenuItem);
+            contextMenu.Items.Add(new Separator()); // Separator before exit
             contextMenu.Items.Add(exitMenuItem);
 
-            // Assign context menu to NotifyIcon
             MyNotifyIcon.ContextMenu = contextMenu;
         }
+        private void ShowHideMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (this.IsVisible)
+            {
+                this.Hide();
+            }
+            else
+            {
+                this.Show();
+                this.WindowState = WindowState.Normal;
+            }
+        }
 
+        private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            // Show about information
+            MessageBox.Show("TEAMS2HA\nVersion: 1.0\nDeveloped by Jimmy White", "About", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void UpdateStatusMenuItems()
+        {
+            _mqttStatusMenuItem.Header = mqttClientWrapper != null && mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
+            _teamsStatusMenuItem.Header = _teamsClient != null && _teamsClient.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
+        }
         private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
             // Handle the click event for the exit menu item (Close the application)
@@ -657,6 +705,7 @@ namespace TEAMS2HA
                 this.Hide();
                 MyNotifyIcon.Visibility = Visibility.Visible; // Show the NotifyIcon in the system tray
             }
+            UpdateStatusMenuItems();
         }
 
         private void MainPage_Unloaded(object sender, RoutedEventArgs e)
