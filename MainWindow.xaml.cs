@@ -215,7 +215,7 @@ namespace TEAMS2HA
 
             // Initialize the main window
             this.InitializeComponent();
-
+            SetWindowTitle();
             // Add event handler for when the main window is loaded
             this.Loaded += MainPage_Loaded;
 
@@ -352,6 +352,12 @@ namespace TEAMS2HA
         #endregion Protected Methods
 
         #region Private Methods
+        private void SetWindowTitle()
+        {
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            this.Title = $"Teams2HA - Version {version}";
+        }
+
         private void CreateNotifyIconContextMenu()
         {
             ContextMenu contextMenu = new ContextMenu();
