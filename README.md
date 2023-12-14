@@ -1,4 +1,11 @@
-#Teams2HA
+Teams2HA
+
+<h1>Breaking Change Alert</h1>
+The next version is moving away from Homeassistant websockets and migrating to MQTT - the reason for this is that any HomeAssistant entities created via websockets are read only, thus we cannot do two way control.
+The entity names will also be changing (will be documented when released) and will be prefixed with the computer name of the computer running the program. This is to allow for multiple people working on Teams
+<h1>End of notice</h1>
+
+
 
 This is an agent that runs on windows and uses the Local teams API (https://support.microsoft.com/en-gb/office/connect-to-third-party-devices-in-microsoft-teams-aabca9f2-47bb-407f-9f9b-81a104a883d6?wt.mc_id=SEC-MVP-5004985) to retrieve the status of the user (In a meeting, Video On, Mute, blur etc) and push these into homeassistant sensors.
 
