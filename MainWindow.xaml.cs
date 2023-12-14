@@ -358,7 +358,7 @@ namespace TEAMS2HA
 
             // Show/Hide Window
             MenuItem showHideMenuItem = new MenuItem();
-            showHideMenuItem.Header = "Show/Hide";
+            showHideMenuItem.Header = "Show";
             showHideMenuItem.Click += ShowHideMenuItem_Click;
 
             // MQTT Status
@@ -405,9 +405,12 @@ namespace TEAMS2HA
 
         private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            // Show about information
-            MessageBox.Show("TEAMS2HA\nVersion: 1.0\nDeveloped by Jimmy White", "About", MessageBoxButton.OK, MessageBoxImage.Information);
+            string currentTheme = _settings.Theme; // Assuming this is where the theme is stored
+            AboutWindow aboutWindow = new AboutWindow();
+            aboutWindow.Owner = this;
+            aboutWindow.ShowDialog();
         }
+
 
         private void UpdateStatusMenuItems()
         {
