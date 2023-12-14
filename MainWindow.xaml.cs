@@ -8,6 +8,8 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Windows.Controls;
+
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -189,7 +191,7 @@ namespace TEAMS2HA
 
             // Configure logging
             LoggingConfig.Configure();
-
+           
             // Create the TEAMS2HA folder in the local application data folder
             var appDataFolder = Path.Combine(localAppData, "TEAMS2HA");
             Log.Debug("Set Folder Path to {path}", appDataFolder);
@@ -217,7 +219,7 @@ namespace TEAMS2HA
             // Set the icon for the notification tray
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
-
+            CreateNotifyIconContextMenu();
             // Create a new instance of the MqttClientWrapper class
             mqttClientWrapper = new MqttClientWrapper(
                 "TEAMS2HA",
@@ -347,7 +349,28 @@ namespace TEAMS2HA
         #endregion Protected Methods
 
         #region Private Methods
+        private void CreateNotifyIconContextMenu()
+        {
+            // Create a context menu
+            ContextMenu contextMenu = new ContextMenu();
 
+            // Create menu item for exit
+            MenuItem exitMenuItem = new MenuItem();
+            exitMenuItem.Header = "Exit";
+            exitMenuItem.Click += ExitMenuItem_Click;
+
+            // Add menu item to context menu
+            contextMenu.Items.Add(exitMenuItem);
+
+            // Assign context menu to NotifyIcon
+            MyNotifyIcon.ContextMenu = contextMenu;
+        }
+
+        private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            // Handle the click event for the exit menu item (Close the application)
+            Application.Current.Shutdown();
+        }
         private void ApplyTheme(string theme)
         {
             isDarkTheme = theme == "Dark";
