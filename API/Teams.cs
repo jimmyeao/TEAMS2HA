@@ -168,14 +168,7 @@ namespace TEAMS2HA.API
         {
 
             Log.Debug($"Message Received: {message}");
-            //if (IsPairingResponse(message))
-            //{
-            //    // Complete the task with the received message if it's not already completed
-            //    if (!_pairingResponseTaskSource.Task.IsCompleted)
-            //    {
-            //        _pairingResponseTaskSource.SetResult(message);
-            //    }
-            //}
+           
             if (message.Contains("tokenRefresh"))
             {
                 _pairingResponseTaskSource?.SetResult(message);

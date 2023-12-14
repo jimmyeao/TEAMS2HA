@@ -168,10 +168,8 @@ namespace TEAMS2HA
             mqttKeepAliveTimer.AutoReset = true;
             mqttKeepAliveTimer.Enabled = true;
             InitializeMqttPublishTimer();
-            mqttClientWrapper.MessageReceived += async (e) =>
-            {
-                HandleIncomingCommand(this, e);
-            };
+            mqttClientWrapper.MessageReceived += HandleIncomingCommand;
+
         }
 
         #endregion Public Constructors
@@ -411,7 +409,7 @@ namespace TEAMS2HA
             }
         }
 
-        private void HandleIncomingCommand(object sender, MqttApplicationMessageReceivedEventArgs e)
+        private async Task HandleIncomingCommand(MqttApplicationMessageReceivedEventArgs e)
         {
             string topic = e.ApplicationMessage.Topic;
             Log.Debug("HandleIncomingCommand: MQTT Topic {topic}", topic);
