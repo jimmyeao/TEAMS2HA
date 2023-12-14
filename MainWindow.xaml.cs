@@ -19,8 +19,59 @@ namespace TEAMS2HA
 {
     public class AppSettings
     {
-        #region Public Properties
+        // Static variable for the singleton instance
+        private static AppSettings _instance;
+        private static readonly string _settingsFilePath;
 
+        // Lock object for thread-safe initialization
+        private static readonly object _lock = new object();
+
+        // Static constructor to set up file path
+        static AppSettings()
+        {
+            var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+            var appDataFolder = Path.Combine(localAppData, "TEAMS2HA");
+            Directory.CreateDirectory(appDataFolder);
+            _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
+        }
+
+        // Private constructor to prevent direct instantiation
+        private AppSettings()
+        {
+            LoadSettingsFromFile();
+        }
+
+        // Load settings from file
+        private void LoadSettingsFromFile()
+        {
+            if (File.Exists(_settingsFilePath))
+            {
+                string json = File.ReadAllText(_settingsFilePath);
+                JsonConvert.PopulateObject(json, this);
+            }
+            else
+            {
+                // Set default values if the file does not exist
+            }
+        }
+
+        // Public property to access the singleton instance
+        public static AppSettings Instance
+        {
+            get
+            {
+                lock (_lock)
+                {
+                    if (_instance == null)
+                    {
+                        _instance = new AppSettings();
+                    }
+                    return _instance;
+                }
+            }
+        }
+
+        // Properties
         public string EncryptedMqttPassword { get; set; }
         public string HomeAssistantToken { get; set; }
         public string HomeAssistantURL { get; set; }
@@ -31,8 +82,15 @@ namespace TEAMS2HA
         public string TeamsToken { get; set; }
         public string Theme { get; set; }
 
-        #endregion Public Properties
+        // Save settings to file
+        public void SaveSettingsToFile()
+        {
+            string json = JsonConvert.SerializeObject(this, Formatting.Indented);
+            File.WriteAllText(_settingsFilePath, json);
+        }
     }
+
+
 
     public partial class MainWindow : Window
     {
@@ -80,7 +138,8 @@ namespace TEAMS2HA
             Log.Debug("Set Folder Path to {path}", appDataFolder);
             Directory.CreateDirectory(appDataFolder); // Ensure the directory exists
             _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
-            _settings = LoadSettings();
+            var settings = AppSettings.Instance;
+            _settings = AppSettings.Instance;
             deviceid = System.Environment.MachineName;
             Log.Debug("Settings file path is  {path}", _settingsFilePath);
             this.InitializeComponent();
@@ -121,9 +180,10 @@ namespace TEAMS2HA
 
         public async Task InitializeConnections()
         {
+            await InitializeMQTTConnection();
             // Other initialization code...
             await initializeteamsconnection();
-            await InitializeMQTTConnection();
+           
             // Other initialization code...
         }
 
@@ -154,18 +214,7 @@ namespace TEAMS2HA
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     SetupMqttSensors();
                     Log.Debug("MQTT Client Connected");
-                    // Ensure this is executed on the UI thread
-                    Dispatcher.Invoke(() =>
-                    {
-                        if (mqttClientWrapper.IsConnected)
-                        {
-                            TestMQTTConnection.IsEnabled = false;
-                        }
-                        else
-                        {
-                            TestMQTTConnection.IsEnabled = true;
-                        }
-                    });
+                                    
 
                     return; // Exit the method if connected
                 }
@@ -422,17 +471,7 @@ namespace TEAMS2HA
             Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
         }
        
-        private void UpdateTokenUI(string newToken)
-        {
-            // Update the Teams token textbox and change status to "Paired"
-            TeamsApiKeyBox.Text = "Paired";
 
-            // Disable the Pair button
-            PairButton.IsEnabled = false;
-
-            // Log the new token
-            Log.Debug($"Token updated in UI: {newToken}");
-        }
 
 
 
@@ -468,20 +507,7 @@ namespace TEAMS2HA
 
 
 
-        private AppSettings LoadSettings()
-        {
-            if (File.Exists(_settingsFilePath))
-            {
-                string json = File.ReadAllText(_settingsFilePath);
-                return JsonConvert.DeserializeObject<AppSettings>(json);
-                Log.Debug("LoadSettings: Settings file loaded");
-            }
-            else
-            {
-                return new AppSettings(); // Defaults if file does not exist
-                Log.Debug("LoadSettings: Settings file does not exist");
-            }
-        }
+ 
 
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
@@ -628,27 +654,30 @@ namespace TEAMS2HA
 
         private bool SaveSettings()
         {
-            var oldMqttAddress = _settings.MqttAddress;
-            var oldMqttUsername = _settings.MqttUsername;
-            var oldMqttPassword = _settings.EncryptedMqttPassword;
-            _settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
-            _settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
-            _settings.MqttAddress = MqttAddress.Text;
-            _settings.MqttUsername = MqttUserNameBox.Text;
-            _settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
-            _settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
-            _settings.Theme = isDarkTheme ? "Dark" : "Light";
+            var settings = AppSettings.Instance;
 
-            string json = JsonConvert.SerializeObject(_settings, Formatting.Indented);
-            File.WriteAllText(_settingsFilePath, json);
-            Log.Debug("SaveSettings: Settings file saved");
-            return oldMqttAddress != _settings.MqttAddress ||
-                 oldMqttUsername != _settings.MqttUsername ||
-                 oldMqttPassword != _settings.EncryptedMqttPassword;
+            bool mqttSettingsChanged =
+                settings.MqttAddress != MqttAddress.Text ||
+                settings.MqttUsername != MqttUserNameBox.Text ||
+                settings.EncryptedMqttPassword != MQTTPasswordBox.Text;
+
+            settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
+            settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
+            settings.MqttAddress = MqttAddress.Text;
+            settings.MqttUsername = MqttUserNameBox.Text;
+            settings.EncryptedMqttPassword = MQTTPasswordBox.Text;
+            settings.Theme = isDarkTheme ? "Dark" : "Light";
+
+            // Save the updated settings to file
+            settings.SaveSettingsToFile();
+
+            return mqttSettingsChanged;
         }
+
 
         private void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
+            Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
             bool mqttSettingsChanged = SaveSettings();
             if (mqttSettingsChanged)
             {
@@ -662,18 +691,8 @@ namespace TEAMS2HA
                 _ = InitializeMQTTConnection();
                 Log.Debug("SaveSettings_Click: MQTT Settings Changed and initialze called");
                 //if mqtt is connected, disable the test mqtt connection button
-                // Ensure this is executed on the UI thread
-                Dispatcher.Invoke(() =>
-                {
-                    if (mqttClientWrapper.IsConnected)
-                    {
-                        TestMQTTConnection.IsEnabled = false;
-                    }
-                    else
-                    {
-                        TestMQTTConnection.IsEnabled = true;
-                    }
-                });
+              
+              
 
             }
         }
@@ -797,46 +816,27 @@ namespace TEAMS2HA
             Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect");
         }
 
-        private void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
+        private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {
-            if (_teamsClient == null || !_teamsClient.IsConnected)
+            if (_teamsClient == null)
             {
                 // Initialize and connect the WebSocket client
-                initializeteamsconnection();
+                await initializeteamsconnection();
+            }
+            else if (!_teamsClient.IsConnected)
+            {
+                // If the client exists but is not connected, try reconnecting
+                await _teamsClient.StartConnectionAsync(new Uri($"ws://localhost:8124?token={_settings.TeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26"));
+            }
+            else if(_settings.TeamsToken == null)
+            {
+                // If connected but not paired, attempt to pair
+                await _teamsClient.PairWithTeamsAsync();
             }
         }
+
+
        
-        //private void InitializeAndPairTeamsClient()
-        //{
-        //    // Logic to initialize and pair the _teamsClient
-        //    // Example:
-        //    string teamsToken = _settings.TeamsToken;
-        //    var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
-        //    var state = new API.State();
-        //    // When initializing the WebSocketClient
-        //    _teamsClient = new API.WebSocketClient(
-        //        uri,
-        //        new API.State(),
-        //        _settingsFilePath,
-        //        token => this.Dispatcher.Invoke(() =>
-        //        {
-        //            // Update the token in settings
-        //            _settings.TeamsToken = token;
-
-        //            // Update UI elements
-        //            TeamsApiKeyBox.Text = "Paired";
-        //            PairButton.IsEnabled = false;
-
-        //            // Log the new token
-        //            Log.Debug($"Token updated in UI: {token}");
-        //        })
-        //    );
-        //    _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
-        //    _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
-
-        //    // Pairing logic
-        //    _teamsClient.PairWithTeamsAsync();
-        //}
 
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)

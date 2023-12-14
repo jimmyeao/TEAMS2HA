@@ -24,7 +24,6 @@ namespace TEAMS2HA.API
             public MeetingUpdate MeetingUpdate { get; set; }
         }
         #region Private Fields
-        private AppSettings _appSettings;
         private readonly ClientWebSocket _clientWebSocket;
         private readonly State _state;
         private readonly string _settingsFilePath;
@@ -40,7 +39,7 @@ namespace TEAMS2HA.API
             _clientWebSocket = new ClientWebSocket();
             _state = state;
             _settingsFilePath = settingsFilePath;
-            _appSettings = LoadAppSettings(settingsFilePath);
+            
             
            // Task.Run(() => ConnectAsync(uri));
             Log.Debug("Websocket Client Started");
@@ -126,7 +125,7 @@ namespace TEAMS2HA.API
                     return;
                 }
 
-                string token = _appSettings.TeamsToken;
+                string token = AppSettings.Instance.TeamsToken;
 
                 if (!string.IsNullOrEmpty(token))
                 {
@@ -154,18 +153,6 @@ namespace TEAMS2HA.API
 
 
 
-        private AppSettings LoadAppSettings(string filePath)
-        {
-            if (File.Exists(filePath))
-            {
-                string json = File.ReadAllText(filePath);
-                return JsonConvert.DeserializeObject<AppSettings>(json);
-            }
-            else
-            {
-                return new AppSettings(); // Defaults if file does not exist
-            }
-        }
         private void SaveAppSettings(AppSettings settings)
         {
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
@@ -181,23 +168,26 @@ namespace TEAMS2HA.API
         {
 
             Log.Debug($"Message Received: {message}");
-            if (IsPairingResponse(message))
-            {
-                // Complete the task with the received message
-                _pairingResponseTaskSource?.SetResult(message);
-            }
+            //if (IsPairingResponse(message))
+            //{
+            //    // Complete the task with the received message if it's not already completed
+            //    if (!_pairingResponseTaskSource.Task.IsCompleted)
+            //    {
+            //        _pairingResponseTaskSource.SetResult(message);
+            //    }
+            //}
             if (message.Contains("tokenRefresh"))
             {
                 _pairingResponseTaskSource?.SetResult(message);
                 Log.Information("Result Message {message}", message);
                 var tokenUpdate = JsonConvert.DeserializeObject<TokenUpdate>(message);
-                _appSettings.TeamsToken = tokenUpdate.NewToken;
-                SaveAppSettings(_appSettings);
-                Log.Debug($"Token Updated: {_appSettings.TeamsToken}");
+                AppSettings.Instance.TeamsToken = tokenUpdate.NewToken;
+                AppSettings.Instance.SaveSettingsToFile();
+                Log.Debug($"Token Updated: {AppSettings.Instance.TeamsToken}");
                 // Update the UI on the main thread
                 Application.Current.Dispatcher.Invoke(() =>
                 {
-                    _updateTokenAction?.Invoke(_appSettings.TeamsToken);
+                    _updateTokenAction?.Invoke(AppSettings.Instance.TeamsToken);
                 });
             }
             else if (message.Contains("meetingPermissions")) // Replace with actual keyword/structure
@@ -291,7 +281,14 @@ namespace TEAMS2HA.API
                         {
                             State.Instance.issharing = "Not Sharing";
                         }
+                    try
+                    {
+
                         TeamsUpdateReceived?.Invoke(this, new TeamsUpdateEventArgs { MeetingUpdate = meetingUpdate });
+                    }catch(Exception ex)
+                    {
+                        Log.Error(ex, "Error in TeamsUpdateReceived");
+                    }
                         Log.Debug($"Meeting State Updated: {meetingState}");
                     }
                 }
@@ -314,10 +311,12 @@ namespace TEAMS2HA.API
                 {
                     var response = await _pairingResponseTaskSource.Task;
                     var newToken = JsonConvert.DeserializeObject<TokenUpdate>(response).NewToken;
-                    _appSettings.TeamsToken = newToken;
-                    SaveAppSettings(_appSettings);
+                    AppSettings.Instance.TeamsToken = newToken;
+                    AppSettings.Instance.SaveSettingsToFile();
 
                     _updateTokenAction?.Invoke(newToken); // Invoke the action to update UI
+                    //subscribe to meeting updates
+
                 }
                 else
                 {
