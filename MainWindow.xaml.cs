@@ -19,12 +19,19 @@ namespace TEAMS2HA
 {
     public class AppSettings
     {
-        // Static variable for the singleton instance
-        private static AppSettings _instance;
-        private static readonly string _settingsFilePath;
+        #region Private Fields
 
         // Lock object for thread-safe initialization
         private static readonly object _lock = new object();
+
+        private static readonly string _settingsFilePath;
+
+        // Static variable for the singleton instance
+        private static AppSettings _instance;
+
+        #endregion Private Fields
+
+        #region Public Constructors
 
         // Static constructor to set up file path
         static AppSettings()
@@ -35,25 +42,19 @@ namespace TEAMS2HA
             _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
         }
 
+        #endregion Public Constructors
+
+        #region Private Constructors
+
         // Private constructor to prevent direct instantiation
         private AppSettings()
         {
             LoadSettingsFromFile();
         }
 
-        // Load settings from file
-        private void LoadSettingsFromFile()
-        {
-            if (File.Exists(_settingsFilePath))
-            {
-                string json = File.ReadAllText(_settingsFilePath);
-                JsonConvert.PopulateObject(json, this);
-            }
-            else
-            {
-                // Set default values if the file does not exist
-            }
-        }
+        #endregion Private Constructors
+
+        #region Public Properties
 
         // Public property to access the singleton instance
         public static AppSettings Instance
@@ -73,14 +74,26 @@ namespace TEAMS2HA
 
         // Properties
         public string EncryptedMqttPassword { get; set; }
+
         public string HomeAssistantToken { get; set; }
+
         public string HomeAssistantURL { get; set; }
+
         public string MqttAddress { get; set; }
+
         public string MqttUsername { get; set; }
+
         public bool RunAtWindowsBoot { get; set; }
+
         public bool RunMinimized { get; set; }
+
         public string TeamsToken { get; set; }
+
         public string Theme { get; set; }
+
+        #endregion Public Properties
+
+        #region Public Methods
 
         // Save settings to file
         public void SaveSettingsToFile()
@@ -88,9 +101,27 @@ namespace TEAMS2HA
             string json = JsonConvert.SerializeObject(this, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
         }
+
+        #endregion Public Methods
+
+        #region Private Methods
+
+        // Load settings from file
+        private void LoadSettingsFromFile()
+        {
+            if (File.Exists(_settingsFilePath))
+            {
+                string json = File.ReadAllText(_settingsFilePath);
+                JsonConvert.PopulateObject(json, this);
+            }
+            else
+            {
+                // Set default values if the file does not exist
+            }
+        }
+
+        #endregion Private Methods
     }
-
-
 
     public partial class MainWindow : Window
     {
@@ -100,24 +131,15 @@ namespace TEAMS2HA
 
         private AppSettings _settings;
 
-        private bool teamspaired = false;
-
         private string _settingsFilePath;
-
         private string _teamsApiKey;
-
         private API.WebSocketClient _teamsClient;
-
-        private string deviceid;
-
-        private bool isDarkTheme = false;
         private Action<string> _updateTokenAction;
+        private string deviceid;
+        private bool isDarkTheme = false;
         private MqttClientWrapper mqttClientWrapper;
-
         private System.Timers.Timer mqttKeepAliveTimer;
-
         private System.Timers.Timer mqttPublishTimer;
-
         private string Mqtttopic;
 
         private List<string> sensorNames = new List<string>
@@ -125,35 +147,58 @@ namespace TEAMS2HA
             "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages"
         };
 
+        private bool teamspaired = false;
+
         #endregion Private Fields
 
         #region Public Constructors
 
+        // Constructor for the MainWindow class
         public MainWindow()
         {
-            
+            // Get the local application data folder path
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+            // Configure logging
             LoggingConfig.Configure();
+
+            // Create the TEAMS2HA folder in the local application data folder
             var appDataFolder = Path.Combine(localAppData, "TEAMS2HA");
             Log.Debug("Set Folder Path to {path}", appDataFolder);
             Directory.CreateDirectory(appDataFolder); // Ensure the directory exists
+
+            // Set the settings file path
             _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
+
+            // Get the app settings instance
             var settings = AppSettings.Instance;
             _settings = AppSettings.Instance;
+
+            // Get the device ID
             deviceid = System.Environment.MachineName;
-            Log.Debug("Settings file path is  {path}", _settingsFilePath);
+
+            // Log the settings file path
+            Log.Debug("Settings file path is {path}", _settingsFilePath);
+
+            // Initialize the main window
             this.InitializeComponent();
-            //ApplyTheme(Properties.Settings.Default.Theme);
-            var Mqtttopic = deviceid;
+
+            // Add event handler for when the main window is loaded
             this.Loaded += MainPage_Loaded;
+
+            // Set the icon for the notification tray
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
+
+            // Create a new instance of the MqttClientWrapper class
             mqttClientWrapper = new MqttClientWrapper(
                 "TEAMS2HA",
                 _settings.MqttAddress,
                 _settings.MqttUsername,
                 _settings.EncryptedMqttPassword
             );
+
+            // Set the action to be performed when a new token is updated
             _updateTokenAction = newToken =>
             {
                 Dispatcher.Invoke(() =>
@@ -162,14 +207,18 @@ namespace TEAMS2HA
                     PairButton.IsEnabled = false;
                 });
             };
+
+            // Initialize connections
             InitializeConnections();
+
+            // Create a timer for MQTT keep alive
             mqttKeepAliveTimer = new System.Timers.Timer(60000); // Set interval to 60 seconds (60000 ms)
             mqttKeepAliveTimer.Elapsed += OnTimedEvent;
             mqttKeepAliveTimer.AutoReset = true;
             mqttKeepAliveTimer.Enabled = true;
-            InitializeMqttPublishTimer();
-            
 
+            // Initialize the MQTT publish timer
+            InitializeMqttPublishTimer();
         }
 
         #endregion Public Constructors
@@ -181,7 +230,7 @@ namespace TEAMS2HA
             await InitializeMQTTConnection();
             // Other initialization code...
             await initializeteamsconnection();
-           
+
             // Other initialization code...
         }
 
@@ -468,10 +517,6 @@ namespace TEAMS2HA
             mqttPublishTimer.Enabled = true; // Enable the timer
             Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
         }
-       
-
-
-
 
         private async Task initializeteamsconnection()
         {
@@ -502,10 +547,37 @@ namespace TEAMS2HA
             }
         }
 
+        private void LogsButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Path to the log file
+            string logFile = LoggingConfig.logFileFullPath;
 
+            if (File.Exists(logFile))
+            {
+                try
+                {
+                    // Use ProcessStartInfo to start the default application for .log files
+                    ProcessStartInfo processStartInfo = new ProcessStartInfo
+                    {
+                        FileName = logFile,
+                        UseShellExecute = true
+                    };
 
-
- 
+                    // Start the process
+                    Process.Start(processStartInfo);
+                }
+                catch (Exception ex)
+                {
+                    // Handle exceptions (e.g., log or show a message to the user)
+                    Log.Error($"Error opening log file: {ex.Message}");
+                }
+            }
+            else
+            {
+                // Handle the case where the log file does not exist
+                Log.Error("Log file does not exist.");
+            }
+        }
 
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
@@ -516,17 +588,17 @@ namespace TEAMS2HA
             MqttUserNameBox.Text = _settings.MqttUsername;
             MQTTPasswordBox.Text = _settings.EncryptedMqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
-            if(_settings.TeamsToken == null)
+            if (_settings.TeamsToken == null)
             {
                 TeamsApiKeyBox.Text = "Not Paired";
                 PairButton.IsEnabled = true;
             }
             else
             {
-                TeamsApiKeyBox.Text ="Paired";
+                TeamsApiKeyBox.Text = "Paired";
                 PairButton.IsEnabled = false;
             }
-           
+
             ApplyTheme(_settings.Theme);
             if (RunMinimisedCheckBox.IsChecked == true)
             {// Start the window minimized and hide it
@@ -672,7 +744,6 @@ namespace TEAMS2HA
             return mqttSettingsChanged;
         }
 
-
         private void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
             Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
@@ -689,9 +760,6 @@ namespace TEAMS2HA
                 _ = InitializeMQTTConnection();
                 Log.Debug("SaveSettings_Click: MQTT Settings Changed and initialze called");
                 //if mqtt is connected, disable the test mqtt connection button
-              
-              
-
             }
         }
 
@@ -826,16 +894,12 @@ namespace TEAMS2HA
                 // If the client exists but is not connected, try reconnecting
                 await _teamsClient.StartConnectionAsync(new Uri($"ws://localhost:8124?token={_settings.TeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26"));
             }
-            else if(_settings.TeamsToken == null)
+            else if (_settings.TeamsToken == null)
             {
                 // If connected but not paired, attempt to pair
                 await _teamsClient.PairWithTeamsAsync();
             }
         }
-
-
-       
-
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
         {
@@ -849,38 +913,5 @@ namespace TEAMS2HA
         }
 
         #endregion Private Methods
-
-        private void LogsButton_Click(object sender, RoutedEventArgs e)
-        {
-            // Path to the log file
-            string logFile = LoggingConfig.logFileFullPath;
-
-            if (File.Exists(logFile))
-            {
-                try
-                {
-                    // Use ProcessStartInfo to start the default application for .log files
-                    ProcessStartInfo processStartInfo = new ProcessStartInfo
-                    {
-                        FileName = logFile,
-                        UseShellExecute = true
-                    };
-
-                    // Start the process
-                    Process.Start(processStartInfo);
-                }
-                catch (Exception ex)
-                {
-                    // Handle exceptions (e.g., log or show a message to the user)
-                    Log.Error($"Error opening log file: {ex.Message}");
-                }
-            }
-            else
-            {
-                // Handle the case where the log file does not exist
-                Log.Error("Log file does not exist.");
-            }
-        }
-
     }
 }
