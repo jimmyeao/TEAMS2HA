@@ -59,7 +59,7 @@
         </StackPanel>
         <StackPanel Grid.Row="4" Margin="0,10,0,0" Orientation="Horizontal">
             <TextBlock Text="MQTT Password:" Width="200" VerticalAlignment="Center"/>
-            <PasswordBox x:Name="MQTTPasswordBox" PasswordChar="•" Width="300" Margin="10,0,0,0"/>
+            <PasswordBox x:Name="MQTTPasswordBox" PasswordChar="•" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignFloatingHintRevealPasswordBox}"/>
         </StackPanel>
         <StackPanel Grid.Row="5" Margin="0,10,0,0" Orientation="Horizontal">
             <CheckBox x:Name="RunAtWindowsBootCheckBox" Content="Run at Windows Boot" Margin="0,0,10,0"/>

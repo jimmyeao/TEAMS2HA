@@ -5,8 +5,8 @@
     <TargetFramework>net7.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
-    <AssemblyVersion>1.1.0.180</AssemblyVersion>
-    <FileVersion>1.1.0.180</FileVersion>
+    <AssemblyVersion>1.1.0.183</AssemblyVersion>
+    <FileVersion>1.1.0.183</FileVersion>
     <ApplicationIcon>Assets\Square150x150Logo.scale-200.ico</ApplicationIcon>
     <Title>Teams2HA</Title>
     <PackageIcon>Square150x150Logo.scale-200.png</PackageIcon>
@@ -27,7 +27,6 @@
 
   <ItemGroup>
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="1.1.0" />
-    <PackageReference Include="MahApps.Metro" Version="2.4.10" />
     <PackageReference Include="MaterialDesignColors" Version="2.1.4" />
     <PackageReference Include="MaterialDesignThemes" Version="4.9.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
