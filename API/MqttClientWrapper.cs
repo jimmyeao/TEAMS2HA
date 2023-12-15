@@ -156,8 +156,15 @@ namespace TEAMS2HA.API
             var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
                 .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
                 .Build();
-
-            await _mqttClient.SubscribeAsync(subscribeOptions);
+            try
+            {
+                await _mqttClient.SubscribeAsync(subscribeOptions);
+            }
+            catch (Exception ex)
+            {
+                Log.Information($"Error during MQTT subscribe: {ex.Message}");
+                // Depending on the severity, you might want to rethrow the exception or handle it here.
+            }
             Log.Information("Subscribing." + subscribeOptions);
         }
 

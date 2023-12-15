@@ -225,7 +225,7 @@ namespace TEAMS2HA
             SetWindowTitle();
             // Add event handler for when the main window is loaded
             this.Loaded += MainPage_Loaded;
-
+            SystemEvents.PowerModeChanged += OnPowerModeChanged; //subscribe to power events
             // Set the icon for the notification tray
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
@@ -351,6 +351,7 @@ namespace TEAMS2HA
             }
             MyNotifyIcon.Dispose();
             base.OnClosing(e);
+            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         }
 
         protected override void OnStateChanged(EventArgs e)
@@ -378,7 +379,34 @@ namespace TEAMS2HA
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
             this.Title = $"Teams2HA - Version {version}";
         }
-
+        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == PowerModes.Resume)
+            {
+                Log.Information("System is waking up from sleep. Re-establishing connections...");
+                // Implement logic to re-establish connections
+                ReestablishConnections();
+            }
+        }
+        private async void ReestablishConnections()
+        {
+            // Logic to re-establish MQTT and WebSocket connections
+            try
+            {
+                if (!mqttClientWrapper.IsConnected)
+                {
+                    await mqttClientWrapper.ConnectAsync();
+                }
+                if (!_teamsClient.IsConnected)
+                {
+                    await initializeteamsconnection();
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error re-establishing connections: {ex.Message}");
+            }
+        }
         private void CreateNotifyIconContextMenu()
         {
             ContextMenu contextMenu = new ContextMenu();
