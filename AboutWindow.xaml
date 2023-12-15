@@ -38,12 +38,20 @@
             <Run Text="TEAMS2HA"/>
         </Hyperlink>
             </TextBlock>
-            <ListBox x:Name="EntitiesListBox" Width="350" Height="275" Margin="10" MouseDoubleClick="EntitiesListBox_MouseDoubleClick">
+            <ListBox x:Name="EntitiesListBox" Width="350" Height="275" Margin="10" MouseDoubleClick="EntitiesListBox_MouseDoubleClick" >
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <TextBlock Text="{Binding}" />
+                        <TextBlock Text="{Binding}" Tag="{Binding}">
+                            <TextBlock.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy" Click="CopyMenuItem_Click" 
+                              CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType=ContextMenu}}"/>
+                                </ContextMenu>
+                            </TextBlock.ContextMenu>
+                        </TextBlock>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
+
             </ListBox>
             <Button Content="Close" HorizontalAlignment="Center" Margin="10" Width="100" Click="CloseButton_Click" Style="{DynamicResource MaterialDesignRaisedButton}"/>
         </StackPanel>
