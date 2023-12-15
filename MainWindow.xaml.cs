@@ -180,6 +180,7 @@ namespace TEAMS2HA
         private System.Timers.Timer mqttKeepAliveTimer;
         private System.Timers.Timer mqttPublishTimer;
         private string Mqtttopic;
+        private Dictionary<string, string> _previousSensorStates = new Dictionary<string, string>();
 
         private List<string> sensorNames = new List<string>
         {
@@ -249,6 +250,10 @@ namespace TEAMS2HA
 
             // Initialize connections
             InitializeConnections();
+            foreach (var sensor in sensorNames)
+            {
+                _previousSensorStates[$"{deviceid}_{sensor}"] = "";
+            }
 
             // Create a timer for MQTT keep alive
             mqttKeepAliveTimer = new System.Timers.Timer(60000); // Set interval to 60 seconds (60000 ms)
@@ -380,7 +385,7 @@ namespace TEAMS2HA
 
             // Show/Hide Window
             MenuItem showHideMenuItem = new MenuItem();
-            showHideMenuItem.Header = "Show";
+            showHideMenuItem.Header = "Show/Hide";
             showHideMenuItem.Click += ShowHideMenuItem_Click;
 
             // MQTT Status
@@ -786,46 +791,52 @@ namespace TEAMS2HA
                     Manufacturer = "JimmyWhite",
                 };
 
+                string sensorKey = $"{deviceid}_{sensor}";
                 string sensorName = $"{deviceid}_{sensor}".ToLower().Replace(" ", "_");
                 string deviceClass = DetermineDeviceClass(sensor);
                 string icon = DetermineIcon(sensor, meetingUpdate.MeetingState);
                 string stateValue = GetStateValue(sensor, meetingUpdate);
-
-                if (deviceClass == "switch")
+                if (!_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
                 {
-                    string stateTopic = $"homeassistant/switch/{sensorName}/state";
-                    string commandTopic = $"homeassistant/switch/{sensorName}/set";
-                    var switchConfig = new
-                    {
-                        name = sensorName,
-                        unique_id = sensorName,
-                        state_topic = stateTopic,
-                        command_topic = commandTopic,
-                        payload_on = "ON",
-                        payload_off = "OFF",
-                        icon = icon
-                    };
-                    string configTopic = $"homeassistant/switch/{sensorName}/config";
-                    await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(switchConfig));
-                    await mqttClientWrapper.PublishAsync(stateTopic, stateValue);
-                }
-                else if (deviceClass == "sensor") // Use else-if for binary_sensor
-                {
-                    string stateTopic = $"homeassistant/sensor/{sensorName}/state"; // Corrected state topic
-                    var binarySensorConfig = new
-                    {
-                        name = sensorName,
-                        unique_id = sensorName,
-                        state_topic = stateTopic,
+                    _previousSensorStates[sensorKey] = stateValue; // Update the stored state
 
-                        icon = icon,
-                        Device = device,
-                    };
-                    string configTopic = $"homeassistant/sensor/{sensorName}/config";
-                    await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(binarySensorConfig), true);
-                    await mqttClientWrapper.PublishAsync(stateTopic, stateValue); // Publish the state
+                    if (deviceClass == "switch")
+                    {
+                        string stateTopic = $"homeassistant/switch/{sensorName}/state";
+                        string commandTopic = $"homeassistant/switch/{sensorName}/set";
+                        var switchConfig = new
+                        {
+                            name = sensorName,
+                            unique_id = sensorName,
+                            state_topic = stateTopic,
+                            command_topic = commandTopic,
+                            payload_on = "ON",
+                            payload_off = "OFF",
+                            icon = icon
+                        };
+                        string configTopic = $"homeassistant/switch/{sensorName}/config";
+                        await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(switchConfig));
+                        await mqttClientWrapper.PublishAsync(stateTopic, stateValue);
+                    }
+                    else if (deviceClass == "sensor") // Use else-if for binary_sensor
+                    {
+                        string stateTopic = $"homeassistant/sensor/{sensorName}/state"; // Corrected state topic
+                        var binarySensorConfig = new
+                        {
+                            name = sensorName,
+                            unique_id = sensorName,
+                            state_topic = stateTopic,
+
+                            icon = icon,
+                            Device = device,
+                        };
+                        string configTopic = $"homeassistant/sensor/{sensorName}/config";
+                        await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(binarySensorConfig), true);
+                        await mqttClientWrapper.PublishAsync(stateTopic, stateValue); // Publish the state
+                    }
                 }
             }
+
         }
 
         private async Task PublishDiscoveryMessages()
@@ -954,6 +965,7 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() =>
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
+                UpdateStatusMenuItems();
                 Log.Debug("TeamsConnectionStatusChanged: Teams Connection Status Changed {status}", TeamsConnectionStatus.Text);
             });
         }
@@ -964,6 +976,7 @@ namespace TEAMS2HA
             if (mqttClientWrapper == null)
             {
                 Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Client Not Initialized");
+                UpdateStatusMenuItems();
                 Log.Debug("TestMQTTConnection_Click: MQTT Client Not Initialized");
                 return;
             }
@@ -971,6 +984,7 @@ namespace TEAMS2HA
             if (mqttClientWrapper.IsConnected)
             {
                 Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                UpdateStatusMenuItems();
                 Log.Debug("TestMQTTConnection_Click: MQTT Client Connected");
                 return;
             }
@@ -978,6 +992,7 @@ namespace TEAMS2HA
             if (string.IsNullOrEmpty(_settings.MqttAddress))
             {
                 Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Server Address Not Set");
+                UpdateStatusMenuItems();
                 Log.Debug("TestMQTTConnection_Click: MQTT Server Address Not Set");
                 return;
             }
@@ -991,6 +1006,7 @@ namespace TEAMS2HA
                 {
                     await mqttClientWrapper.ConnectAsync();
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                    UpdateStatusMenuItems();
                     Log.Debug("TestMQTTConnection_Click: MQTT Client Connected");
                     return; // Exit the method if connected
                 }
@@ -998,6 +1014,7 @@ namespace TEAMS2HA
                 {
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = $"MQTT Status: Disconnected (Retry {retryCount + 1})");
                     Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect {message}", ex.Message);
+                    UpdateStatusMenuItems();
                     retryCount++;
                     await Task.Delay(2000); // Wait for 2 seconds before retrying
                 }
@@ -1005,6 +1022,7 @@ namespace TEAMS2HA
 
             Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected (Failed to connect)");
             Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect");
+            UpdateStatusMenuItems();
         }
 
         private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
