@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using TEAMS2HA.Properties;
 
 namespace TEAMS2HA.API
 {
@@ -21,6 +22,8 @@ namespace TEAMS2HA.API
         private readonly State _state;
         private readonly Action<string> _updateTokenAction;
         private bool _isConnected;
+        private Uri _currentUri;
+
         private TaskCompletionSource<string> _pairingResponseTaskSource;
 
         private Dictionary<string, object> meetingState = new Dictionary<string, object>()
@@ -84,6 +87,7 @@ namespace TEAMS2HA.API
 
         public async Task ConnectAsync(Uri uri)
         {
+            _currentUri = uri;
             try
             {
                 // Check if the WebSocket is already connecting or connected
@@ -113,6 +117,7 @@ namespace TEAMS2HA.API
             {
                 IsConnected = false;
                 Log.Error(ex, "ConnectAsync: Error connecting to WebSocket");
+                await ReconnectAsync();
             }
 
             // Start receiving messages
@@ -305,6 +310,39 @@ namespace TEAMS2HA.API
                 }
             }
         }
+        private async Task ReconnectAsync()
+        {
+            const int maxRetryCount = 5;
+            int retryDelay = 2000; // milliseconds
+            int retryCount = 0;
+
+            while (retryCount < maxRetryCount && !IsConnected)
+            {
+                try
+                {
+                    Log.Debug($"Attempting reconnection, try {retryCount + 1} of {maxRetryCount}");
+                    await ConnectAsync(_currentUri);
+                    if (IsConnected) break;
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Reconnect attempt failed: {ex.Message}");
+                }
+
+                retryCount++;
+                await Task.Delay(retryDelay);
+            }
+
+            if (IsConnected)
+            {
+                Log.Information("Reconnected successfully.");
+            }
+            else
+            {
+                Log.Warning("Failed to reconnect after several attempts.");
+            }
+        }
+
 
         private async Task ReceiveLoopAsync(CancellationToken cancellationToken = default)
         {
@@ -314,31 +352,47 @@ namespace TEAMS2HA.API
 
             while (_clientWebSocket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
             {
-                WebSocketReceiveResult result = await _clientWebSocket.ReceiveAsync(new ArraySegment<byte>(buffer, totalBytesReceived, buffer.Length - totalBytesReceived), cancellationToken);
-                totalBytesReceived += result.Count;
-
-                if (result.EndOfMessage)
+                try
                 {
-                    string messageReceived = Encoding.UTF8.GetString(buffer, 0, totalBytesReceived);
-                    Log.Debug($"ReceiveLoopAsync: Message Received: {messageReceived}");
-
-                    if (!cancellationToken.IsCancellationRequested && !string.IsNullOrEmpty(messageReceived))
+                    WebSocketReceiveResult result = await _clientWebSocket.ReceiveAsync(new ArraySegment<byte>(buffer, totalBytesReceived, buffer.Length - totalBytesReceived), cancellationToken);
+                    totalBytesReceived += result.Count;
+                    if (result.CloseStatus.HasValue)
                     {
-                        MessageReceived?.Invoke(this, messageReceived);
+                        Log.Debug($"WebSocket closed with status: {result.CloseStatus}");
+                        IsConnected = false;
+                        break; // Exit the loop if the WebSocket is closed
                     }
+                    if (result.EndOfMessage)
+                    {
+                        string messageReceived = Encoding.UTF8.GetString(buffer, 0, totalBytesReceived);
+                        Log.Debug($"ReceiveLoopAsync: Message Received: {messageReceived}");
 
-                    // Reset buffer and totalBytesReceived for next message
-                    buffer = new byte[bufferSize];
-                    totalBytesReceived = 0;
+                        if (!cancellationToken.IsCancellationRequested && !string.IsNullOrEmpty(messageReceived))
+                        {
+                            MessageReceived?.Invoke(this, messageReceived);
+                        }
+
+                        // Reset buffer and totalBytesReceived for next message
+                        buffer = new byte[bufferSize];
+                        totalBytesReceived = 0;
+                    }
+                    else if (totalBytesReceived == buffer.Length) // Resize buffer if it's too small
+                    {
+                        Array.Resize(ref buffer, buffer.Length + bufferSize);
+                    }
                 }
-                else if (totalBytesReceived == buffer.Length) // Resize buffer if it's too small
+                catch (Exception ex)
                 {
-                    Array.Resize(ref buffer, buffer.Length + bufferSize);
+                    Log.Error($"WebSocketException in ReceiveLoopAsync: {ex.Message}");
+                    IsConnected = false;
+                    await ReconnectAsync();
+                    break;
                 }
             }
             IsConnected = _clientWebSocket.State == WebSocketState.Open;
             Log.Debug($"IsConnected: {IsConnected}");
         }
+    
 
         private void SaveAppSettings(AppSettings settings)
         {
