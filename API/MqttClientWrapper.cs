@@ -3,6 +3,7 @@ using MQTTnet.Client;
 using MQTTnet.Protocol;
 using Serilog;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
 
@@ -108,7 +109,23 @@ namespace TEAMS2HA.API
                 Log.Information("MQTT Client Disposed");
             }
         }
+        public static List<string> GetEntityNames(string deviceId)
+        {
+            var entityNames = new List<string>
+        {
+            $"switch.{deviceId}_ismuted",
+            $"switch.{deviceId}_isvideoon",
+            $"switch.{deviceId}_ishandraised",
+            $"sensor.{deviceId}_isrecordingon",
+            $"sensor.{deviceId}_isinmeeting",
+            $"sensor.{deviceId}_issharing",
+            $"sensor.{deviceId}_hasunreadmessages",
+            $"switch.{deviceId}_isbackgroundblurred"
+            // Add more entities based on your application's functionality
+        };
 
+            return entityNames;
+        }
         public async Task PublishAsync(string topic, string payload, bool retain = false)
         {
             try

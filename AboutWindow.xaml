@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         mc:Ignorable="d"
-        Title="About" Height="300" Width="400"
+        Title="About" Height="486" Width="400"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
                 TextElement.Foreground="{DynamicResource MaterialDesignBody}"
         TextElement.FontWeight="Regular"
@@ -27,8 +27,8 @@
 
         </ResourceDictionary>
     </Window.Resources>
-    <Grid>
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+    <Grid Margin="0,0,0,2">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Height="434">
             <TextBlock Text="TEAMS2HA" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
             <TextBlock x:Name="VersionTextBlock" FontSize="16" HorizontalAlignment="Center"/>
             <TextBlock Text="Developed by Jimmy White" FontSize="16" HorizontalAlignment="Center"/>
@@ -38,6 +38,13 @@
             <Run Text="TEAMS2HA"/>
         </Hyperlink>
             </TextBlock>
+            <ListBox x:Name="EntitiesListBox" Width="350" Height="275" Margin="10" MouseDoubleClick="EntitiesListBox_MouseDoubleClick">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <TextBlock Text="{Binding}" />
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
             <Button Content="Close" HorizontalAlignment="Center" Margin="10" Width="100" Click="CloseButton_Click" Style="{DynamicResource MaterialDesignRaisedButton}"/>
         </StackPanel>
 

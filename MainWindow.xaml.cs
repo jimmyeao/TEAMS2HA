@@ -110,10 +110,16 @@ namespace TEAMS2HA
             if (!String.IsNullOrEmpty(this.MqttPassword))
             {
                 this.EncryptedMqttPassword = CryptoHelper.EncryptString(this.MqttPassword);
+            }else
+            {
+                this.EncryptedMqttPassword = "";
             }
             if (!String.IsNullOrEmpty(this.PlainTeamsToken))
             {
                 this.TeamsToken = CryptoHelper.EncryptString(this.PlainTeamsToken);
+            }else
+            {
+                this.TeamsToken = "";
             }
             // Serialize and save
             string json = JsonConvert.SerializeObject(this, Formatting.Indented);
@@ -257,7 +263,17 @@ namespace TEAMS2HA
         #endregion Public Constructors
 
         #region Public Methods
-
+        public static List<string> GetEntityNames()
+        {
+            // Example: return a list of entity names based on the sensors and switches
+            return new List<string>
+            {
+                "Teams Mute Switch",
+                "Teams Video Switch",
+                "Teams Hand Raised Sensor",
+                // Add more entities as per your application's functionality
+            };
+        }
         public async Task InitializeConnections()
         {
             await InitializeMQTTConnection();
@@ -412,7 +428,7 @@ namespace TEAMS2HA
         private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
         {
             string currentTheme = _settings.Theme; // Assuming this is where the theme is stored
-            AboutWindow aboutWindow = new AboutWindow();
+            var aboutWindow = new AboutWindow(deviceid, MyNotifyIcon);
             aboutWindow.Owner = this;
             aboutWindow.ShowDialog();
         }

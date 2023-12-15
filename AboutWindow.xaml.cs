@@ -1,28 +1,32 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using Hardcodet.Wpf.TaskbarNotification;
+using System;
+
 using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Data;
-using System.Windows.Documents;
+
+using System.Windows.Forms;
 using System.Windows.Input;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
+
+using System.Windows.Threading;
+using TEAMS2HA.API;
 
 namespace TEAMS2HA
 {
   
     public partial class AboutWindow : Window
     {
-        public AboutWindow()
+        private TaskbarIcon _notifyIcon;
+        public AboutWindow(string deviceId, TaskbarIcon notifyIcon)
         {
             InitializeComponent();
+            _notifyIcon = notifyIcon;
             SetVersionInfo();
+            var entityNames = MqttClientWrapper.GetEntityNames(deviceId);
+            EntitiesListBox.ItemsSource = entityNames;
         }
+
         private void Hyperlink_RequestNavigate(object sender, System.Windows.Navigation.RequestNavigateEventArgs e)
         {
             Process.Start(new ProcessStartInfo
@@ -32,6 +36,22 @@ namespace TEAMS2HA
             });
             e.Handled = true;
         }
+        private void EntitiesListBox_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+        {
+            if (sender is System.Windows.Controls.ListBox listBox && listBox.SelectedItem != null)
+            {
+                string selectedEntity = listBox.SelectedItem.ToString();
+                System.Windows.Clipboard.SetText(selectedEntity);
+
+                // Show balloon tip
+                _notifyIcon.ShowBalloonTip("Copied to Clipboard", selectedEntity + " has been copied to your clipboard.", BalloonIcon.Info);
+            }
+        }
+
+
+      
+
+
         private void SetVersionInfo()
         {
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
