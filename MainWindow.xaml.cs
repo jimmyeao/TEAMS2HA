@@ -121,6 +121,28 @@ namespace TEAMS2HA
             {
                 this.TeamsToken = "";
             }
+            // newcode
+
+                const string appName = "TEAMS2HA"; // Your application's name
+                string exePath = System.Windows.Forms.Application.ExecutablePath;
+
+                // Open the registry key for the current user's startup programs
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+                {
+                    if (this.RunAtWindowsBoot)
+                    {
+                        // Set the application to start with Windows startup by adding a registry value
+                        key.SetValue(appName, exePath);
+                    }
+                    else
+                    {
+                        // Remove the registry value to prevent the application from starting with
+                        // Windows startup
+                        key.DeleteValue(appName, false);
+                    }
+                }
+         
+            Log.Debug("SetStartupAsync: Startup set");
             // Serialize and save
             string json = JsonConvert.SerializeObject(this, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
@@ -706,35 +728,43 @@ namespace TEAMS2HA
 
         private void LogsButton_Click(object sender, RoutedEventArgs e)
         {
-            // Path to the log file
-            string logFile = LoggingConfig.logFileFullPath;
+            string folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Teams2HA");
 
-            if (File.Exists(logFile))
+            // Ensure the directory exists
+            if (!Directory.Exists(folderPath))
+            {
+                Log.Error("Log directory does not exist.");
+                return;
+            }
+
+            // Get the most recent log file
+            var logFile = Directory.GetFiles(folderPath, "Teams2ha_Log*.log")
+                                   .OrderByDescending(File.GetCreationTime)
+                                   .FirstOrDefault();
+
+            if (logFile != null && File.Exists(logFile))
             {
                 try
                 {
-                    // Use ProcessStartInfo to start the default application for .log files
                     ProcessStartInfo processStartInfo = new ProcessStartInfo
                     {
                         FileName = logFile,
                         UseShellExecute = true
                     };
 
-                    // Start the process
                     Process.Start(processStartInfo);
                 }
                 catch (Exception ex)
                 {
-                    // Handle exceptions (e.g., log or show a message to the user)
                     Log.Error($"Error opening log file: {ex.Message}");
                 }
             }
             else
             {
-                // Handle the case where the log file does not exist
                 Log.Error("Log file does not exist.");
             }
         }
+
 
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
@@ -929,28 +959,7 @@ namespace TEAMS2HA
 
         private async Task SetStartupAsync(bool startWithWindows)
         {
-            await Task.Run(() =>
-            {
-                const string appName = "TEAMS2HA"; // Your application's name
-                string exePath = System.Windows.Forms.Application.ExecutablePath;
-
-                // Open the registry key for the current user's startup programs
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
-                {
-                    if (startWithWindows)
-                    {
-                        // Set the application to start with Windows startup by adding a registry value
-                        key.SetValue(appName, exePath);
-                    }
-                    else
-                    {
-                        // Remove the registry value to prevent the application from starting with
-                        // Windows startup
-                        key.DeleteValue(appName, false);
-                    }
-                }
-            });
-            Log.Debug("SetStartupAsync: Startup set");
+           
         }
 
         private async void SetupMqttSensors()
