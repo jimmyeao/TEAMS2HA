@@ -21,7 +21,7 @@ Click the Entities button to see a list of entities this program will create:
 
 ![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/a39632e7-f61c-4c0c-a953-555da53b3e0d)
 
-You can either right click and copy or double click to t copy the entity name to the clipboard.
+You can either right click and copy or double click to copy the entity name to the clipboard.
 
 <h2>System Tray</h2>
 You can right click the systemt tray icon for a selection of functions:
