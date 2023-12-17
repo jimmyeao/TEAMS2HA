@@ -17,7 +17,7 @@ namespace TEAMS2HA.API
     {
         #region Private Fields
 
-        private readonly ClientWebSocket _clientWebSocket;
+        private ClientWebSocket _clientWebSocket;
         private readonly string _settingsFilePath;
         private readonly State _state;
         private readonly Action<string> _updateTokenAction;
@@ -316,17 +316,21 @@ namespace TEAMS2HA.API
             int retryDelay = 2000; // milliseconds
             int retryCount = 0;
 
-            while (retryCount < maxRetryCount && !IsConnected)
+            while (retryCount < maxRetryCount)
             {
                 try
                 {
                     Log.Debug($"Attempting reconnection, try {retryCount + 1} of {maxRetryCount}");
+                    _clientWebSocket = new ClientWebSocket(); // Create a new instance
                     await ConnectAsync(_currentUri);
-                    if (IsConnected) break;
+                    if (IsConnected)
+                    {
+                        break;
+                    }
                 }
                 catch (Exception ex)
                 {
-                    Log.Error($"Reconnect attempt failed: {ex.Message}");
+                    Log.Error($"Reconnect attempt {retryCount + 1} failed: {ex.Message}");
                 }
 
                 retryCount++;
@@ -342,6 +346,7 @@ namespace TEAMS2HA.API
                 Log.Warning("Failed to reconnect after several attempts.");
             }
         }
+
 
 
         private async Task ReceiveLoopAsync(CancellationToken cancellationToken = default)
