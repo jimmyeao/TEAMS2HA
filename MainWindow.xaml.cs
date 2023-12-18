@@ -17,6 +17,7 @@ using System.Timers;
 
 using System.Windows;
 using TEAMS2HA.API;
+using TEAMS2HA.Properties;
 
 namespace TEAMS2HA
 {
@@ -88,6 +89,8 @@ namespace TEAMS2HA
         public string HomeAssistantURL { get; set; }
 
         public string MqttAddress { get; set; }
+
+        public string MqttPort { get; set; }
 
         public string MqttUsername { get; set; }
 
@@ -256,6 +259,7 @@ namespace TEAMS2HA
             mqttClientWrapper = new MqttClientWrapper(
                 "TEAMS2HA",
                 _settings.MqttAddress,
+                _settings.MqttPort,
                 _settings.MqttUsername,
                 _settings.MqttPassword
             );
@@ -776,6 +780,7 @@ namespace TEAMS2HA
             MqttUserNameBox.Text = _settings.MqttUsername;
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
+            MqttPort.Text = _settings.MqttPort;
             if (_settings.PlainTeamsToken == null)
             {
                 TeamsApiKeyBox.Text = "Not Paired";
@@ -924,11 +929,13 @@ namespace TEAMS2HA
             bool mqttSettingsChanged =
                 settings.MqttAddress != MqttAddress.Text ||
                 settings.MqttUsername != MqttUserNameBox.Text ||
+                settings.MqttPort != MqttPort.Text ||
                 settings.MqttPassword != MQTTPasswordBox.Password;
 
             settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
             settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
             settings.MqttAddress = MqttAddress.Text;
+            settings.MqttPort = MqttPort.Text;
             settings.MqttUsername = MqttUserNameBox.Text;
             settings.MqttPassword = MQTTPasswordBox.Password;
             settings.Theme = isDarkTheme ? "Dark" : "Light";
@@ -949,6 +956,7 @@ namespace TEAMS2HA
                 mqttClientWrapper = new MqttClientWrapper(
                     "TEAMS2HA",
                     _settings.MqttAddress,
+                    _settings.MqttPort,
                     _settings.MqttUsername,
                     _settings.MqttPassword
                 );
@@ -1094,5 +1102,6 @@ namespace TEAMS2HA
         }
 
         #endregion Private Methods
+
     }
 }
