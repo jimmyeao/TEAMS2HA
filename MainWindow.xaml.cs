@@ -412,7 +412,6 @@ namespace TEAMS2HA
         }
         private async void ReestablishConnections()
         {
-            // Logic to re-establish MQTT and WebSocket connections
             try
             {
                 if (!mqttClientWrapper.IsConnected)
@@ -429,6 +428,7 @@ namespace TEAMS2HA
                 Log.Error($"Error re-establishing connections: {ex.Message}");
             }
         }
+
         private void CreateNotifyIconContextMenu()
         {
             ContextMenu contextMenu = new ContextMenu();
@@ -536,22 +536,23 @@ namespace TEAMS2HA
 
         private async void CheckMqttConnection()
         {
-            if (mqttClientWrapper != null && !mqttClientWrapper.IsConnected)
+            if (mqttClientWrapper != null && !mqttClientWrapper.IsConnected && !mqttClientWrapper.IsAttemptingConnection)
             {
-                Log.Debug("CheckMqttConnection: MQTT Client Not Connected");
-                try
-                {
-                    await mqttClientWrapper.ConnectAsync();
-                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
-                    Log.Debug("CheckMqttConnection: MQTT Client Connected");
-                }
-                catch
-                {
-                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected");
-                    Log.Debug("CheckMqttConnection: MQTT Client Failed to Connect");
-                }
+                Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
+                await mqttClientWrapper.ConnectAsync();
+                UpdateConnectionStatus();
             }
         }
+
+        private void UpdateConnectionStatus()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                MQTTConnectionStatus.Text = mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
+                UpdateStatusMenuItems();
+            });
+        }
+
 
         private string DetermineDeviceClass(string sensor)
         {

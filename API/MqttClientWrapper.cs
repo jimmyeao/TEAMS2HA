@@ -15,11 +15,18 @@ namespace TEAMS2HA.API
 
         private MqttClient _mqttClient;
         private MqttClientOptions _mqttOptions;
+        private bool _isAttemptingConnection = false;
+        private const int MaxConnectionRetries = 5;
+        private const int RetryDelayMilliseconds = 2000; //wait a couple of seconds before retrying a connection attempt
 
         #endregion Private Fields
 
         #region Public Constructors
-
+        public bool IsAttemptingConnection
+        {
+            get { return _isAttemptingConnection; }
+            private set { _isAttemptingConnection = value; }
+        }
         public MqttClientWrapper(string clientId, string mqttBroker, string username, string password)
         {
             var factory = new MqttFactory();
@@ -62,22 +69,36 @@ namespace TEAMS2HA.API
 
         public async Task ConnectAsync()
         {
-            if (_mqttClient.IsConnected)
+            if (_mqttClient.IsConnected || _isAttemptingConnection)
             {
-                Log.Information("MQTT client is already connected.");
+                Log.Information("MQTT client is already connected or connection attempt is in progress.");
                 return;
             }
 
-            try
-            {
-                Log.Information("attempting to connect to mqtt");
-                await _mqttClient.ConnectAsync(_mqttOptions);
+            _isAttemptingConnection = true;
+            int retryCount = 0;
 
-                Log.Information("Connected to MQTT broker.");
-            }
-            catch (Exception ex)
+            while (retryCount < MaxConnectionRetries && !_mqttClient.IsConnected)
             {
-                Log.Debug($"Failed to connect to MQTT broker: {ex.Message}");
+                try
+                {
+                    Log.Information($"Attempting to connect to MQTT (Attempt {retryCount + 1}/{MaxConnectionRetries})");
+                    await _mqttClient.ConnectAsync(_mqttOptions);
+                    Log.Information("Connected to MQTT broker.");
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug($"Failed to connect to MQTT broker: {ex.Message}");
+                    retryCount++;
+                    await Task.Delay(RetryDelayMilliseconds);
+                }
+            }
+
+            _isAttemptingConnection = false;
+            if (!_mqttClient.IsConnected)
+            {
+                Log.Error("Failed to connect to MQTT broker after several attempts.");
             }
         }
 
