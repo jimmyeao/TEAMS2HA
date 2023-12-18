@@ -176,7 +176,7 @@ namespace TEAMS2HA
             }
             else
             {
-                // Set default values if the file does not exist
+                this.MqttPort = "1883"; // Default MQTT port
             }
         }
 
