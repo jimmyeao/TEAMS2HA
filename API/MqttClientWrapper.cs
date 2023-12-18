@@ -17,7 +17,7 @@ namespace TEAMS2HA.API
         private MqttClientOptions _mqttOptions;
         private bool _isAttemptingConnection = false;
         private const int MaxConnectionRetries = 5;
-        private const int RetryDelayMilliseconds = 2000;
+        private const int RetryDelayMilliseconds = 2000; //wait a couple of seconds before retrying a connection attempt
 
         #endregion Private Fields
 
