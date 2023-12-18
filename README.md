@@ -6,7 +6,7 @@
 
 This is an agent that runs on windows and uses the Local teams API (https://support.microsoft.com/en-gb/office/connect-to-third-party-devices-in-microsoft-teams-aabca9f2-47bb-407f-9f9b-81a104a883d6?wt.mc_id=SEC-MVP-5004985) to retrieve the status of the user (In a meeting, Video On, Mute, blur etc) and push these into homeassistant sensors using MQTT.
 
-Download from https://github.com/jimmyeao/TEAMS2HA/releases
+Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
 
 ![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/f8a90d5c-25be-4b00-98a8-9521827ca0b9)
 
