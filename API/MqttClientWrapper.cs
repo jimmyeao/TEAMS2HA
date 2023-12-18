@@ -27,14 +27,16 @@ namespace TEAMS2HA.API
             get { return _isAttemptingConnection; }
             private set { _isAttemptingConnection = value; }
         }
-        public MqttClientWrapper(string clientId, string mqttBroker, string username, string password)
+        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password)
         {
             var factory = new MqttFactory();
             _mqttClient = factory.CreateMqttClient() as MqttClient;
 
+            int mqttportInt = System.Convert.ToInt32(mqttPort);
+
             _mqttOptions = new MqttClientOptionsBuilder()
                 .WithClientId(clientId)
-                .WithTcpServer(mqttBroker)
+                .WithTcpServer(mqttBroker, mqttportInt)
                 .WithCredentials(username, password)
                 .WithCleanSession()
                 .Build();
