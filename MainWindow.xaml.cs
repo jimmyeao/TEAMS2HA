@@ -421,6 +421,7 @@ namespace TEAMS2HA
                 if (!mqttClientWrapper.IsConnected)
                 {
                     await mqttClientWrapper.ConnectAsync();
+                    SetupMqttSensors();
                 }
                 if (!_teamsClient.IsConnected)
                 {
