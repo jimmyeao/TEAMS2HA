@@ -149,7 +149,7 @@ namespace TEAMS2HA.API
 
             return entityNames;
         }
-        public async Task PublishAsync(string topic, string payload, bool retain = false)
+        public async Task PublishAsync(string topic, string payload, bool retain = true)
         {
             try
             {
