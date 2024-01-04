@@ -294,17 +294,7 @@ namespace TEAMS2HA
         #endregion Public Constructors
 
         #region Public Methods
-        //public static List<string> GetEntityNames()
-        //{
-        //    // Example: return a list of entity names based on the sensors and switches
-        //    return new List<string>
-        //    {
-        //        "Teams Mute Switch",
-        //        "Teams Video Switch",
-        //        "Teams Hand Raised Sensor",
-        //        // Add more entities as per your application's functionality
-        //    };
-        //}
+
         public async Task InitializeConnections()
         {
             await InitializeMQTTConnection();
@@ -904,25 +894,7 @@ namespace TEAMS2HA
 
         }
 
-        //private async Task PublishDiscoveryMessages()
-        //{
-        //    var muteSwitchConfig = new
-        //    {
-        //        name = "Teams Mute",
-        //        unique_id = "TEAMS2HA_mute",
-        //        state_topic = "TEAMS2HA/TEAMS/mute",
-        //        command_topic = "TEAMS2HA/TEAMS/mute/set",
-        //        payload_on = "true",
-        //        payload_off = "false",
-        //        device = new { identifiers = new[] { "TEAMS2HA" }, name = "Teams Integration", manufacturer = "Your Company" }
-        //    };
-
-        //    string muteConfigTopic = "homeassistant/switch/TEAMS2HA/mute/config";
-        //    await mqttClientWrapper.PublishAsync(muteConfigTopic, JsonConvert.SerializeObject(muteSwitchConfig));
-
-        //    // Repeat for other entities like video
-        //}
-
+       
         private bool SaveSettings()
         {
             var settings = AppSettings.Instance;
