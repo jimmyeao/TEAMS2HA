@@ -144,7 +144,7 @@ namespace TEAMS2HA.API
             $"sensor.{deviceId}_issharing",
             $"sensor.{deviceId}_hasunreadmessages",
             $"switch.{deviceId}_isbackgroundblurred"
-            // Add more entities based on your application's functionality
+          
         };
 
             return entityNames;
