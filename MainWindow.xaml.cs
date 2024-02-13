@@ -390,6 +390,26 @@ namespace TEAMS2HA
         #endregion Protected Methods
 
         #region Private Methods
+        private async Task ReconnectToMqttServer()
+        {
+            // Disconnect from the current MQTT server
+            if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
+            {
+                await mqttClientWrapper.DisconnectAsync();
+            }
+
+            // Create a new instance of MqttClientWrapper with new settings
+            mqttClientWrapper = new MqttClientWrapper(
+                "TEAMS2HA",
+                _settings.MqttAddress,
+                _settings.MqttPort,
+                _settings.MqttUsername,
+                _settings.MqttPassword
+            );
+
+            // Connect to the new MQTT server
+            await mqttClientWrapper.ConnectAsync();
+        }
         private void SetWindowTitle()
         {
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
@@ -915,6 +935,11 @@ namespace TEAMS2HA
 
             // Save the updated settings to file
             settings.SaveSettingsToFile();
+            if (mqttSettingsChanged)
+            {
+                // Run the reconnection on a background thread to avoid UI freeze
+                Task.Run(async () => await ReconnectToMqttServer()).Wait();
+            }
 
             return mqttSettingsChanged;
         }

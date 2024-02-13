@@ -3,6 +3,7 @@ using MQTTnet.Client;
 using MQTTnet.Protocol;
 using Serilog;
 using System;
+using System.Security.Cryptography.X509Certificates;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
@@ -27,23 +28,42 @@ namespace TEAMS2HA.API
             get { return _isAttemptingConnection; }
             private set { _isAttemptingConnection = value; }
         }
-        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password)
+        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool useTls = false)
         {
             var factory = new MqttFactory();
             _mqttClient = factory.CreateMqttClient() as MqttClient;
 
             int mqttportInt = System.Convert.ToInt32(mqttPort);
 
-            _mqttOptions = new MqttClientOptionsBuilder()
+            var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
                 .WithClientId(clientId)
-                .WithTcpServer(mqttBroker, mqttportInt)
                 .WithCredentials(username, password)
-                .WithCleanSession()
-                .Build();
+                .WithCleanSession();
 
+            // If useTls is true or the port is 8883, configure the client to use TLS.
+            if (useTls || mqttportInt == 8883)
+            {
+                // Configure TLS options
+                mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt)
+                    .WithTls(new MqttClientOptionsBuilderTlsParameters
+                    {
+                        UseTls = true,
+                        AllowUntrustedCertificates = true,
+                        IgnoreCertificateChainErrors = true,
+                        IgnoreCertificateRevocationErrors = true
+                    });
+                Log.Information($"MQTT Client Created with TLS on port {mqttPort}.");
+            }
+            else
+            {
+                mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt);
+                Log.Information("MQTT Client Created with TCP.");
+            }
+
+            _mqttOptions = mqttClientOptionsBuilder.Build();
             _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
-            Log.Information("MQTT Client Created");
         }
+
 
         public MqttClientWrapper(/* parameters */)
         {
