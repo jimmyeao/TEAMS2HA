@@ -33,7 +33,9 @@ namespace TEAMS2HA.API
             var factory = new MqttFactory();
             _mqttClient = factory.CreateMqttClient() as MqttClient;
 
-            int mqttportInt = System.Convert.ToInt32(mqttPort);
+            int mqttportInt;
+            int.TryParse(mqttPort, out mqttportInt);
+            if (mqttportInt == 0) mqttportInt = 1883;
 
             var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
                 .WithClientId(clientId)
