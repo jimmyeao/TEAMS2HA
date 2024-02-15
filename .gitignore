@@ -361,5 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
-/TEAMS2HA.csproj
-/.gitignore
+
+# Visual Studio Code
+.vscode/
+nuget.config

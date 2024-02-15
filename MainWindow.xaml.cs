@@ -17,6 +17,7 @@ using System.Timers;
 
 using System.Windows;
 using TEAMS2HA.API;
+using TEAMS2HA.Properties;
 
 namespace TEAMS2HA
 {
@@ -88,6 +89,8 @@ namespace TEAMS2HA
         public string HomeAssistantURL { get; set; }
 
         public string MqttAddress { get; set; }
+
+        public string MqttPort { get; set; }
 
         public string MqttUsername { get; set; }
 
@@ -170,10 +173,14 @@ namespace TEAMS2HA
                 {
                     this.PlainTeamsToken = CryptoHelper.DecryptString(this.TeamsToken);
                 }
+                if (string.IsNullOrEmpty(this.MqttPort))
+                {
+                    this.MqttPort = "1883"; // Default MQTT port
+                }
             }
             else
             {
-                // Set default values if the file does not exist
+                this.MqttPort = "1883"; // Default MQTT port
             }
         }
 
@@ -256,6 +263,7 @@ namespace TEAMS2HA
             mqttClientWrapper = new MqttClientWrapper(
                 "TEAMS2HA",
                 _settings.MqttAddress,
+                _settings.MqttPort,
                 _settings.MqttUsername,
                 _settings.MqttPassword
             );
@@ -290,17 +298,7 @@ namespace TEAMS2HA
         #endregion Public Constructors
 
         #region Public Methods
-        public static List<string> GetEntityNames()
-        {
-            // Example: return a list of entity names based on the sensors and switches
-            return new List<string>
-            {
-                "Teams Mute Switch",
-                "Teams Video Switch",
-                "Teams Hand Raised Sensor",
-                // Add more entities as per your application's functionality
-            };
-        }
+
         public async Task InitializeConnections()
         {
             await InitializeMQTTConnection();
@@ -396,6 +394,26 @@ namespace TEAMS2HA
         #endregion Protected Methods
 
         #region Private Methods
+        private async Task ReconnectToMqttServer()
+        {
+            // Disconnect from the current MQTT server
+            if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
+            {
+                await mqttClientWrapper.DisconnectAsync();
+            }
+
+            // Create a new instance of MqttClientWrapper with new settings
+            mqttClientWrapper = new MqttClientWrapper(
+                "TEAMS2HA",
+                _settings.MqttAddress,
+                _settings.MqttPort,
+                _settings.MqttUsername,
+                _settings.MqttPassword
+            );
+
+            // Connect to the new MQTT server
+            await mqttClientWrapper.ConnectAsync();
+        }
         private void SetWindowTitle()
         {
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
@@ -417,6 +435,7 @@ namespace TEAMS2HA
                 if (!mqttClientWrapper.IsConnected)
                 {
                     await mqttClientWrapper.ConnectAsync();
+                    SetupMqttSensors();
                 }
                 if (!_teamsClient.IsConnected)
                 {
@@ -776,6 +795,7 @@ namespace TEAMS2HA
             MqttUserNameBox.Text = _settings.MqttUsername;
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
+            MqttPort.Text = _settings.MqttPort;
             if (_settings.PlainTeamsToken == null)
             {
                 TeamsApiKeyBox.Text = "Not Paired";
@@ -898,25 +918,7 @@ namespace TEAMS2HA
 
         }
 
-        private async Task PublishDiscoveryMessages()
-        {
-            var muteSwitchConfig = new
-            {
-                name = "Teams Mute",
-                unique_id = "TEAMS2HA_mute",
-                state_topic = "TEAMS2HA/TEAMS/mute",
-                command_topic = "TEAMS2HA/TEAMS/mute/set",
-                payload_on = "true",
-                payload_off = "false",
-                device = new { identifiers = new[] { "TEAMS2HA" }, name = "Teams Integration", manufacturer = "Your Company" }
-            };
-
-            string muteConfigTopic = "homeassistant/switch/TEAMS2HA/mute/config";
-            await mqttClientWrapper.PublishAsync(muteConfigTopic, JsonConvert.SerializeObject(muteSwitchConfig));
-
-            // Repeat for other entities like video
-        }
-
+       
         private bool SaveSettings()
         {
             var settings = AppSettings.Instance;
@@ -924,17 +926,24 @@ namespace TEAMS2HA
             bool mqttSettingsChanged =
                 settings.MqttAddress != MqttAddress.Text ||
                 settings.MqttUsername != MqttUserNameBox.Text ||
+                settings.MqttPort != MqttPort.Text ||
                 settings.MqttPassword != MQTTPasswordBox.Password;
 
             settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
             settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
             settings.MqttAddress = MqttAddress.Text;
+            settings.MqttPort = MqttPort.Text;
             settings.MqttUsername = MqttUserNameBox.Text;
             settings.MqttPassword = MQTTPasswordBox.Password;
             settings.Theme = isDarkTheme ? "Dark" : "Light";
 
             // Save the updated settings to file
             settings.SaveSettingsToFile();
+            if (mqttSettingsChanged)
+            {
+                // Run the reconnection on a background thread to avoid UI freeze
+                Task.Run(async () => await ReconnectToMqttServer()).Wait();
+            }
 
             return mqttSettingsChanged;
         }
@@ -949,6 +958,7 @@ namespace TEAMS2HA
                 mqttClientWrapper = new MqttClientWrapper(
                     "TEAMS2HA",
                     _settings.MqttAddress,
+                    _settings.MqttPort,
                     _settings.MqttUsername,
                     _settings.MqttPassword
                 );
@@ -983,6 +993,8 @@ namespace TEAMS2HA
 
             // Call PublishConfigurations with the dummy MeetingUpdate
             await PublishConfigurations(dummyMeetingUpdate, _settings);
+
+
         }
 
         private async void TeamsClient_TeamsUpdateReceived(object sender, WebSocketClient.TeamsUpdateEventArgs e)
@@ -1094,5 +1106,6 @@ namespace TEAMS2HA
         }
 
         #endregion Private Methods
+
     }
 }
