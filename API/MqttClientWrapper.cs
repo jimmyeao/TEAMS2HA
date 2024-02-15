@@ -7,6 +7,7 @@ using System.Security.Cryptography.X509Certificates;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
+using System.Windows.Threading;
 
 namespace TEAMS2HA.API
 {
@@ -21,6 +22,7 @@ namespace TEAMS2HA.API
         private const int RetryDelayMilliseconds = 2000; //wait a couple of seconds before retrying a connection attempt
 
         #endregion Private Fields
+        public event Action<string> ConnectionStatusChanged;
 
         #region Public Constructors
         public bool IsAttemptingConnection
@@ -28,7 +30,8 @@ namespace TEAMS2HA.API
             get { return _isAttemptingConnection; }
             private set { _isAttemptingConnection = value; }
         }
-        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool UseTLS , bool IgnoreCertificateErrors )
+        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool UseTLS, bool IgnoreCertificateErrors)
+
         {
             var factory = new MqttFactory();
             _mqttClient = factory.CreateMqttClient() as MqttClient;
@@ -56,25 +59,20 @@ namespace TEAMS2HA.API
                         IgnoreCertificateRevocationErrors = untrusted
                     });
                 Log.Information($"MQTT Client Created with TLS on port {mqttPort}.");
+                ConnectionStatusChanged?.Invoke($"MQTT Client Created with TLS");
+
             }
             else
             {
                 mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt);
                 Log.Information("MQTT Client Created with TCP.");
+                ConnectionStatusChanged?.Invoke($"MQTT Client Created with TCP");
             }
 
             _mqttOptions = mqttClientOptionsBuilder.Build();
             _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
         }
 
-
-        public MqttClientWrapper(/* parameters */)
-        {
-            // Existing initialization code...
-
-            _mqttClient.ApplicationMessageReceivedAsync += HandleReceivedApplicationMessage;
-            Log.Information("MQTT Client Created");
-        }
 
         #endregion Public Constructors
 
@@ -97,6 +95,7 @@ namespace TEAMS2HA.API
             if (_mqttClient.IsConnected || _isAttemptingConnection)
             {
                 Log.Information("MQTT client is already connected or connection attempt is in progress.");
+                
                 return;
             }
 
@@ -110,11 +109,15 @@ namespace TEAMS2HA.API
                     Log.Information($"Attempting to connect to MQTT (Attempt {retryCount + 1}/{MaxConnectionRetries})");
                     await _mqttClient.ConnectAsync(_mqttOptions);
                     Log.Information("Connected to MQTT broker.");
+                    if (_mqttClient.IsConnected)
+                        ConnectionStatusChanged?.Invoke("MQTT Status: Connected");
+                    
                     break;
                 }
                 catch (Exception ex)
                 {
                     Log.Debug($"Failed to connect to MQTT broker: {ex.Message}");
+                    ConnectionStatusChanged?.Invoke($"MQTT Status: Disconnected (Retry {retryCount + 1}) {ex.Message}");
                     retryCount++;
                     await Task.Delay(RetryDelayMilliseconds);
                 }
@@ -123,6 +126,7 @@ namespace TEAMS2HA.API
             _isAttemptingConnection = false;
             if (!_mqttClient.IsConnected)
             {
+                ConnectionStatusChanged?.Invoke("MQTT Status: Disconnected (Failed to connect)");
                 Log.Error("Failed to connect to MQTT broker after several attempts.");
             }
         }
@@ -132,6 +136,7 @@ namespace TEAMS2HA.API
             if (!_mqttClient.IsConnected)
             {
                 Log.Debug("MQTTClient is not connected");
+                ConnectionStatusChanged?.Invoke("MQTTClient is not connected");
                 return;
             }
 
@@ -139,6 +144,7 @@ namespace TEAMS2HA.API
             {
                 await _mqttClient.DisconnectAsync();
                 Log.Information("MQTT Disconnected");
+                ConnectionStatusChanged?.Invoke("MQTTClient is not connected");
             }
             catch (Exception ex)
             {

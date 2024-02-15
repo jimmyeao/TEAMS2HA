@@ -229,7 +229,7 @@ namespace TEAMS2HA
         {
             // Get the local application data folder path
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-
+            
             // Configure logging
             LoggingConfig.Configure();
            
@@ -297,6 +297,7 @@ namespace TEAMS2HA
 
             // Initialize the MQTT publish timer
             InitializeMqttPublishTimer();
+            
         }
 
         #endregion Public Constructors
@@ -317,8 +318,9 @@ namespace TEAMS2HA
             if (mqttClientWrapper == null)
             {
                 Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Client Not Initialized");
-                return;
                 Log.Debug("MQTT Client Not Initialized");
+                return;
+                
             }
             //check we have at least an mqtt server address
             if (string.IsNullOrEmpty(_settings.MqttAddress))
@@ -329,18 +331,22 @@ namespace TEAMS2HA
             }
             int retryCount = 0;
             const int maxRetries = 5;
-
+            mqttClientWrapper.ConnectionStatusChanged += UpdateMqttConnectionStatus;
             while (retryCount < maxRetries && !mqttClientWrapper.IsConnected)
             {
                 try
                 {
                     await mqttClientWrapper.ConnectAsync();
-                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                    // Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                    SetupMqttSensors();
-                    Log.Debug("MQTT Client Connected");
+                    
                     mqttClientWrapper.MessageReceived += HandleIncomingCommand;
-
+                    if (mqttClientWrapper.IsConnected)
+                    { 
+                        Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                        Log.Debug("MQTT Client Connected in InitializeMQTTConnection");
+                        SetupMqttSensors();
+                    }
                     return; // Exit the method if connected
                 }
                 catch (Exception ex)
@@ -398,28 +404,43 @@ namespace TEAMS2HA
         #endregion Protected Methods
 
         #region Private Methods
-        private async Task ReconnectToMqttServer()
+        private void UpdateMqttConnectionStatus(string status)
         {
-            // Disconnect from the current MQTT server
+            Dispatcher.Invoke(() => MQTTConnectionStatus.Text = status);
+        }
+        private void UpdateMqttClientWrapper()
+        {
+
+            mqttClientWrapper = new MqttClientWrapper(
+            "TEAMS2HA",
+            _settings.MqttAddress,
+            _settings.MqttPort,
+            _settings.MqttUsername,
+            _settings.MqttPassword,
+            _settings.UseTLS,
+            _settings.IgnoreCertificateErrors
+        );
+
+
+            // Subscribe to the ConnectionStatusChanged event
+            mqttClientWrapper.ConnectionStatusChanged += UpdateMqttConnectionStatus;
+        }
+        private async Task ReconnectToMqttServerAsync()
+        {
+            // Ensure disconnection from the current MQTT server, if connected
             if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
             {
                 await mqttClientWrapper.DisconnectAsync();
             }
 
-            // Create a new instance of MqttClientWrapper with new settings
-            mqttClientWrapper = new MqttClientWrapper(
-                "TEAMS2HA",
-                _settings.MqttAddress,
-                _settings.MqttPort,
-                _settings.MqttUsername,
-                _settings.MqttPassword,
-                _settings.UseTLS,
-                _settings.IgnoreCertificateErrors
-            );
+            // Update the MQTT client wrapper with new settings
+            UpdateMqttClientWrapper();
 
-            // Connect to the new MQTT server
+            // Attempt to connect to the MQTT server with new settings
             await mqttClientWrapper.ConnectAsync();
         }
+       
+
         private void SetWindowTitle()
         {
             var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
@@ -926,60 +947,38 @@ namespace TEAMS2HA
 
         }
 
-       
-        private bool SaveSettings()
+
+        private async Task SaveSettingsAsync()
         {
             var settings = AppSettings.Instance;
 
-            bool mqttSettingsChanged =
-                settings.MqttAddress != MqttAddress.Text ||
-                settings.MqttUsername != MqttUserNameBox.Text ||
-                settings.MqttPort != MqttPort.Text ||
-                settings.MqttPassword != MQTTPasswordBox.Password ||
-                settings.UseTLS != UseTLS.IsChecked ||
-                settings.IgnoreCertificateErrors != IgnoreCert.IsChecked ;
-            settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
-            settings.UseTLS = UseTLS.IsChecked ?? false;
-            settings.IgnoreCertificateErrors = IgnoreCert.IsChecked ?? false;
-            settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
-            settings.MqttAddress = MqttAddress.Text;
-            settings.MqttPort = MqttPort.Text;
-            settings.MqttUsername = MqttUserNameBox.Text;
-            settings.MqttPassword = MQTTPasswordBox.Password;
-            settings.Theme = isDarkTheme ? "Dark" : "Light";
+            // Gather the current settings from UI components (make sure to do this on the UI thread)
+            Dispatcher.Invoke(() =>
+            {
+                settings.MqttAddress = MqttAddress.Text;
+                settings.MqttPort = MqttPort.Text;
+                settings.MqttUsername = MqttUserNameBox.Text;
+                settings.MqttPassword = MQTTPasswordBox.Password;
+                settings.UseTLS = UseTLS.IsChecked ?? false;
+                settings.IgnoreCertificateErrors = IgnoreCert.IsChecked ?? false;
+                // Additional settings as needed
+            });
+
+            // Check if MQTT settings have changed (consider abstracting this logic into a separate method)
+            bool mqttSettingsChanged = CheckIfMqttSettingsChanged(settings);
 
             // Save the updated settings to file
             settings.SaveSettingsToFile();
-            if (mqttSettingsChanged)
-            {
-                // Run the reconnection on a background thread to avoid UI freeze
-                Task.Run(async () => await ReconnectToMqttServer()).Wait();
-            }
 
-            return mqttSettingsChanged;
+           
+                await ReconnectToMqttServerAsync();
+            
         }
 
-        private void SaveSettings_Click(object sender, RoutedEventArgs e)
+        private async void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
             Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
-            bool mqttSettingsChanged = SaveSettings();
-            if (mqttSettingsChanged)
-            {
-                // Retry MQTT connection with new settings
-                mqttClientWrapper = new MqttClientWrapper(
-                    "TEAMS2HA",
-                    _settings.MqttAddress,
-                    _settings.MqttPort,
-                    _settings.MqttUsername,
-                    _settings.MqttPassword,
-                    _settings.UseTLS,
-                    _settings.IgnoreCertificateErrors
-                    
-                    );
-                _ = InitializeMQTTConnection();
-                Log.Debug("SaveSettings_Click: MQTT Settings Changed and initialze called");
-                //if mqtt is connected, disable the test mqtt connection button
-            }
+            await SaveSettingsAsync();
         }
 
         private async Task SetStartupAsync(bool startWithWindows)
@@ -1049,7 +1048,7 @@ namespace TEAMS2HA
             {
                 Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
                 UpdateStatusMenuItems();
-                Log.Debug("TestMQTTConnection_Click: MQTT Client Connected");
+                Log.Debug("TestMQTTConnection_Click: MQTT Client Connected in testmqttconnection");
                 return;
             }
             //make sure we have an mqtt address
@@ -1069,9 +1068,12 @@ namespace TEAMS2HA
                 try
                 {
                     await mqttClientWrapper.ConnectAsync();
-                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                    if (mqttClientWrapper.IsConnected)
+                    {
+                        Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
+                    }
                     UpdateStatusMenuItems();
-                    Log.Debug("TestMQTTConnection_Click: MQTT Client Connected");
+                    Log.Debug("TestMQTTConnection_Click: MQTT Client Connected in TestMQTTConnection_Click");
                     return; // Exit the method if connected
                 }
                 catch (Exception ex)
@@ -1107,6 +1109,16 @@ namespace TEAMS2HA
                 await _teamsClient.PairWithTeamsAsync();
             }
         }
+        private bool CheckIfMqttSettingsChanged(AppSettings newSettings)
+        {
+            var currentSettings = AppSettings.Instance;
+            return newSettings.MqttAddress != currentSettings.MqttAddress ||
+                   newSettings.MqttPort != currentSettings.MqttPort ||
+                   newSettings.MqttUsername != currentSettings.MqttUsername ||
+                   newSettings.MqttPassword != currentSettings.MqttPassword ||
+                   newSettings.UseTLS != currentSettings.UseTLS ||
+                   newSettings.IgnoreCertificateErrors != currentSettings.IgnoreCertificateErrors;
+        }
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
         {
@@ -1116,7 +1128,7 @@ namespace TEAMS2HA
             ApplyTheme(_settings.Theme);
 
             // Save settings after changing the theme
-            SaveSettings();
+            _ = SaveSettingsAsync();
         }
 
         #endregion Private Methods
