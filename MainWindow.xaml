@@ -65,6 +65,8 @@
             <StackPanel Grid.Row="3" Margin="0,10,0,0" Orientation="Horizontal">
                 <TextBlock Text="MQTT Username:" Width="200" VerticalAlignment="Center"/>
                 <TextBox x:Name="MqttUserNameBox" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}"/>
+                <CheckBox x:Name="UseTLS" Content="TLS?" RenderTransformOrigin="0.832,0.636" Margin="10,0,0,0"/>
+                <CheckBox x:Name="IgnoreCert" Content="Ignore Cert Errors?" Margin="10,0,0,0"/>
 
             </StackPanel>
             <StackPanel Grid.Row="4" Margin="0,10,0,0" Orientation="Horizontal">

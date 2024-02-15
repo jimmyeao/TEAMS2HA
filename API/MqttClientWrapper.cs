@@ -28,7 +28,7 @@ namespace TEAMS2HA.API
             get { return _isAttemptingConnection; }
             private set { _isAttemptingConnection = value; }
         }
-        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool useTls = false)
+        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool UseTLS , bool IgnoreCertificateErrors )
         {
             var factory = new MqttFactory();
             _mqttClient = factory.CreateMqttClient() as MqttClient;
@@ -43,14 +43,15 @@ namespace TEAMS2HA.API
                 .WithCleanSession();
 
             // If useTls is true or the port is 8883, configure the client to use TLS.
-            if (useTls || mqttportInt == 8883)
+            if (UseTLS || mqttportInt == 8883)
             {
+                var untrusted = IgnoreCertificateErrors;
                 // Configure TLS options
                 mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt)
                     .WithTls(new MqttClientOptionsBuilderTlsParameters
                     {
                         UseTls = true,
-                        AllowUntrustedCertificates = true,
+                        AllowUntrustedCertificates = untrusted,
                         IgnoreCertificateChainErrors = true,
                         IgnoreCertificateRevocationErrors = true
                     });

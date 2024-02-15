@@ -95,6 +95,8 @@ namespace TEAMS2HA
         public string MqttUsername { get; set; }
 
         public bool RunAtWindowsBoot { get; set; }
+        public bool UseTLS { get; set; }
+        public bool IgnoreCertificateErrors { get; set; }
 
         public bool RunMinimized { get; set; }
 
@@ -265,7 +267,9 @@ namespace TEAMS2HA
                 _settings.MqttAddress,
                 _settings.MqttPort,
                 _settings.MqttUsername,
-                _settings.MqttPassword
+                _settings.MqttPassword,
+                _settings.UseTLS,
+                _settings.IgnoreCertificateErrors
             );
 
             // Set the action to be performed when a new token is updated
@@ -408,7 +412,9 @@ namespace TEAMS2HA
                 _settings.MqttAddress,
                 _settings.MqttPort,
                 _settings.MqttUsername,
-                _settings.MqttPassword
+                _settings.MqttPassword,
+                _settings.UseTLS,
+                _settings.IgnoreCertificateErrors
             );
 
             // Connect to the new MQTT server
@@ -793,6 +799,8 @@ namespace TEAMS2HA
             RunAtWindowsBootCheckBox.IsChecked = _settings.RunAtWindowsBoot;
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
             MqttUserNameBox.Text = _settings.MqttUsername;
+            UseTLS.IsChecked = _settings.UseTLS;
+            IgnoreCert.IsChecked = _settings.IgnoreCertificateErrors;
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
             MqttPort.Text = _settings.MqttPort;
@@ -927,9 +935,12 @@ namespace TEAMS2HA
                 settings.MqttAddress != MqttAddress.Text ||
                 settings.MqttUsername != MqttUserNameBox.Text ||
                 settings.MqttPort != MqttPort.Text ||
-                settings.MqttPassword != MQTTPasswordBox.Password;
-
+                settings.MqttPassword != MQTTPasswordBox.Password ||
+                settings.UseTLS != UseTLS.IsChecked ||
+                settings.IgnoreCertificateErrors != IgnoreCert.IsChecked ;
             settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
+            settings.UseTLS = UseTLS.IsChecked ?? false;
+            settings.IgnoreCertificateErrors = IgnoreCert.IsChecked ?? false;
             settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
             settings.MqttAddress = MqttAddress.Text;
             settings.MqttPort = MqttPort.Text;
@@ -960,8 +971,11 @@ namespace TEAMS2HA
                     _settings.MqttAddress,
                     _settings.MqttPort,
                     _settings.MqttUsername,
-                    _settings.MqttPassword
-                );
+                    _settings.MqttPassword,
+                    _settings.UseTLS,
+                    _settings.IgnoreCertificateErrors
+                    
+                    );
                 _ = InitializeMQTTConnection();
                 Log.Debug("SaveSettings_Click: MQTT Settings Changed and initialze called");
                 //if mqtt is connected, disable the test mqtt connection button
