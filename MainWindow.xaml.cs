@@ -173,6 +173,10 @@ namespace TEAMS2HA
                 {
                     this.PlainTeamsToken = CryptoHelper.DecryptString(this.TeamsToken);
                 }
+                if (string.IsNullOrEmpty(this.MqttPort))
+                {
+                    this.MqttPort = "1883"; // Default MQTT port
+                }
             }
             else
             {
