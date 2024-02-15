@@ -8,6 +8,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Windows.Threading;
+using System.Runtime.ConstrainedExecution;
+using System.Windows.Controls;
+using System.Security.Authentication;
+using System.Threading;
 
 namespace TEAMS2HA.API
 {
@@ -51,6 +55,7 @@ namespace TEAMS2HA.API
                 var untrusted = IgnoreCertificateErrors;
                 // Configure TLS options
                 mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt)
+
                     .WithTls(new MqttClientOptionsBuilderTlsParameters
                     {
                         UseTls = true,
@@ -58,6 +63,8 @@ namespace TEAMS2HA.API
                         IgnoreCertificateChainErrors = untrusted,
                         IgnoreCertificateRevocationErrors = untrusted
                     });
+               
+
                 Log.Information($"MQTT Client Created with TLS on port {mqttPort}.");
                 ConnectionStatusChanged?.Invoke($"MQTT Client Created with TLS");
 
@@ -70,7 +77,11 @@ namespace TEAMS2HA.API
             }
 
             _mqttOptions = mqttClientOptionsBuilder.Build();
-            _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+            if (_mqttClient != null)
+            {
+                _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+            }
+            
         }
 
 

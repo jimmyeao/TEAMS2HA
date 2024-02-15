@@ -691,7 +691,7 @@ namespace TEAMS2HA
             // Check if it's a command topic and handle accordingly
             if (topic.StartsWith("homeassistant/switch/") && topic.EndsWith("/set"))
             {
-                string command = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+                string command = Encoding.UTF8.GetString(e.ApplicationMessage.PayloadSegment);
                 // Parse and handle the command
                 HandleSwitchCommand(topic, command);
             }
