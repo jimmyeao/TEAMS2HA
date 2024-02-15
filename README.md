@@ -8,7 +8,8 @@ This is an agent that runs on windows and uses the Local teams API (https://supp
 
 Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/f8a90d5c-25be-4b00-98a8-9521827ca0b9)
+
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/7743b342-4234-41fb-8822-cbb1ef53db09)
 
 <h2>Pairing</h2>
 
