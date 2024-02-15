@@ -52,8 +52,8 @@ namespace TEAMS2HA.API
                     {
                         UseTls = true,
                         AllowUntrustedCertificates = untrusted,
-                        IgnoreCertificateChainErrors = true,
-                        IgnoreCertificateRevocationErrors = true
+                        IgnoreCertificateChainErrors = untrusted,
+                        IgnoreCertificateRevocationErrors = untrusted
                     });
                 Log.Information($"MQTT Client Created with TLS on port {mqttPort}.");
             }
