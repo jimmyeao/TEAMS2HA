@@ -61,7 +61,19 @@ namespace TEAMS2HA.API
                         UseTls = true,
                         AllowUntrustedCertificates = untrusted,
                         IgnoreCertificateChainErrors = untrusted,
-                        IgnoreCertificateRevocationErrors = untrusted
+                        IgnoreCertificateRevocationErrors = untrusted,
+                        CertificateValidationHandler = context =>
+                        {
+                            if(IgnoreCertificateErrors)
+                            {
+                                return true;
+                            }
+                            else
+                            {
+                                return false;
+                            }
+                      
+                        }
                     });
                
 
