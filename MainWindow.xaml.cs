@@ -438,6 +438,8 @@ namespace TEAMS2HA
 
             // Attempt to connect to the MQTT server with new settings
             await mqttClientWrapper.ConnectAsync();
+            //we need to subscribe again (Thanks to @egglestron for pointing this out!)
+            await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
         }
        
 
