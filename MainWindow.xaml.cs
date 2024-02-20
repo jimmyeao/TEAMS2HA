@@ -464,6 +464,7 @@ namespace TEAMS2HA
                 if (!mqttClientWrapper.IsConnected)
                 {
                     await mqttClientWrapper.ConnectAsync();
+                    await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     SetupMqttSensors();
                 }
                 if (!_teamsClient.IsConnected)
@@ -588,6 +589,7 @@ namespace TEAMS2HA
             {
                 Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
                 await mqttClientWrapper.ConnectAsync();
+                await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                 UpdateConnectionStatus();
             }
         }
@@ -1076,6 +1078,7 @@ namespace TEAMS2HA
                     }
                     UpdateStatusMenuItems();
                     Log.Debug("TestMQTTConnection_Click: MQTT Client Connected in TestMQTTConnection_Click");
+                    await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     return; // Exit the method if connected
                 }
                 catch (Exception ex)
