@@ -965,7 +965,9 @@ namespace TEAMS2HA
                 settings.MqttPassword = MQTTPasswordBox.Password;
                 settings.UseTLS = UseTLS.IsChecked ?? false;
                 settings.IgnoreCertificateErrors = IgnoreCert.IsChecked ?? false;
-                // Additional settings as needed
+                settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
+                settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
+                
             });
 
             // Check if MQTT settings have changed (consider abstracting this logic into a separate method)
