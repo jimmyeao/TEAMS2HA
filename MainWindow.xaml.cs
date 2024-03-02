@@ -1176,6 +1176,7 @@ namespace TEAMS2HA
                    newSettings.MqttUsername != currentSettings.MqttUsername ||
                    newSettings.MqttPassword != currentSettings.MqttPassword ||
                    newSettings.UseTLS != currentSettings.UseTLS ||
+                   newSettings.UseWebsockets != currentSettings.UseWebsockets ||
                    newSettings.IgnoreCertificateErrors != currentSettings.IgnoreCertificateErrors;
         }
         private bool CheckIfSensorPrefixChanged(AppSettings newSettings)
