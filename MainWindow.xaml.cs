@@ -84,13 +84,10 @@ namespace TEAMS2HA
         // Properties
         public string EncryptedMqttPassword { get; set; }
 
-        public string HomeAssistantToken { get; set; }
-
-        public string HomeAssistantURL { get; set; }
-
         public string MqttAddress { get; set; }
 
         public string MqttPort { get; set; }
+        public string SensorPrefix { get; set; }
 
         public string MqttUsername { get; set; }
 
@@ -126,10 +123,14 @@ namespace TEAMS2HA
             {
                 this.TeamsToken = "";
             }
+            if(string.IsNullOrEmpty(this.SensorPrefix))
+            {
+                this.SensorPrefix = System.Environment.MachineName;
+            }
             // newcode
 
                 const string appName = "TEAMS2HA"; // Your application's name
-                string exePath = System.Windows.Forms.Application.ExecutablePath;
+                    string exePath = System.Windows.Forms.Application.ExecutablePath;
 
                 // Open the registry key for the current user's startup programs
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
@@ -246,7 +247,15 @@ namespace TEAMS2HA
             _settings = AppSettings.Instance;
 
             // Get the device ID
-            deviceid = System.Environment.MachineName;
+            if (string.IsNullOrEmpty(_settings.SensorPrefix))
+            {
+                deviceid = System.Environment.MachineName;
+            }
+            else
+            { 
+                deviceid = _settings.SensorPrefix;
+            }
+            
 
             // Log the settings file path
             Log.Debug("Settings file path is {path}", _settingsFilePath);
@@ -828,6 +837,16 @@ namespace TEAMS2HA
             IgnoreCert.IsChecked = _settings.IgnoreCertificateErrors;
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
+            // Added to set the sensor prefix
+            if(string.IsNullOrEmpty(_settings.SensorPrefix))
+            {
+                SensorPrefixBox.Text = System.Environment.MachineName;
+            }
+            else
+            {
+                SensorPrefixBox.Text = _settings.SensorPrefix;
+            }   
+            SensorPrefixBox.Text = _settings.SensorPrefix;
             MqttPort.Text = _settings.MqttPort;
             if (_settings.PlainTeamsToken == null)
             {
@@ -967,23 +986,37 @@ namespace TEAMS2HA
                 settings.IgnoreCertificateErrors = IgnoreCert.IsChecked ?? false;
                 settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
                 settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
+                if (string.IsNullOrEmpty(SensorPrefixBox.Text))
+                {
+                    settings.SensorPrefix = System.Environment.MachineName;
+                    SensorPrefixBox.Text = System.Environment.MachineName;
+                }
+                else { settings.SensorPrefix = SensorPrefixBox.Text;}
+               
                 
             });
-
+            
             // Check if MQTT settings have changed (consider abstracting this logic into a separate method)
             bool mqttSettingsChanged = CheckIfMqttSettingsChanged(settings);
+            // Check if Sensore Prefix has changed
+            bool sensorPrefixChanged = CheckIfSensorPrefixChanged(settings);
 
             // Save the updated settings to file
             settings.SaveSettingsToFile();
 
            
-                await ReconnectToMqttServerAsync();
-            
+            await ReconnectToMqttServerAsync();
+            await PublishConfigurations(_latestMeetingUpdate, _settings);
+
         }
 
         private async void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
             Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
+            foreach(var setting in _settings.GetType().GetProperties())
+            {
+                Log.Debug(setting.Name + " " + setting.GetValue(_settings));
+            }
             await SaveSettingsAsync();
         }
 
@@ -1125,6 +1158,13 @@ namespace TEAMS2HA
                    newSettings.MqttPassword != currentSettings.MqttPassword ||
                    newSettings.UseTLS != currentSettings.UseTLS ||
                    newSettings.IgnoreCertificateErrors != currentSettings.IgnoreCertificateErrors;
+        }
+        private bool CheckIfSensorPrefixChanged(AppSettings newSettings)
+        {
+            var currentSettings = AppSettings.Instance;
+            deviceid = newSettings.SensorPrefix;
+            return newSettings.SensorPrefix != currentSettings.SensorPrefix;
+            
         }
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
