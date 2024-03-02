@@ -9,13 +9,14 @@ This is an agent that runs on windows and uses the Local teams API (https://supp
 Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
 
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/7743b342-4234-41fb-8822-cbb1ef53db09)
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/9baf1908-3d72-455d-b749-25b5cb03b3ac)
+
 
 <h2>Pairing</h2>
 
 to pair, have the app running, launch a teams meeting (using meetnow?) and click Pair wtih teams. This will initiate a pairing request in teams, accept this, and then the app will store the key, in an encrypted format.
 
-The application will minimize to the system stray.
+The application will minimize to the system tray.
 
 <h2>MQTT</h2>
 
