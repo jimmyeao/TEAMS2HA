@@ -78,7 +78,7 @@ namespace TEAMS2HA
 
         [JsonIgnore]
         public string MqttPassword { get; set; }
-
+        public bool UseWebsockets { get; set; }
         [JsonIgnore]
         public string PlainTeamsToken { get; set; }
         // Properties
@@ -834,6 +834,7 @@ namespace TEAMS2HA
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
             MqttUserNameBox.Text = _settings.MqttUsername;
             UseTLS.IsChecked = _settings.UseTLS;
+            Websockets.IsChecked = _settings.UseWebsockets;
             IgnoreCert.IsChecked = _settings.IgnoreCertificateErrors;
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
@@ -921,7 +922,24 @@ namespace TEAMS2HA
                     Model = "Teams2HA",
                     Manufacturer = "JimmyWhite",
                 };
-
+                // added to check if meeting update is null
+                if (meetingUpdate == null)
+                {
+                    meetingUpdate = new MeetingUpdate
+                    {
+                        MeetingState = new MeetingState
+                        {
+                            IsMuted = false,
+                            IsVideoOn = false,
+                            IsHandRaised = false,
+                            IsInMeeting = false,
+                            IsRecordingOn = false,
+                            IsBackgroundBlurred = false,
+                            IsSharing = false,
+                            HasUnreadMessages = false
+                        }
+                    };
+                }
                 string sensorKey = $"{deviceid}_{sensor}";
                 string sensorName = $"{deviceid}_{sensor}".ToLower().Replace(" ", "_");
                 string deviceClass = DetermineDeviceClass(sensor);
@@ -985,6 +1003,7 @@ namespace TEAMS2HA
                 settings.UseTLS = UseTLS.IsChecked ?? false;
                 settings.IgnoreCertificateErrors = IgnoreCert.IsChecked ?? false;
                 settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
+                settings.UseWebsockets = Websockets.IsChecked ?? false;
                 settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
                 if (string.IsNullOrEmpty(SensorPrefixBox.Text))
                 {
@@ -1180,5 +1199,21 @@ namespace TEAMS2HA
 
         #endregion Private Methods
 
+        private void Websockets_Checked(object sender, RoutedEventArgs e)
+        {
+           
+                _settings.UseWebsockets = true;
+                // Disable the mqtt port box
+                MqttPort.IsEnabled = false;
+                
+          
+        }
+        private void Websockets_Unchecked(object sender, RoutedEventArgs e)
+        {
+            
+                _settings.UseWebsockets = false;
+                MqttPort.IsEnabled = true;
+            
+        }
     }
 }

@@ -73,6 +73,7 @@
             <StackPanel Grid.Row="4" Margin="0,10,0,0" Orientation="Horizontal">
                 <TextBlock Text="MQTT Password:" Width="200" VerticalAlignment="Center"/>
                 <PasswordBox x:Name="MQTTPasswordBox" PasswordChar="•" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignFloatingHintRevealPasswordBox}"/>
+                <CheckBox x:Name="Websockets" Content="Use Websockets?" Margin="10,0,0,0" Checked="Websockets_Checked" Unchecked="Websockets_Unchecked"/>
             </StackPanel>
             <StackPanel Grid.Row="5" Margin="0,10,0,0" Orientation="Horizontal">
                 <TextBlock Text="Sensor Prefix:" Width="200" VerticalAlignment="Center"/>
