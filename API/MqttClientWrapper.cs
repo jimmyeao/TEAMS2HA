@@ -79,10 +79,41 @@ namespace TEAMS2HA.API
                         IgnoreCertificateRevocationErrors = ignoreCertificateErrors,
                         CertificateValidationHandler = context =>
                         {
-                            Log.Debug($"Certificate validation for MQTT {protocol} connection: {context.Certificate.Subject}");
-                            return ignoreCertificateErrors;
+                            // Log the certificate subject
+                            Log.Debug("Certificate Subject: {0}", context.Certificate.Subject);
+
+                            // This assumes you are trying to inspect the certificate directly;
+                            // MQTTnet may not provide a direct IsValid flag or ChainErrors like .NET's X509Chain.
+                            // Instead, you handle validation and log details manually:
+
+                            bool isValid = true; // You should define the logic to set this based on your validation requirements
+
+                            // Check for specific conditions, if necessary, such as expiry, issuer, etc.
+                            // For example, if you want to ensure the certificate is issued by a specific entity:
+                            //if (context.Certificate.Issuer != "CN=R3, O=Let's Encrypt, C=US")
+                            //{
+                            //    Log.Debug("Unexpected certificate issuer: {0}", context.Certificate.Issuer);
+                            //    isValid = false; // Set to false if the issuer is not the expected one
+                            //}
+
+                            // Log any errors from the SSL policy errors if they exist
+                            if (context.SslPolicyErrors != System.Net.Security.SslPolicyErrors.None)
+                            {
+                                Log.Debug("SSL policy errors: {0}", context.SslPolicyErrors.ToString());
+                                isValid = false; // Consider invalid if there are any SSL policy errors
+                            }
+
+                            // You can decide to ignore certain errors by setting isValid to true regardless of the checks,
+                            // but be careful as this might introduce security vulnerabilities.
+                            if (ignoreCertificateErrors)
+                            {
+                                isValid = true; // Ignore certificate errors if your settings dictate
+                            }
+
+                            return isValid; // Return the result of your checks
                         }
-                    });
+
+                });
                 }
 
                 _mqttOptions = mqttClientOptionsBuilder.Build();
