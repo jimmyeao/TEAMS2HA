@@ -355,7 +355,7 @@ namespace TEAMS2HA
                     { 
                         Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
                         Log.Debug("MQTT Client Connected in InitializeMQTTConnection");
-                        SetupMqttSensors();
+                        await SetupMqttSensors();
                     }
                     return; // Exit the method if connected
                 }
@@ -476,7 +476,7 @@ namespace TEAMS2HA
                 {
                     await mqttClientWrapper.ConnectAsync();
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                    SetupMqttSensors();
+                    await SetupMqttSensors();
                 }
                 if (!_teamsClient.IsConnected)
                 {
@@ -1028,16 +1028,20 @@ namespace TEAMS2HA
            
             await ReconnectToMqttServerAsync();
             await PublishConfigurations(_latestMeetingUpdate, _settings);
+            await SetupMqttSensors();
+
+
 
         }
 
         private async void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
             Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
-            foreach(var setting in _settings.GetType().GetProperties())
-            {
-                Log.Debug(setting.Name + " " + setting.GetValue(_settings));
-            }
+            // uncomment below for testing ** insecure as tokens exposed in logs! **
+            //foreach(var setting in _settings.GetType().GetProperties())
+            //{
+            //    Log.Debug(setting.Name + " " + setting.GetValue(_settings));
+            //}
             await SaveSettingsAsync();
         }
 
@@ -1046,7 +1050,7 @@ namespace TEAMS2HA
            
         }
 
-        private async void SetupMqttSensors()
+        private async Task SetupMqttSensors()
         {
             // Create a dummy MeetingUpdate with default values
             var dummyMeetingUpdate = new MeetingUpdate

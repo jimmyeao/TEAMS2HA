@@ -113,7 +113,7 @@ namespace TEAMS2HA.API
                             return isValid; // Return the result of your checks
                         }
 
-                });
+                    });
                 }
 
                 _mqttOptions = mqttClientOptionsBuilder.Build();
@@ -233,14 +233,17 @@ namespace TEAMS2HA.API
 
             return entityNames;
         }
-        public async Task PublishAsync(string topic, string payload, bool retain = true)
+ 
+public async Task PublishAsync(string topic, string payload, bool retain = true)
         {
             try
             {
+                // Log the topic, payload, and retain flag
                 Log.Information($"Publishing to topic: {topic}");
                 Log.Information($"Payload: {payload}");
                 Log.Information($"Retain flag: {retain}");
 
+                // Build the MQTT message
                 var message = new MqttApplicationMessageBuilder()
                     .WithTopic(topic)
                     .WithPayload(payload)
@@ -248,55 +251,58 @@ namespace TEAMS2HA.API
                     .WithRetainFlag(retain)
                     .Build();
 
+                // Publish the message using the MQTT client
                 await _mqttClient.PublishAsync(message);
                 Log.Information("Publish successful.");
             }
             catch (Exception ex)
             {
+                // Log any errors that occur during MQTT publish
                 Log.Information($"Error during MQTT publish: {ex.Message}");
                 // Depending on the severity, you might want to rethrow the exception or handle it here.
             }
         }
+   
 
-        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
+    public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
+    {
+        var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
+            .Build();
+        try
         {
-            var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
-                .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
-                .Build();
-            try
-            {
-                await _mqttClient.SubscribeAsync(subscribeOptions);
-            }
-            catch (Exception ex)
-            {
-                Log.Information($"Error during MQTT subscribe: {ex.Message}");
-                // Depending on the severity, you might want to rethrow the exception or handle it here.
-            }
-            Log.Information("Subscribing." + subscribeOptions);
+            await _mqttClient.SubscribeAsync(subscribeOptions);
         }
-
-        #endregion Public Methods
-
-        #region Private Methods
-
-        private async Task HandleReceivedApplicationMessage(MqttApplicationMessageReceivedEventArgs e)
+        catch (Exception ex)
         {
-            if (MessageReceived != null)
-            {
-                await MessageReceived(e);
-                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-            }
+            Log.Information($"Error during MQTT subscribe: {ex.Message}");
+            // Depending on the severity, you might want to rethrow the exception or handle it here.
         }
-
-        private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
-        {
-            Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-            // Trigger the event to notify subscribers
-            MessageReceived?.Invoke(e);
-
-            return Task.CompletedTask;
-        }
-
-        #endregion Private Methods
+        Log.Information("Subscribing." + subscribeOptions);
     }
+
+    #endregion Public Methods
+
+    #region Private Methods
+
+    private async Task HandleReceivedApplicationMessage(MqttApplicationMessageReceivedEventArgs e)
+    {
+        if (MessageReceived != null)
+        {
+            await MessageReceived(e);
+            Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+        }
+    }
+
+    private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
+    {
+        Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+        // Trigger the event to notify subscribers
+        MessageReceived?.Invoke(e);
+
+        return Task.CompletedTask;
+    }
+
+    #endregion Private Methods
+}
 }
