@@ -278,7 +278,8 @@ namespace TEAMS2HA
                 _settings.MqttUsername,
                 _settings.MqttPassword,
                 _settings.UseTLS,
-                _settings.IgnoreCertificateErrors
+                _settings.IgnoreCertificateErrors,
+                _settings.UseWebsockets
             );
 
             // Set the action to be performed when a new token is updated
@@ -427,7 +428,8 @@ namespace TEAMS2HA
             _settings.MqttUsername,
             _settings.MqttPassword,
             _settings.UseTLS,
-            _settings.IgnoreCertificateErrors
+            _settings.IgnoreCertificateErrors,
+            _settings.UseWebsockets
         );
 
 
@@ -1202,19 +1204,19 @@ namespace TEAMS2HA
 
         private void Websockets_Checked(object sender, RoutedEventArgs e)
         {
-           
-                _settings.UseWebsockets = true;
-                // Disable the mqtt port box
-                MqttPort.IsEnabled = false;
-                
-          
+
+            _settings.UseWebsockets = true;
+            // Disable the mqtt port box
+            // MqttPort.IsEnabled = false;
+
+
         }
         private void Websockets_Unchecked(object sender, RoutedEventArgs e)
         {
-            
-                _settings.UseWebsockets = false;
-                MqttPort.IsEnabled = true;
-            
+
+            _settings.UseWebsockets = false;
+            // MqttPort.IsEnabled = true;
+
         }
     }
 }

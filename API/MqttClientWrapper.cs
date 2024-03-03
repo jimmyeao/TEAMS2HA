@@ -34,68 +34,69 @@ namespace TEAMS2HA.API
             get { return _isAttemptingConnection; }
             private set { _isAttemptingConnection = value; }
         }
-        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool UseTLS, bool IgnoreCertificateErrors)
 
+        [Obsolete]
+        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool useTLS, bool ignoreCertificateErrors, bool useWebsockets)
         {
-            var factory = new MqttFactory();
-            _mqttClient = factory.CreateMqttClient() as MqttClient;
-
-            int mqttportInt;
-            int.TryParse(mqttPort, out mqttportInt);
-            if (mqttportInt == 0) mqttportInt = 1883;
-
-            var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
-                .WithClientId(clientId)
-                .WithCredentials(username, password)
-                .WithCleanSession();
-
-            // If useTls is true or the port is 8883, configure the client to use TLS.
-            if (UseTLS || mqttportInt == 8883)
+            try
             {
-                var untrusted = IgnoreCertificateErrors;
-                // Configure TLS options
-                mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt)
+                var factory = new MqttFactory();
+                _mqttClient = (MqttClient?)factory.CreateMqttClient();
 
-                    .WithTls(new MqttClientOptionsBuilderTlsParameters
+                if (!int.TryParse(mqttPort, out int mqttportInt))
+                {
+                    mqttportInt = 1883; // Default MQTT port
+                    Log.Warning($"Invalid MQTT port provided, defaulting to {mqttportInt}");
+                }
+
+                var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
+                    .WithClientId(clientId)
+                    .WithCredentials(username, password)
+                    .WithCleanSession();
+
+                string protocol = useWebsockets ? "ws" : "tcp";
+                string connectionType = useTLS ? "with TLS" : "without TLS";
+
+                if (useWebsockets)
+                {
+                    string websocketUri = useTLS ? $"wss://{mqttBroker}:{mqttportInt}" : $"ws://{mqttBroker}:{mqttportInt}";
+                    mqttClientOptionsBuilder.WithWebSocketServer(websocketUri);
+                    Log.Information($"Configuring MQTT client for WebSocket {connectionType} connection to {websocketUri}");
+                }
+                else
+                {
+                    mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt);
+                    Log.Information($"Configuring MQTT client for TCP {connectionType} connection to {mqttBroker}:{mqttportInt}");
+                }
+
+                if (useTLS)
+                {
+                    mqttClientOptionsBuilder.WithTls(new MqttClientOptionsBuilderTlsParameters
                     {
                         UseTls = true,
-                        AllowUntrustedCertificates = untrusted,
-                        IgnoreCertificateChainErrors = untrusted,
-                        IgnoreCertificateRevocationErrors = untrusted,
+                        AllowUntrustedCertificates = ignoreCertificateErrors,
+                        IgnoreCertificateChainErrors = ignoreCertificateErrors,
+                        IgnoreCertificateRevocationErrors = ignoreCertificateErrors,
                         CertificateValidationHandler = context =>
                         {
-                            if(IgnoreCertificateErrors)
-                            {
-                                return true;
-                            }
-                            else
-                            {
-                                return false;
-                            }
-                      
+                            Log.Debug($"Certificate validation for MQTT {protocol} connection: {context.Certificate.Subject}");
+                            return ignoreCertificateErrors;
                         }
                     });
-               
+                }
 
-                Log.Information($"MQTT Client Created with TLS on port {mqttPort}.");
-                ConnectionStatusChanged?.Invoke($"MQTT Client Created with TLS");
-
+                _mqttOptions = mqttClientOptionsBuilder.Build();
+                if (_mqttClient != null)
+                {
+                    _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt);
-                Log.Information("MQTT Client Created with TCP.");
-                ConnectionStatusChanged?.Invoke($"MQTT Client Created with TCP");
+                Log.Error(ex, "Failed to initialize MqttClientWrapper");
+                throw; // Rethrowing the exception to handle it outside or log it as fatal depending on your error handling strategy.
             }
-
-            _mqttOptions = mqttClientOptionsBuilder.Build();
-            if (_mqttClient != null)
-            {
-                _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
-            }
-            
         }
-
 
         #endregion Public Constructors
 
@@ -118,7 +119,7 @@ namespace TEAMS2HA.API
             if (_mqttClient.IsConnected || _isAttemptingConnection)
             {
                 Log.Information("MQTT client is already connected or connection attempt is in progress.");
-                
+
                 return;
             }
 
@@ -134,7 +135,7 @@ namespace TEAMS2HA.API
                     Log.Information("Connected to MQTT broker.");
                     if (_mqttClient.IsConnected)
                         ConnectionStatusChanged?.Invoke("MQTT Status: Connected");
-                    
+
                     break;
                 }
                 catch (Exception ex)
@@ -196,7 +197,7 @@ namespace TEAMS2HA.API
             $"sensor.{deviceId}_issharing",
             $"sensor.{deviceId}_hasunreadmessages",
             $"switch.{deviceId}_isbackgroundblurred"
-          
+
         };
 
             return entityNames;
