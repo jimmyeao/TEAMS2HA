@@ -8,8 +8,7 @@ This is an agent that runs on windows and uses the Local teams API (https://supp
 
 Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
 
-
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/9baf1908-3d72-455d-b749-25b5cb03b3ac)
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/fe12bf8a-6bf5-4998-a286-c2acc5d79117)
 
 
 <h2>Pairing</h2>
@@ -21,6 +20,7 @@ The application will minimize to the system tray.
 <h2>MQTT</h2>
 
 Provide your MQTT instance details (IP, username and password) The password is encrypted before being saved to the settings file and is not stored in clear text.
+We support plain MQTT, MQTT over TLS, MQTT over Websockets and MQTT over Websockets with TLS and the ability to ignore certificate errors if you are using self-signed certs (I would strongly advise you to use Lets Encrypt as a minimum)
 
 <h2>Entities</h2>
 Click the Entities button to see a list of entities this program will create:
