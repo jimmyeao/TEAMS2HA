@@ -34,68 +34,100 @@ namespace TEAMS2HA.API
             get { return _isAttemptingConnection; }
             private set { _isAttemptingConnection = value; }
         }
-        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool UseTLS, bool IgnoreCertificateErrors)
 
+        [Obsolete]
+        public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool useTLS, bool ignoreCertificateErrors, bool useWebsockets)
         {
-            var factory = new MqttFactory();
-            _mqttClient = factory.CreateMqttClient() as MqttClient;
-
-            int mqttportInt;
-            int.TryParse(mqttPort, out mqttportInt);
-            if (mqttportInt == 0) mqttportInt = 1883;
-
-            var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
-                .WithClientId(clientId)
-                .WithCredentials(username, password)
-                .WithCleanSession();
-
-            // If useTls is true or the port is 8883, configure the client to use TLS.
-            if (UseTLS || mqttportInt == 8883)
+            try
             {
-                var untrusted = IgnoreCertificateErrors;
-                // Configure TLS options
-                mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt)
+                var factory = new MqttFactory();
+                _mqttClient = (MqttClient?)factory.CreateMqttClient();
 
-                    .WithTls(new MqttClientOptionsBuilderTlsParameters
+                if (!int.TryParse(mqttPort, out int mqttportInt))
+                {
+                    mqttportInt = 1883; // Default MQTT port
+                    Log.Warning($"Invalid MQTT port provided, defaulting to {mqttportInt}");
+                }
+
+                var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
+                    .WithClientId(clientId)
+                    .WithCredentials(username, password)
+                    .WithCleanSession();
+
+                string protocol = useWebsockets ? "ws" : "tcp";
+                string connectionType = useTLS ? "with TLS" : "without TLS";
+
+                if (useWebsockets)
+                {
+                    string websocketUri = useTLS ? $"wss://{mqttBroker}:{mqttportInt}" : $"ws://{mqttBroker}:{mqttportInt}";
+                    mqttClientOptionsBuilder.WithWebSocketServer(websocketUri);
+                    Log.Information($"Configuring MQTT client for WebSocket {connectionType} connection to {websocketUri}");
+                }
+                else
+                {
+                    mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt);
+                    Log.Information($"Configuring MQTT client for TCP {connectionType} connection to {mqttBroker}:{mqttportInt}");
+                }
+
+                if (useTLS)
+                {
+                    mqttClientOptionsBuilder.WithTls(new MqttClientOptionsBuilderTlsParameters
                     {
                         UseTls = true,
-                        AllowUntrustedCertificates = untrusted,
-                        IgnoreCertificateChainErrors = untrusted,
-                        IgnoreCertificateRevocationErrors = untrusted,
+                        AllowUntrustedCertificates = ignoreCertificateErrors,
+                        IgnoreCertificateChainErrors = ignoreCertificateErrors,
+                        IgnoreCertificateRevocationErrors = ignoreCertificateErrors,
                         CertificateValidationHandler = context =>
                         {
-                            if(IgnoreCertificateErrors)
+                            // Log the certificate subject
+                            Log.Debug("Certificate Subject: {0}", context.Certificate.Subject);
+
+                            // This assumes you are trying to inspect the certificate directly;
+                            // MQTTnet may not provide a direct IsValid flag or ChainErrors like .NET's X509Chain.
+                            // Instead, you handle validation and log details manually:
+
+                            bool isValid = true; // You should define the logic to set this based on your validation requirements
+
+                            // Check for specific conditions, if necessary, such as expiry, issuer, etc.
+                            // For example, if you want to ensure the certificate is issued by a specific entity:
+                            //if (context.Certificate.Issuer != "CN=R3, O=Let's Encrypt, C=US")
+                            //{
+                            //    Log.Debug("Unexpected certificate issuer: {0}", context.Certificate.Issuer);
+                            //    isValid = false; // Set to false if the issuer is not the expected one
+                            //}
+
+                            // Log any errors from the SSL policy errors if they exist
+                            if (context.SslPolicyErrors != System.Net.Security.SslPolicyErrors.None)
                             {
-                                return true;
+                                Log.Debug("SSL policy errors: {0}", context.SslPolicyErrors.ToString());
+                                isValid = false; // Consider invalid if there are any SSL policy errors
                             }
-                            else
+
+                            // You can decide to ignore certain errors by setting isValid to true regardless of the checks,
+                            // but be careful as this might introduce security vulnerabilities.
+                            if (ignoreCertificateErrors)
                             {
-                                return false;
+                                isValid = true; // Ignore certificate errors if your settings dictate
                             }
-                      
+
+                            return isValid; // Return the result of your checks
                         }
+
                     });
-               
+                }
 
-                Log.Information($"MQTT Client Created with TLS on port {mqttPort}.");
-                ConnectionStatusChanged?.Invoke($"MQTT Client Created with TLS");
-
+                _mqttOptions = mqttClientOptionsBuilder.Build();
+                if (_mqttClient != null)
+                {
+                    _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+                }
             }
-            else
+            catch (Exception ex)
             {
-                mqttClientOptionsBuilder.WithTcpServer(mqttBroker, mqttportInt);
-                Log.Information("MQTT Client Created with TCP.");
-                ConnectionStatusChanged?.Invoke($"MQTT Client Created with TCP");
+                Log.Error(ex, "Failed to initialize MqttClientWrapper");
+                throw; // Rethrowing the exception to handle it outside or log it as fatal depending on your error handling strategy.
             }
-
-            _mqttOptions = mqttClientOptionsBuilder.Build();
-            if (_mqttClient != null)
-            {
-                _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
-            }
-            
         }
-
 
         #endregion Public Constructors
 
@@ -118,7 +150,7 @@ namespace TEAMS2HA.API
             if (_mqttClient.IsConnected || _isAttemptingConnection)
             {
                 Log.Information("MQTT client is already connected or connection attempt is in progress.");
-                
+
                 return;
             }
 
@@ -134,7 +166,7 @@ namespace TEAMS2HA.API
                     Log.Information("Connected to MQTT broker.");
                     if (_mqttClient.IsConnected)
                         ConnectionStatusChanged?.Invoke("MQTT Status: Connected");
-                    
+
                     break;
                 }
                 catch (Exception ex)
@@ -196,19 +228,22 @@ namespace TEAMS2HA.API
             $"sensor.{deviceId}_issharing",
             $"sensor.{deviceId}_hasunreadmessages",
             $"switch.{deviceId}_isbackgroundblurred"
-          
+
         };
 
             return entityNames;
         }
-        public async Task PublishAsync(string topic, string payload, bool retain = true)
+ 
+public async Task PublishAsync(string topic, string payload, bool retain = true)
         {
             try
             {
+                // Log the topic, payload, and retain flag
                 Log.Information($"Publishing to topic: {topic}");
                 Log.Information($"Payload: {payload}");
                 Log.Information($"Retain flag: {retain}");
 
+                // Build the MQTT message
                 var message = new MqttApplicationMessageBuilder()
                     .WithTopic(topic)
                     .WithPayload(payload)
@@ -216,55 +251,58 @@ namespace TEAMS2HA.API
                     .WithRetainFlag(retain)
                     .Build();
 
+                // Publish the message using the MQTT client
                 await _mqttClient.PublishAsync(message);
                 Log.Information("Publish successful.");
             }
             catch (Exception ex)
             {
+                // Log any errors that occur during MQTT publish
                 Log.Information($"Error during MQTT publish: {ex.Message}");
                 // Depending on the severity, you might want to rethrow the exception or handle it here.
             }
         }
+   
 
-        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
+    public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
+    {
+        var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
+            .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
+            .Build();
+        try
         {
-            var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
-                .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
-                .Build();
-            try
-            {
-                await _mqttClient.SubscribeAsync(subscribeOptions);
-            }
-            catch (Exception ex)
-            {
-                Log.Information($"Error during MQTT subscribe: {ex.Message}");
-                // Depending on the severity, you might want to rethrow the exception or handle it here.
-            }
-            Log.Information("Subscribing." + subscribeOptions);
+            await _mqttClient.SubscribeAsync(subscribeOptions);
         }
-
-        #endregion Public Methods
-
-        #region Private Methods
-
-        private async Task HandleReceivedApplicationMessage(MqttApplicationMessageReceivedEventArgs e)
+        catch (Exception ex)
         {
-            if (MessageReceived != null)
-            {
-                await MessageReceived(e);
-                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-            }
+            Log.Information($"Error during MQTT subscribe: {ex.Message}");
+            // Depending on the severity, you might want to rethrow the exception or handle it here.
         }
-
-        private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
-        {
-            Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-            // Trigger the event to notify subscribers
-            MessageReceived?.Invoke(e);
-
-            return Task.CompletedTask;
-        }
-
-        #endregion Private Methods
+        Log.Information("Subscribing." + subscribeOptions);
     }
+
+    #endregion Public Methods
+
+    #region Private Methods
+
+    private async Task HandleReceivedApplicationMessage(MqttApplicationMessageReceivedEventArgs e)
+    {
+        if (MessageReceived != null)
+        {
+            await MessageReceived(e);
+            Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+        }
+    }
+
+    private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
+    {
+        Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+        // Trigger the event to notify subscribers
+        MessageReceived?.Invoke(e);
+
+        return Task.CompletedTask;
+    }
+
+    #endregion Private Methods
+}
 }

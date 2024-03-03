@@ -78,7 +78,7 @@ namespace TEAMS2HA
 
         [JsonIgnore]
         public string MqttPassword { get; set; }
-
+        public bool UseWebsockets { get; set; }
         [JsonIgnore]
         public string PlainTeamsToken { get; set; }
         // Properties
@@ -278,7 +278,8 @@ namespace TEAMS2HA
                 _settings.MqttUsername,
                 _settings.MqttPassword,
                 _settings.UseTLS,
-                _settings.IgnoreCertificateErrors
+                _settings.IgnoreCertificateErrors,
+                _settings.UseWebsockets
             );
 
             // Set the action to be performed when a new token is updated
@@ -354,7 +355,7 @@ namespace TEAMS2HA
                     { 
                         Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
                         Log.Debug("MQTT Client Connected in InitializeMQTTConnection");
-                        SetupMqttSensors();
+                        await SetupMqttSensors();
                     }
                     return; // Exit the method if connected
                 }
@@ -427,7 +428,8 @@ namespace TEAMS2HA
             _settings.MqttUsername,
             _settings.MqttPassword,
             _settings.UseTLS,
-            _settings.IgnoreCertificateErrors
+            _settings.IgnoreCertificateErrors,
+            _settings.UseWebsockets
         );
 
 
@@ -474,7 +476,7 @@ namespace TEAMS2HA
                 {
                     await mqttClientWrapper.ConnectAsync();
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                    SetupMqttSensors();
+                    await SetupMqttSensors();
                 }
                 if (!_teamsClient.IsConnected)
                 {
@@ -834,6 +836,7 @@ namespace TEAMS2HA
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
             MqttUserNameBox.Text = _settings.MqttUsername;
             UseTLS.IsChecked = _settings.UseTLS;
+            Websockets.IsChecked = _settings.UseWebsockets;
             IgnoreCert.IsChecked = _settings.IgnoreCertificateErrors;
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
@@ -921,7 +924,24 @@ namespace TEAMS2HA
                     Model = "Teams2HA",
                     Manufacturer = "JimmyWhite",
                 };
-
+                // added to check if meeting update is null
+                if (meetingUpdate == null)
+                {
+                    meetingUpdate = new MeetingUpdate
+                    {
+                        MeetingState = new MeetingState
+                        {
+                            IsMuted = false,
+                            IsVideoOn = false,
+                            IsHandRaised = false,
+                            IsInMeeting = false,
+                            IsRecordingOn = false,
+                            IsBackgroundBlurred = false,
+                            IsSharing = false,
+                            HasUnreadMessages = false
+                        }
+                    };
+                }
                 string sensorKey = $"{deviceid}_{sensor}";
                 string sensorName = $"{deviceid}_{sensor}".ToLower().Replace(" ", "_");
                 string deviceClass = DetermineDeviceClass(sensor);
@@ -985,6 +1005,7 @@ namespace TEAMS2HA
                 settings.UseTLS = UseTLS.IsChecked ?? false;
                 settings.IgnoreCertificateErrors = IgnoreCert.IsChecked ?? false;
                 settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
+                settings.UseWebsockets = Websockets.IsChecked ?? false;
                 settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
                 if (string.IsNullOrEmpty(SensorPrefixBox.Text))
                 {
@@ -1007,16 +1028,20 @@ namespace TEAMS2HA
            
             await ReconnectToMqttServerAsync();
             await PublishConfigurations(_latestMeetingUpdate, _settings);
+            await SetupMqttSensors();
+
+
 
         }
 
         private async void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
             Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
-            foreach(var setting in _settings.GetType().GetProperties())
-            {
-                Log.Debug(setting.Name + " " + setting.GetValue(_settings));
-            }
+            // uncomment below for testing ** insecure as tokens exposed in logs! **
+            //foreach(var setting in _settings.GetType().GetProperties())
+            //{
+            //    Log.Debug(setting.Name + " " + setting.GetValue(_settings));
+            //}
             await SaveSettingsAsync();
         }
 
@@ -1025,7 +1050,7 @@ namespace TEAMS2HA
            
         }
 
-        private async void SetupMqttSensors()
+        private async Task SetupMqttSensors()
         {
             // Create a dummy MeetingUpdate with default values
             var dummyMeetingUpdate = new MeetingUpdate
@@ -1157,6 +1182,7 @@ namespace TEAMS2HA
                    newSettings.MqttUsername != currentSettings.MqttUsername ||
                    newSettings.MqttPassword != currentSettings.MqttPassword ||
                    newSettings.UseTLS != currentSettings.UseTLS ||
+                   newSettings.UseWebsockets != currentSettings.UseWebsockets ||
                    newSettings.IgnoreCertificateErrors != currentSettings.IgnoreCertificateErrors;
         }
         private bool CheckIfSensorPrefixChanged(AppSettings newSettings)
@@ -1180,5 +1206,21 @@ namespace TEAMS2HA
 
         #endregion Private Methods
 
+        private void Websockets_Checked(object sender, RoutedEventArgs e)
+        {
+
+            _settings.UseWebsockets = true;
+            // Disable the mqtt port box
+            // MqttPort.IsEnabled = false;
+
+
+        }
+        private void Websockets_Unchecked(object sender, RoutedEventArgs e)
+        {
+
+            _settings.UseWebsockets = false;
+            // MqttPort.IsEnabled = true;
+
+        }
     }
 }
