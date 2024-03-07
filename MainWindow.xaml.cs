@@ -923,7 +923,23 @@ namespace TEAMS2HA
                 name = deviceid, // Device name
                 sw = "v1.0" // Software version
             };
-
+            if (meetingUpdate == null)
+            {
+                meetingUpdate = new MeetingUpdate
+                {
+                    MeetingState = new MeetingState
+                    {
+                        IsMuted = false,
+                        IsVideoOn = false,
+                        IsHandRaised = false,
+                        IsInMeeting = false,
+                        IsRecordingOn = false,
+                        IsBackgroundBlurred = false,
+                        IsSharing = false,
+                        HasUnreadMessages = false
+                    }
+                };
+            }
             foreach (var sensor in sensorNames)
             {
                 string sensorKey = $"{deviceid}_{sensor}";
@@ -958,7 +974,7 @@ namespace TEAMS2HA
                     {
                         var sensorConfig = new
                         {
-                            name = sensorName,
+                            name = $"{sensorName} {deviceid}",
                             unique_id = uniqueId,
                             device = deviceInfo,
                             icon = icon,
