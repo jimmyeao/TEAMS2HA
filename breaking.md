@@ -5,7 +5,7 @@ In the next version of Teams2HA, we will be moving to a model more aligned with 
 
 The Device will appear in the MQTT integration as the Prefix name
 
-The sensor names shout NOT change, but there is a small risk that they will for your setup which _may_ break integrations you already have. I have attempted to prevent this much as possible, but I can make no guarantees :)
+The sensor names should NOT change, but there is a small risk that they will for your setup which _may_ break integrations you already have. I have attempted to prevent this much as possible, but I can make no guarantees :)
 
 As the old sensor names may conflict, you may need to remove them from MQTT - I use https://mqtt-explorer.com/ MQTT Explorer
 
