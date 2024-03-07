@@ -914,81 +914,65 @@ namespace TEAMS2HA
 
         private async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings)
         {
+            // Define common device information for all entities.
+            var deviceInfo = new
+            {
+                ids = new[] { "teams2ha_" + deviceid }, // Unique device identifier
+                mf = "Jimmy White", // Manufacturer name
+                mdl = "Teams2HA Device", // Model
+                name = deviceid, // Device name
+                sw = "v1.0" // Software version
+            };
+
             foreach (var sensor in sensorNames)
             {
-                var device = new Device()
-                {
-                    Identifiers = deviceid,
-                    Name = deviceid,
-                    SwVersion = "1.0.0",
-                    Model = "Teams2HA",
-                    Manufacturer = "JimmyWhite",
-                };
-                // added to check if meeting update is null
-                if (meetingUpdate == null)
-                {
-                    meetingUpdate = new MeetingUpdate
-                    {
-                        MeetingState = new MeetingState
-                        {
-                            IsMuted = false,
-                            IsVideoOn = false,
-                            IsHandRaised = false,
-                            IsInMeeting = false,
-                            IsRecordingOn = false,
-                            IsBackgroundBlurred = false,
-                            IsSharing = false,
-                            HasUnreadMessages = false
-                        }
-                    };
-                }
                 string sensorKey = $"{deviceid}_{sensor}";
                 string sensorName = $"{deviceid}_{sensor}".ToLower().Replace(" ", "_");
                 string deviceClass = DetermineDeviceClass(sensor);
                 string icon = DetermineIcon(sensor, meetingUpdate.MeetingState);
                 string stateValue = GetStateValue(sensor, meetingUpdate);
+                string uniqueId = $"{deviceid}_{sensor}";
+
                 if (!_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
                 {
                     _previousSensorStates[sensorKey] = stateValue; // Update the stored state
 
                     if (deviceClass == "switch")
                     {
-                        string stateTopic = $"homeassistant/switch/{sensorName}/state";
-                        string commandTopic = $"homeassistant/switch/{sensorName}/set";
                         var switchConfig = new
                         {
                             name = sensorName,
-                            unique_id = sensorName,
-                            state_topic = stateTopic,
-                            command_topic = commandTopic,
+                            unique_id = uniqueId,
+                            device = deviceInfo,
+                            icon = icon,
+                            command_topic = $"homeassistant/switch/{sensorName}/set",
+                            state_topic = $"homeassistant/switch/{sensorName}/state",
                             payload_on = "ON",
-                            payload_off = "OFF",
-                            icon = icon
+                            payload_off = "OFF"
                         };
                         string configTopic = $"homeassistant/switch/{sensorName}/config";
-                        await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(switchConfig));
-                        await mqttClientWrapper.PublishAsync(stateTopic, stateValue);
+                        await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(switchConfig), true);
+                        await mqttClientWrapper.PublishAsync(switchConfig.state_topic, stateValue);
                     }
-                    else if (deviceClass == "sensor") // Use else-if for binary_sensor
+                    else if (deviceClass == "sensor")
                     {
-                        string stateTopic = $"homeassistant/sensor/{sensorName}/state"; // Corrected state topic
-                        var binarySensorConfig = new
+                        var sensorConfig = new
                         {
                             name = sensorName,
-                            unique_id = sensorName,
-                            state_topic = stateTopic,
-
+                            unique_id = uniqueId,
+                            device = deviceInfo,
                             icon = icon,
-                            Device = device,
+                            state_topic = $"homeassistant/sensor/{sensorName}/state"
                         };
                         string configTopic = $"homeassistant/sensor/{sensorName}/config";
-                        await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(binarySensorConfig), true);
-                        await mqttClientWrapper.PublishAsync(stateTopic, stateValue); // Publish the state
+                        await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(sensorConfig), true);
+                        await mqttClientWrapper.PublishAsync(sensorConfig.state_topic, stateValue);
                     }
                 }
             }
-
         }
+
+
 
 
         private async Task SaveSettingsAsync()
