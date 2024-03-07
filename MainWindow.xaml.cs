@@ -943,7 +943,7 @@ namespace TEAMS2HA
             foreach (var sensor in sensorNames)
             {
                 string sensorKey = $"{deviceid}_{sensor}";
-                string sensorName = $"{deviceid}_{sensor}".ToLower().Replace(" ", "_");
+                string sensorName = $"{sensor}".ToLower().Replace(" ", "_");
                 string deviceClass = DetermineDeviceClass(sensor);
                 string icon = DetermineIcon(sensor, meetingUpdate.MeetingState);
                 string stateValue = GetStateValue(sensor, meetingUpdate);
@@ -974,7 +974,7 @@ namespace TEAMS2HA
                     {
                         var sensorConfig = new
                         {
-                            name = $"{sensorName} {deviceid}",
+                            name = sensorName,
                             unique_id = uniqueId,
                             device = deviceInfo,
                             icon = icon,
