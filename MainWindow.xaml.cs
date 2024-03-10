@@ -791,7 +791,7 @@ namespace TEAMS2HA
             {
                 Dispatcher.Invoke(() => TeamsConnectionStatus.Text = "Teams Status: Connected");
                 // ADD in code to set the connected status as a sensor
-                status
+                
                 State.Instance.teamsRunning = true;
                 Log.Debug("initializeteamsconnection: WebSocketClient Connected");
             }
