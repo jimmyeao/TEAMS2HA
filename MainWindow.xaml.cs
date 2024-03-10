@@ -449,7 +449,7 @@ namespace TEAMS2HA
                 await mqttClientWrapper.ConnectAsync();
                 await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                 UpdateConnectionStatus();
-                Dispatcher.Invoke(() => UpdateStatusMenuItems());
+                UpdateStatusMenuItems();
             }
         }
 
