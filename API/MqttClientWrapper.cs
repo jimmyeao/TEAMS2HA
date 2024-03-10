@@ -227,7 +227,8 @@ namespace TEAMS2HA.API
             $"sensor.{deviceId}_isinmeeting",
             $"sensor.{deviceId}_issharing",
             $"sensor.{deviceId}_hasunreadmessages",
-            $"switch.{deviceId}_isbackgroundblurred"
+            $"switch.{deviceId}_isbackgroundblurred",
+            $"sensor.{deviceId}_teamsRunning"
 
         };
 
