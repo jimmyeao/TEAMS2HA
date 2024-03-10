@@ -22,7 +22,7 @@ namespace TEAMS2HA.API
         private MqttClient _mqttClient;
         private MqttClientOptions _mqttOptions;
         private bool _isAttemptingConnection = false;
-        private const int MaxConnectionRetries = 5;
+        private const int MaxConnectionRetries = 2;
         private const int RetryDelayMilliseconds = 1000; //wait a couple of seconds before retrying a connection attempt
 
         #endregion Private Fields
@@ -52,7 +52,8 @@ namespace TEAMS2HA.API
                 var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
                     .WithClientId(clientId)
                     .WithCredentials(username, password)
-                    .WithCleanSession();
+                    .WithCleanSession()
+                    .WithTimeout(TimeSpan.FromSeconds(5));
 
                 string protocol = useWebsockets ? "ws" : "tcp";
                 string connectionType = useTLS ? "with TLS" : "without TLS";
@@ -276,7 +277,9 @@ public async Task PublishAsync(string topic, string payload, bool retain = true)
             var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
                 .WithClientId(Guid.NewGuid().ToString()) // Use a new client ID for a new connection
                 .WithCredentials(username, password)
-                .WithCleanSession();
+                .WithCleanSession()
+                .WithTimeout(TimeSpan.FromSeconds(5));
+                
 
             // Setup connection type: WebSockets or TCP
             if (useWebsockets)
@@ -297,6 +300,8 @@ public async Task PublishAsync(string topic, string payload, bool retain = true)
                 mqttClientOptionsBuilder.WithTls(new MqttClientOptionsBuilderTlsParameters
                 {
                     UseTls = true,
+                    // need to set the timeout for connections
+
                     AllowUntrustedCertificates = ignoreCertificateErrors,
                     IgnoreCertificateChainErrors = ignoreCertificateErrors,
                     IgnoreCertificateRevocationErrors = ignoreCertificateErrors,
@@ -309,7 +314,7 @@ public async Task PublishAsync(string topic, string payload, bool retain = true)
                     }
                 });
             }
-
+            
             // Apply the new settings to the MQTT client
             _mqttOptions = mqttClientOptionsBuilder.Build();
 
