@@ -417,6 +417,7 @@ namespace TEAMS2HA
         private void UpdateMqttConnectionStatus(string status)
         {
             Dispatcher.Invoke(() => MQTTConnectionStatus.Text = status);
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
         private void UpdateMqttClientWrapper()
         {
@@ -446,7 +447,7 @@ namespace TEAMS2HA
 
             // Update the MQTT client wrapper with new settings
             UpdateMqttClientWrapper();
-
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
             // Attempt to connect to the MQTT server with new settings
             await mqttClientWrapper.ConnectAsync();
             //we need to subscribe again (Thanks to @egglestron for pointing this out!)
@@ -477,10 +478,12 @@ namespace TEAMS2HA
                     await mqttClientWrapper.ConnectAsync();
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     await SetupMqttSensors();
+                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
                 if (!_teamsClient.IsConnected)
                 {
                     await initializeteamsconnection();
+                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
             }
             catch (Exception ex)
@@ -602,6 +605,7 @@ namespace TEAMS2HA
                 await mqttClientWrapper.ConnectAsync();
                 await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                 UpdateConnectionStatus();
+                Dispatcher.Invoke(() => UpdateStatusMenuItems());
             }
         }
 
@@ -610,7 +614,7 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() =>
             {
                 MQTTConnectionStatus.Text = mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
-                UpdateStatusMenuItems();
+                Dispatcher.Invoke(() => UpdateStatusMenuItems());
             });
         }
 
@@ -869,7 +873,7 @@ namespace TEAMS2HA
                 this.Hide();
                 MyNotifyIcon.Visibility = Visibility.Visible; // Show the NotifyIcon in the system tray
             }
-            UpdateStatusMenuItems();
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
 
         private void MainPage_Unloaded(object sender, RoutedEventArgs e)
@@ -903,6 +907,7 @@ namespace TEAMS2HA
                 string keepAliveMessage = "alive";
                 _ = mqttClientWrapper.PublishAsync(keepAliveTopic, keepAliveMessage);
                 Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
+                Dispatcher.Invoke(() => UpdateStatusMenuItems());
             }
         }
 
@@ -1093,6 +1098,7 @@ namespace TEAMS2HA
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
                 UpdateStatusMenuItems();
+                
                 Log.Debug("TeamsConnectionStatusChanged: Teams Connection Status Changed {status}", TeamsConnectionStatus.Text);
             });
         }
@@ -1136,7 +1142,7 @@ namespace TEAMS2HA
                     {
                         Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
                     }
-                    UpdateStatusMenuItems();
+                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
                     Log.Debug("TestMQTTConnection_Click: MQTT Client Connected in TestMQTTConnection_Click");
                     await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     return; // Exit the method if connected
@@ -1145,7 +1151,7 @@ namespace TEAMS2HA
                 {
                     Dispatcher.Invoke(() => MQTTConnectionStatus.Text = $"MQTT Status: Disconnected (Retry {retryCount + 1})");
                     Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect {message}", ex.Message);
-                    UpdateStatusMenuItems();
+                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
                     retryCount++;
                     await Task.Delay(2000); // Wait for 2 seconds before retrying
                 }
@@ -1153,7 +1159,7 @@ namespace TEAMS2HA
 
             Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected (Failed to connect)");
             Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect");
-            UpdateStatusMenuItems();
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
 
         private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
