@@ -302,6 +302,8 @@ namespace TEAMS2HA
             _mqttManager.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
             _mqttManager.StatusUpdated += UpdateMqttStatus;
             _mqttManager.CommandToTeams += HandleCommandToTeams;
+            mqttClientWrapper.ConnectionAttempting += MqttManager_ConnectionAttempting;
+
             // Set the action to be performed when a new token is updated
             _updateTokenAction = newToken =>
             {
@@ -421,6 +423,15 @@ namespace TEAMS2HA
                 Application.Current.Resources.MergedDictionaries.Remove(currentTheme);
             }
         }
+        private void MqttManager_ConnectionAttempting(string status)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                MQTTConnectionStatus.Text = status;
+                _mqttStatusMenuItem.Header = status; // Update the system tray menu item as well
+                                                     // No need to update other status menu items as this is specifically for MQTT connection
+            });
+        }
 
         private bool CheckIfMqttSettingsChanged(AppSettings newSettings)
         {
@@ -448,7 +459,7 @@ namespace TEAMS2HA
                 Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
                 await mqttClientWrapper.ConnectAsync();
                 await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                UpdateConnectionStatus();
+                //UpdateConnectionStatus();
                 UpdateStatusMenuItems();
             }
         }
@@ -835,20 +846,20 @@ namespace TEAMS2HA
             _ = SaveSettingsAsync();
         }
 
-        private void UpdateConnectionStatus()
-        {
-            Dispatcher.Invoke(() =>
-            {
-                MQTTConnectionStatus.Text = mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
-                Dispatcher.Invoke(() => UpdateStatusMenuItems());
-            });
-        }
+        //private void UpdateConnectionStatus()
+        //{
+        //    Dispatcher.Invoke(() =>
+        //    {
+        //        MQTTConnectionStatus.Text = mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
+        //        Dispatcher.Invoke(() => UpdateStatusMenuItems());
+        //    });
+        //}
 
-        private void UpdateMqttConnectionStatus(string status)
-        {
-            Dispatcher.Invoke(() => MQTTConnectionStatus.Text = status);
-            Dispatcher.Invoke(() => UpdateStatusMenuItems());
-        }
+        //private void UpdateMqttConnectionStatus(string status)
+        //{
+        //    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = status);
+        //    Dispatcher.Invoke(() => UpdateStatusMenuItems());
+        //}
 
         private void UpdateMqttStatus(string status)
         {
@@ -862,9 +873,17 @@ namespace TEAMS2HA
 
         private void UpdateStatusMenuItems()
         {
-            _mqttStatusMenuItem.Header = mqttClientWrapper != null && mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
-            _teamsStatusMenuItem.Header = _teamsClient != null && _teamsClient.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
+            Dispatcher.Invoke(() =>
+            {
+                // Update MQTT connection status text
+                MQTTConnectionStatus.Text = mqttClientWrapper != null && mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
+                // Update menu items
+                _mqttStatusMenuItem.Header = MQTTConnectionStatus.Text; // Reuse the text set above
+                _teamsStatusMenuItem.Header = _teamsClient != null && _teamsClient.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
+                // Add other status updates here as necessary
+            });
         }
+
 
         #endregion Private Methods
 

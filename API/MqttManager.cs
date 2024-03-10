@@ -22,6 +22,7 @@ namespace TEAMS2HA.API
         private MqttClientWrapper _mqttClientWrapper;
         private Dictionary<string, string> _previousSensorStates;
         private System.Timers.Timer mqttPublishTimer;
+       
 
         public delegate Task CommandToTeamsHandler(string jsonMessage);
 

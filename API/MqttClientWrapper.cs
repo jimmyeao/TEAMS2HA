@@ -18,6 +18,7 @@ namespace TEAMS2HA.API
     public class MqttClientWrapper
     {
         #region Private Fields
+        public event Action<string> ConnectionAttempting;
 
         private const int MaxConnectionRetries = 2;
         private const int RetryDelayMilliseconds = 1000;
@@ -183,6 +184,7 @@ namespace TEAMS2HA.API
             }
 
             _isAttemptingConnection = true;
+            ConnectionAttempting?.Invoke("MQTT Status: Connecting...");
             int retryCount = 0;
 
             while (retryCount < MaxConnectionRetries && !_mqttClient.IsConnected)
