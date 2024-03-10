@@ -262,6 +262,15 @@ namespace TEAMS2HA.API
 
         public async Task ReconnectToMqttServerAsync()
         {
+            _mqttClientWrapper.UpdateClientSettings(
+            _settings.MqttAddress,
+            _settings.MqttPort,
+            _settings.MqttUsername,
+            _settings.MqttPassword,
+            _settings.UseTLS,
+            _settings.IgnoreCertificateErrors,
+            _settings.UseWebsockets);
+
             // Ensure disconnection from the current MQTT server, if connected
             if (_mqttClientWrapper != null && _mqttClientWrapper.IsConnected)
             {

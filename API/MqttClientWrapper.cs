@@ -23,7 +23,7 @@ namespace TEAMS2HA.API
         private MqttClientOptions _mqttOptions;
         private bool _isAttemptingConnection = false;
         private const int MaxConnectionRetries = 5;
-        private const int RetryDelayMilliseconds = 2000; //wait a couple of seconds before retrying a connection attempt
+        private const int RetryDelayMilliseconds = 1000; //wait a couple of seconds before retrying a connection attempt
 
         #endregion Private Fields
         public event Action<string> ConnectionStatusChanged;
@@ -263,9 +263,63 @@ public async Task PublishAsync(string topic, string payload, bool retain = true)
                 // Depending on the severity, you might want to rethrow the exception or handle it here.
             }
         }
-   
+        public void UpdateClientSettings(string mqttBroker, string mqttPort, string username, string password, bool useTLS, bool ignoreCertificateErrors, bool useWebsockets)
+        {
+            // Convert the MQTT port from string to integer, defaulting to 1883 if conversion fails
+            if (!int.TryParse(mqttPort, out int portNumber))
+            {
+                portNumber = 1883; // Default MQTT port
+                Log.Warning($"Invalid MQTT port provided, defaulting to {portNumber}");
+            }
 
-    public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
+            // Start building the new MQTT client options
+            var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
+                .WithClientId(Guid.NewGuid().ToString()) // Use a new client ID for a new connection
+                .WithCredentials(username, password)
+                .WithCleanSession();
+
+            // Setup connection type: WebSockets or TCP
+            if (useWebsockets)
+            {
+                string websocketUri = useTLS ? $"wss://{mqttBroker}:{portNumber}" : $"ws://{mqttBroker}:{portNumber}";
+                mqttClientOptionsBuilder.WithWebSocketServer(websocketUri);
+                Log.Information($"Updating MQTT client settings for WebSocket {(useTLS ? "with TLS" : "without TLS")} connection to {websocketUri}");
+            }
+            else
+            {
+                mqttClientOptionsBuilder.WithTcpServer(mqttBroker, portNumber);
+                Log.Information($"Updating MQTT client settings for TCP {(useTLS ? "with TLS" : "without TLS")} connection to {mqttBroker}:{portNumber}");
+            }
+
+            // Setup TLS/SSL settings if needed
+            if (useTLS)
+            {
+                mqttClientOptionsBuilder.WithTls(new MqttClientOptionsBuilderTlsParameters
+                {
+                    UseTls = true,
+                    AllowUntrustedCertificates = ignoreCertificateErrors,
+                    IgnoreCertificateChainErrors = ignoreCertificateErrors,
+                    IgnoreCertificateRevocationErrors = ignoreCertificateErrors,
+                    CertificateValidationHandler = context =>
+                    {
+                        // Implement your TLS validation logic here
+                        // Log any details necessary and return true if validation is successful
+                        // For simplicity and security example, this will return true if ignoreCertificateErrors is true
+                        return ignoreCertificateErrors; // WARNING: Setting this to always 'true' might pose a security risk
+                    }
+                });
+            }
+
+            // Apply the new settings to the MQTT client
+            _mqttOptions = mqttClientOptionsBuilder.Build();
+
+            // If needed, log the new settings or perform any other necessary actions here
+            Log.Information("MQTT client settings updated successfully.");
+        }
+
+
+
+        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
     {
         var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
             .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))

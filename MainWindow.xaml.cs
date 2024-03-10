@@ -211,7 +211,7 @@ namespace TEAMS2HA
         private MqttClientWrapper mqttClientWrapper;
         private System.Timers.Timer mqttKeepAliveTimer;
         
-        private string Mqtttopic;
+        //private string Mqtttopic;
         private Dictionary<string, string> _previousSensorStates = new Dictionary<string, string>();
 
         private List<string> sensorNames = new List<string>
@@ -769,12 +769,9 @@ namespace TEAMS2HA
             // Save the updated settings to file
             settings.SaveSettingsToFile();
 
-           
             await _mqttManager.ReconnectToMqttServerAsync();
-            await _mqttManager.PublishConfigurations(_latestMeetingUpdate, _settings);
             await _mqttManager.SetupMqttSensors();
-
-
+            await _mqttManager.PublishConfigurations(_latestMeetingUpdate, _settings);
 
         }
 
