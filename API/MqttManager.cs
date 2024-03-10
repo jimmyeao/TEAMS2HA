@@ -8,6 +8,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Threading;
 using Newtonsoft.Json;
+using System.Timers;
 
 namespace TEAMS2HA.API
 {
@@ -23,6 +24,7 @@ namespace TEAMS2HA.API
         public event Action<string> StatusUpdated;
         public delegate Task CommandToTeamsHandler(string jsonMessage);
         public event CommandToTeamsHandler CommandToTeams;
+        private System.Timers.Timer mqttPublishTimer;
         #endregion Private Fields
 
         #region Public Constructors
@@ -35,6 +37,7 @@ namespace TEAMS2HA.API
             _deviceId = deviceId;
             _previousSensorStates = new Dictionary<string, string>();
             InitializeConnection();
+            InitializeMqttPublishTimer();
         }
 
         #endregion Public Constructors
@@ -322,7 +325,18 @@ namespace TEAMS2HA.API
         #endregion Protected Methods
 
         #region Private Methods
-
+        private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e)
+        {
+            if (_mqttClientWrapper != null && _mqttClientWrapper.IsConnected)
+            {
+                // Example: Publish a keep-alive message
+                string keepAliveTopic = "TEAMS2HA/keepalive";
+                string keepAliveMessage = "alive";
+                _ = _mqttClientWrapper.PublishAsync(keepAliveTopic, keepAliveMessage);
+                Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
+                
+            }
+        }
         private string DetermineDeviceClass(string sensor)
         {
             switch (sensor)
@@ -342,7 +356,14 @@ namespace TEAMS2HA.API
                     return null; // Or a default device class if appropriate
             }
         }
-
+        public void InitializeMqttPublishTimer()
+        {
+            mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
+            mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
+            mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
+            mqttPublishTimer.Enabled = true; // Enable the timer
+            Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
+        }
         // This method determines the appropriate icon based on the sensor and meeting state
         private string DetermineIcon(string sensor, MeetingState state)
         {

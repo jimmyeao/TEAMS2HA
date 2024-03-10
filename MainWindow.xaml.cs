@@ -210,7 +210,7 @@ namespace TEAMS2HA
         private bool isDarkTheme = false;
         private MqttClientWrapper mqttClientWrapper;
         private System.Timers.Timer mqttKeepAliveTimer;
-        private System.Timers.Timer mqttPublishTimer;
+        
         private string Mqtttopic;
         private Dictionary<string, string> _previousSensorStates = new Dictionary<string, string>();
 
@@ -305,13 +305,13 @@ namespace TEAMS2HA
             }
 
             // Create a timer for MQTT keep alive
-            mqttKeepAliveTimer = new System.Timers.Timer(60000); // Set interval to 60 seconds (60000 ms)
-            mqttKeepAliveTimer.Elapsed += OnTimedEvent;
-            mqttKeepAliveTimer.AutoReset = true;
-            mqttKeepAliveTimer.Enabled = true;
+            //mqttKeepAliveTimer = new System.Timers.Timer(60000); // Set interval to 60 seconds (60000 ms)
+            //mqttKeepAliveTimer.Elapsed += OnTimedEvent;
+            //mqttKeepAliveTimer.AutoReset = true;
+            //mqttKeepAliveTimer.Enabled = true;
             
             // Initialize the MQTT publish timer
-            InitializeMqttPublishTimer();
+            _mqttManager.InitializeMqttPublishTimer();
             
         }
 
@@ -571,14 +571,7 @@ namespace TEAMS2HA
 
        
 
-        private void InitializeMqttPublishTimer()
-        {
-            mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
-            mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
-            mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
-            mqttPublishTimer.Enabled = true; // Enable the timer
-            Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
-        }
+       
 
         private async Task initializeteamsconnection()
         {
@@ -729,18 +722,7 @@ namespace TEAMS2HA
             }
         }
 
-        private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e)
-        {
-            if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
-            {
-                // Example: Publish a keep-alive message
-                string keepAliveTopic = "TEAMS2HA/keepalive";
-                string keepAliveMessage = "alive";
-                _ = mqttClientWrapper.PublishAsync(keepAliveTopic, keepAliveMessage);
-                Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
-                Dispatcher.Invoke(() => UpdateStatusMenuItems());
-            }
-        }
+
 
         private void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)
         {
