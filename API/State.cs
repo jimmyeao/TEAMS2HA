@@ -138,6 +138,7 @@ namespace TEAMS2HA.API
                 }
             }
         }
+        public bool teamsRunning { get; set; }
 
         public string Recording
         {

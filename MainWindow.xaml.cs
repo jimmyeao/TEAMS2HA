@@ -216,7 +216,7 @@ namespace TEAMS2HA
 
         private List<string> sensorNames = new List<string>
         {
-            "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages"
+            "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages", "teamsRunning"
         };
 
         private bool teamspaired = false;
@@ -628,6 +628,7 @@ namespace TEAMS2HA
                 case "HasUnreadMessages":
                 case "IsRecordingOn":
                 case "IsSharing":
+                case "teamsRunning":
                     return "sensor"; // These are true/false sensors
                 default:
                     return null; // Or a default device class if appropriate
@@ -785,6 +786,20 @@ namespace TEAMS2HA
             else
             {
                 Log.Debug("initializeteamsconnection: WebSocketClient is already connected or in the process of connecting");
+            }
+            if (_teamsClient.IsConnected)
+            {
+                Dispatcher.Invoke(() => TeamsConnectionStatus.Text = "Teams Status: Connected");
+                // ADD in code to set the connected status as a sensor
+                status
+                State.Instance.teamsRunning = true;
+                Log.Debug("initializeteamsconnection: WebSocketClient Connected");
+            }
+            else
+            {
+                Dispatcher.Invoke(() => TeamsConnectionStatus.Text = "Teams Status: Disconnected");
+                State.Instance.teamsRunning = false;
+                Log.Debug("initializeteamsconnection: WebSocketClient Disconnected");
             }
         }
 
