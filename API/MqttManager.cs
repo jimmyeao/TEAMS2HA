@@ -21,10 +21,14 @@ namespace TEAMS2HA.API
         private readonly AppSettings _settings;
         private MqttClientWrapper _mqttClientWrapper;
         private Dictionary<string, string> _previousSensorStates;
-        public event Action<string> StatusUpdated;
-        public delegate Task CommandToTeamsHandler(string jsonMessage);
-        public event CommandToTeamsHandler CommandToTeams;
         private System.Timers.Timer mqttPublishTimer;
+
+        public delegate Task CommandToTeamsHandler(string jsonMessage);
+
+        public event CommandToTeamsHandler CommandToTeams;
+
+        public event Action<string> StatusUpdated;
+
         #endregion Private Fields
 
         #region Public Constructors
@@ -68,43 +72,7 @@ namespace TEAMS2HA.API
                 HandleSwitchCommand(topic, command);
             }
         }
-        private async void HandleSwitchCommand(string topic, string command)
-        {
-            // Determine which switch is being controlled based on the topic
-            string switchName = topic.Split('/')[2]; // Assuming topic format is "homeassistant/switch/{switchName}/set"
-            int underscoreIndex = switchName.IndexOf('_');
-            if (underscoreIndex != -1 && underscoreIndex < switchName.Length - 1)
-            {
-                switchName = switchName.Substring(underscoreIndex + 1);
-            }
-            string jsonMessage = "";
-            switch (switchName)
-            {
-                case "ismuted":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
 
-                case "isvideoon":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-
-                case "isbackgroundblurred":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-
-                case "ishandraised":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-
-                    // Add other cases as needed
-            }
-
-            if (!string.IsNullOrEmpty(jsonMessage))
-            {
-                // Raise the event
-                CommandToTeams?.Invoke(jsonMessage);
-            }
-        }
         public async Task InitializeConnection()
         {
             if (_mqttClientWrapper == null)
@@ -292,8 +260,6 @@ namespace TEAMS2HA.API
             }
         }
 
-
-
         public async Task SetupMqttSensors()
         {
             // Create a dummy MeetingUpdate with default values
@@ -322,6 +288,44 @@ namespace TEAMS2HA.API
             OnConnectionStatusChanged(status);
         }
 
+        private async void HandleSwitchCommand(string topic, string command)
+        {
+            // Determine which switch is being controlled based on the topic
+            string switchName = topic.Split('/')[2]; // Assuming topic format is "homeassistant/switch/{switchName}/set"
+            int underscoreIndex = switchName.IndexOf('_');
+            if (underscoreIndex != -1 && underscoreIndex < switchName.Length - 1)
+            {
+                switchName = switchName.Substring(underscoreIndex + 1);
+            }
+            string jsonMessage = "";
+            switch (switchName)
+            {
+                case "ismuted":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "isvideoon":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "isbackgroundblurred":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "ishandraised":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                    // Add other cases as needed
+            }
+
+            if (!string.IsNullOrEmpty(jsonMessage))
+            {
+                // Raise the event
+                CommandToTeams?.Invoke(jsonMessage);
+            }
+        }
+
         #endregion Public Methods
 
         #region Protected Methods
@@ -334,18 +338,16 @@ namespace TEAMS2HA.API
         #endregion Protected Methods
 
         #region Private Methods
-        private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e)
+
+        public void InitializeMqttPublishTimer()
         {
-            if (_mqttClientWrapper != null && _mqttClientWrapper.IsConnected)
-            {
-                // Example: Publish a keep-alive message
-                string keepAliveTopic = "TEAMS2HA/keepalive";
-                string keepAliveMessage = "alive";
-                _ = _mqttClientWrapper.PublishAsync(keepAliveTopic, keepAliveMessage);
-                Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
-                
-            }
+            mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
+            mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
+            mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
+            mqttPublishTimer.Enabled = true; // Enable the timer
+            Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
         }
+
         private string DetermineDeviceClass(string sensor)
         {
             switch (sensor)
@@ -365,14 +367,7 @@ namespace TEAMS2HA.API
                     return null; // Or a default device class if appropriate
             }
         }
-        public void InitializeMqttPublishTimer()
-        {
-            mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
-            mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
-            mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
-            mqttPublishTimer.Enabled = true; // Enable the timer
-            Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
-        }
+
         // This method determines the appropriate icon based on the sensor and meeting state
         private string DetermineIcon(string sensor, MeetingState state)
         {
@@ -414,22 +409,7 @@ namespace TEAMS2HA.API
                 _ => "mdi:eye"
             };
         }
-        private void UpdateMqttClientWrapper()
-        {
 
-            _mqttClientWrapper = new MqttClientWrapper(
-                "TEAMS2HA",
-                _settings.MqttAddress,
-                _settings.MqttPort,
-                _settings.MqttUsername,
-                _settings.MqttPassword,
-                _settings.UseTLS,
-                _settings.IgnoreCertificateErrors,
-                _settings.UseWebsockets
-        );
-            // Subscribe to the ConnectionStatusChanged event
-            _mqttClientWrapper.ConnectionStatusChanged += UpdateConnectionStatus;
-        }
         private string GetStateValue(string sensor, MeetingUpdate meetingUpdate)
         {
             switch (sensor)
@@ -466,6 +446,34 @@ namespace TEAMS2HA.API
                 default:
                     return "unknown";
             }
+        }
+
+        private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e)
+        {
+            if (_mqttClientWrapper != null && _mqttClientWrapper.IsConnected)
+            {
+                // Example: Publish a keep-alive message
+                string keepAliveTopic = "TEAMS2HA/keepalive";
+                string keepAliveMessage = "alive";
+                _ = _mqttClientWrapper.PublishAsync(keepAliveTopic, keepAliveMessage);
+                Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
+            }
+        }
+
+        private void UpdateMqttClientWrapper()
+        {
+            _mqttClientWrapper = new MqttClientWrapper(
+                "TEAMS2HA",
+                _settings.MqttAddress,
+                _settings.MqttPort,
+                _settings.MqttUsername,
+                _settings.MqttPassword,
+                _settings.UseTLS,
+                _settings.IgnoreCertificateErrors,
+                _settings.UseWebsockets
+        );
+            // Subscribe to the ConnectionStatusChanged event
+            _mqttClientWrapper.ConnectionStatusChanged += UpdateConnectionStatus;
         }
 
         #endregion Private Methods

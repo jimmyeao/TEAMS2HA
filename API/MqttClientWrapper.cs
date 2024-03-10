@@ -19,21 +19,22 @@ namespace TEAMS2HA.API
     {
         #region Private Fields
 
+        private const int MaxConnectionRetries = 2;
+        private const int RetryDelayMilliseconds = 1000;
+        private bool _isAttemptingConnection = false;
         private MqttClient _mqttClient;
         private MqttClientOptions _mqttOptions;
-        private bool _isAttemptingConnection = false;
-        private const int MaxConnectionRetries = 2;
-        private const int RetryDelayMilliseconds = 1000; //wait a couple of seconds before retrying a connection attempt
+        //wait a couple of seconds before retrying a connection attempt
 
         #endregion Private Fields
+
+        #region Public Events
+
         public event Action<string> ConnectionStatusChanged;
 
+        #endregion Public Events
+
         #region Public Constructors
-        public bool IsAttemptingConnection
-        {
-            get { return _isAttemptingConnection; }
-            private set { _isAttemptingConnection = value; }
-        }
 
         [Obsolete]
         public MqttClientWrapper(string clientId, string mqttBroker, string mqttPort, string username, string password, bool useTLS, bool ignoreCertificateErrors, bool useWebsockets)
@@ -84,8 +85,8 @@ namespace TEAMS2HA.API
                             Log.Debug("Certificate Subject: {0}", context.Certificate.Subject);
 
                             // This assumes you are trying to inspect the certificate directly;
-                            // MQTTnet may not provide a direct IsValid flag or ChainErrors like .NET's X509Chain.
-                            // Instead, you handle validation and log details manually:
+                            // MQTTnet may not provide a direct IsValid flag or ChainErrors like
+                            // .NET's X509Chain. Instead, you handle validation and log details manually:
 
                             bool isValid = true; // You should define the logic to set this based on your validation requirements
 
@@ -104,8 +105,9 @@ namespace TEAMS2HA.API
                                 isValid = false; // Consider invalid if there are any SSL policy errors
                             }
 
-                            // You can decide to ignore certain errors by setting isValid to true regardless of the checks,
-                            // but be careful as this might introduce security vulnerabilities.
+                            // You can decide to ignore certain errors by setting isValid to true
+                            // regardless of the checks, but be careful as this might introduce
+                            // security vulnerabilities.
                             if (ignoreCertificateErrors)
                             {
                                 isValid = true; // Ignore certificate errors if your settings dictate
@@ -113,7 +115,6 @@ namespace TEAMS2HA.API
 
                             return isValid; // Return the result of your checks
                         }
-
                     });
                 }
 
@@ -130,7 +131,15 @@ namespace TEAMS2HA.API
             }
         }
 
+        public bool IsAttemptingConnection
+        {
+            get { return _isAttemptingConnection; }
+            private set { _isAttemptingConnection = value; }
+        }
+
         #endregion Public Constructors
+
+
 
         #region Public Events
 
@@ -145,6 +154,24 @@ namespace TEAMS2HA.API
         #endregion Public Properties
 
         #region Public Methods
+
+        public static List<string> GetEntityNames(string deviceId)
+        {
+            var entityNames = new List<string>
+        {
+            $"switch.{deviceId}_ismuted",
+            $"switch.{deviceId}_isvideoon",
+            $"switch.{deviceId}_ishandraised",
+            $"sensor.{deviceId}_isrecordingon",
+            $"sensor.{deviceId}_isinmeeting",
+            $"sensor.{deviceId}_issharing",
+            $"sensor.{deviceId}_hasunreadmessages",
+            $"switch.{deviceId}_isbackgroundblurred",
+            $"sensor.{deviceId}_teamsRunning"
+        };
+
+            return entityNames;
+        }
 
         public async Task ConnectAsync()
         {
@@ -217,26 +244,8 @@ namespace TEAMS2HA.API
                 Log.Information("MQTT Client Disposed");
             }
         }
-        public static List<string> GetEntityNames(string deviceId)
-        {
-            var entityNames = new List<string>
-        {
-            $"switch.{deviceId}_ismuted",
-            $"switch.{deviceId}_isvideoon",
-            $"switch.{deviceId}_ishandraised",
-            $"sensor.{deviceId}_isrecordingon",
-            $"sensor.{deviceId}_isinmeeting",
-            $"sensor.{deviceId}_issharing",
-            $"sensor.{deviceId}_hasunreadmessages",
-            $"switch.{deviceId}_isbackgroundblurred",
-            $"sensor.{deviceId}_teamsRunning"
 
-        };
-
-            return entityNames;
-        }
- 
-public async Task PublishAsync(string topic, string payload, bool retain = true)
+        public async Task PublishAsync(string topic, string payload, bool retain = true)
         {
             try
             {
@@ -264,6 +273,24 @@ public async Task PublishAsync(string topic, string payload, bool retain = true)
                 // Depending on the severity, you might want to rethrow the exception or handle it here.
             }
         }
+
+        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
+        {
+            var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
+                .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
+                .Build();
+            try
+            {
+                await _mqttClient.SubscribeAsync(subscribeOptions);
+            }
+            catch (Exception ex)
+            {
+                Log.Information($"Error during MQTT subscribe: {ex.Message}");
+                // Depending on the severity, you might want to rethrow the exception or handle it here.
+            }
+            Log.Information("Subscribing." + subscribeOptions);
+        }
+
         public void UpdateClientSettings(string mqttBroker, string mqttPort, string username, string password, bool useTLS, bool ignoreCertificateErrors, bool useWebsockets)
         {
             // Convert the MQTT port from string to integer, defaulting to 1883 if conversion fails
@@ -279,7 +306,6 @@ public async Task PublishAsync(string topic, string payload, bool retain = true)
                 .WithCredentials(username, password)
                 .WithCleanSession()
                 .WithTimeout(TimeSpan.FromSeconds(5));
-                
 
             // Setup connection type: WebSockets or TCP
             if (useWebsockets)
@@ -307,14 +333,14 @@ public async Task PublishAsync(string topic, string payload, bool retain = true)
                     IgnoreCertificateRevocationErrors = ignoreCertificateErrors,
                     CertificateValidationHandler = context =>
                     {
-                        // Implement your TLS validation logic here
-                        // Log any details necessary and return true if validation is successful
-                        // For simplicity and security example, this will return true if ignoreCertificateErrors is true
+                        // Implement your TLS validation logic here Log any details necessary and
+                        // return true if validation is successful For simplicity and security
+                        // example, this will return true if ignoreCertificateErrors is true
                         return ignoreCertificateErrors; // WARNING: Setting this to always 'true' might pose a security risk
                     }
                 });
             }
-            
+
             // Apply the new settings to the MQTT client
             _mqttOptions = mqttClientOptionsBuilder.Build();
 
@@ -322,47 +348,28 @@ public async Task PublishAsync(string topic, string payload, bool retain = true)
             Log.Information("MQTT client settings updated successfully.");
         }
 
+        #endregion Public Methods
 
+        #region Private Methods
 
-        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
-    {
-        var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
-            .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
-            .Build();
-        try
+        private async Task HandleReceivedApplicationMessage(MqttApplicationMessageReceivedEventArgs e)
         {
-            await _mqttClient.SubscribeAsync(subscribeOptions);
+            if (MessageReceived != null)
+            {
+                await MessageReceived(e);
+                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+            }
         }
-        catch (Exception ex)
+
+        private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
         {
-            Log.Information($"Error during MQTT subscribe: {ex.Message}");
-            // Depending on the severity, you might want to rethrow the exception or handle it here.
-        }
-        Log.Information("Subscribing." + subscribeOptions);
-    }
-
-    #endregion Public Methods
-
-    #region Private Methods
-
-    private async Task HandleReceivedApplicationMessage(MqttApplicationMessageReceivedEventArgs e)
-    {
-        if (MessageReceived != null)
-        {
-            await MessageReceived(e);
             Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+            // Trigger the event to notify subscribers
+            MessageReceived?.Invoke(e);
+
+            return Task.CompletedTask;
         }
+
+        #endregion Private Methods
     }
-
-    private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
-    {
-        Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-        // Trigger the event to notify subscribers
-        MessageReceived?.Invoke(e);
-
-        return Task.CompletedTask;
-    }
-
-    #endregion Private Methods
-}
 }

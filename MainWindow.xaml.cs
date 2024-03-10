@@ -76,30 +76,29 @@ namespace TEAMS2HA
             }
         }
 
-        [JsonIgnore]
-        public string MqttPassword { get; set; }
-        public bool UseWebsockets { get; set; }
-        [JsonIgnore]
-        public string PlainTeamsToken { get; set; }
         // Properties
         public string EncryptedMqttPassword { get; set; }
 
-        public string MqttAddress { get; set; }
-
-        public string MqttPort { get; set; }
-        public string SensorPrefix { get; set; }
-
-        public string MqttUsername { get; set; }
-
-        public bool RunAtWindowsBoot { get; set; }
-        public bool UseTLS { get; set; }
         public bool IgnoreCertificateErrors { get; set; }
 
+        public string MqttAddress { get; set; }
+
+        [JsonIgnore]
+        public string MqttPassword { get; set; }
+
+        public string MqttPort { get; set; }
+        public string MqttUsername { get; set; }
+
+        [JsonIgnore]
+        public string PlainTeamsToken { get; set; }
+
+        public bool RunAtWindowsBoot { get; set; }
         public bool RunMinimized { get; set; }
-
+        public string SensorPrefix { get; set; }
         public string TeamsToken { get; set; }
-
         public string Theme { get; set; }
+        public bool UseTLS { get; set; }
+        public bool UseWebsockets { get; set; }
 
         #endregion Public Properties
 
@@ -112,48 +111,49 @@ namespace TEAMS2HA
             if (!String.IsNullOrEmpty(this.MqttPassword))
             {
                 this.EncryptedMqttPassword = CryptoHelper.EncryptString(this.MqttPassword);
-            }else
+            }
+            else
             {
                 this.EncryptedMqttPassword = "";
             }
             if (!String.IsNullOrEmpty(this.PlainTeamsToken))
             {
                 this.TeamsToken = CryptoHelper.EncryptString(this.PlainTeamsToken);
-            }else
+            }
+            else
             {
                 this.TeamsToken = "";
             }
-            if(string.IsNullOrEmpty(this.SensorPrefix))
+            if (string.IsNullOrEmpty(this.SensorPrefix))
             {
                 this.SensorPrefix = System.Environment.MachineName;
             }
             // newcode
 
-                const string appName = "TEAMS2HA"; // Your application's name
-                    string exePath = System.Windows.Forms.Application.ExecutablePath;
+            const string appName = "TEAMS2HA"; // Your application's name
+            string exePath = System.Windows.Forms.Application.ExecutablePath;
 
-                // Open the registry key for the current user's startup programs
-                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+            // Open the registry key for the current user's startup programs
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(@"SOFTWARE\Microsoft\Windows\CurrentVersion\Run", true))
+            {
+                if (this.RunAtWindowsBoot)
                 {
-                    if (this.RunAtWindowsBoot)
-                    {
-                        // Set the application to start with Windows startup by adding a registry value
-                        key.SetValue(appName, exePath);
-                    }
-                    else
-                    {
-                        // Remove the registry value to prevent the application from starting with
-                        // Windows startup
-                        key.DeleteValue(appName, false);
-                    }
+                    // Set the application to start with Windows startup by adding a registry value
+                    key.SetValue(appName, exePath);
                 }
-         
+                else
+                {
+                    // Remove the registry value to prevent the application from starting with
+                    // Windows startup
+                    key.DeleteValue(appName, false);
+                }
+            }
+
             Log.Debug("SetStartupAsync: Startup set");
             // Serialize and save
             string json = JsonConvert.SerializeObject(this, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
         }
-
 
         #endregion Public Methods
 
@@ -187,7 +187,6 @@ namespace TEAMS2HA
             }
         }
 
-
         #endregion Private Methods
     }
 
@@ -195,24 +194,26 @@ namespace TEAMS2HA
     {
         #region Private Fields
 
+        private MenuItem _aboutMenuItem;
         private MeetingUpdate _latestMeetingUpdate;
 
-        private AppSettings _settings;
-        private MenuItem _mqttStatusMenuItem;
-        private MenuItem _teamsStatusMenuItem;
         private MenuItem _logMenuItem;
-        private MenuItem _aboutMenuItem;
+        private MqttManager _mqttManager;
+        private MenuItem _mqttStatusMenuItem;
+
+        //private string Mqtttopic;
+        private Dictionary<string, string> _previousSensorStates = new Dictionary<string, string>();
+
+        private AppSettings _settings;
         private string _settingsFilePath;
         private string _teamsApiKey;
         private API.WebSocketClient _teamsClient;
+        private MenuItem _teamsStatusMenuItem;
         private Action<string> _updateTokenAction;
         private string deviceid;
         private bool isDarkTheme = false;
         private MqttClientWrapper mqttClientWrapper;
         private System.Timers.Timer mqttKeepAliveTimer;
-        
-        //private string Mqtttopic;
-        private Dictionary<string, string> _previousSensorStates = new Dictionary<string, string>();
 
         private List<string> sensorNames = new List<string>
         {
@@ -220,7 +221,7 @@ namespace TEAMS2HA
         };
 
         private bool teamspaired = false;
-        private MqttManager _mqttManager;
+
         #endregion Private Fields
 
         #region Public Constructors
@@ -230,12 +231,10 @@ namespace TEAMS2HA
         {
             // Get the local application data folder path
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-           
 
-            
             // Configure logging
             LoggingConfig.Configure();
-           
+
             // Create the TEAMS2HA folder in the local application data folder
             var appDataFolder = Path.Combine(localAppData, "TEAMS2HA");
             Log.Debug("Set Folder Path to {path}", appDataFolder);
@@ -254,10 +253,9 @@ namespace TEAMS2HA
                 deviceid = System.Environment.MachineName;
             }
             else
-            { 
+            {
                 deviceid = _settings.SensorPrefix;
             }
-            
 
             // Log the settings file path
             Log.Debug("Settings file path is {path}", _settingsFilePath);
@@ -285,7 +283,7 @@ namespace TEAMS2HA
             );
             _mqttManager = new MqttManager(mqttClientWrapper, settings, sensorNames, deviceid);
             _mqttManager.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
-            _mqttManager.StatusUpdated += UpdateMqttStatus; 
+            _mqttManager.StatusUpdated += UpdateMqttStatus;
             _mqttManager.CommandToTeams += HandleCommandToTeams;
             // Set the action to be performed when a new token is updated
             _updateTokenAction = newToken =>
@@ -309,10 +307,9 @@ namespace TEAMS2HA
             //mqttKeepAliveTimer.Elapsed += OnTimedEvent;
             //mqttKeepAliveTimer.AutoReset = true;
             //mqttKeepAliveTimer.Enabled = true;
-            
+
             // Initialize the MQTT publish timer
             _mqttManager.InitializeMqttPublishTimer();
-            
         }
 
         #endregion Public Constructors
@@ -369,72 +366,80 @@ namespace TEAMS2HA
         #endregion Protected Methods
 
         #region Private Methods
-        private void UpdateMqttConnectionStatus(string status)
+
+        private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            Dispatcher.Invoke(() => MQTTConnectionStatus.Text = status);
-            Dispatcher.Invoke(() => UpdateStatusMenuItems());
+            string currentTheme = _settings.Theme; // Assuming this is where the theme is stored
+            var aboutWindow = new AboutWindow(deviceid, MyNotifyIcon);
+            aboutWindow.Owner = this;
+            aboutWindow.ShowDialog();
         }
 
-        private void SetWindowTitle()
+        private void ApplyTheme(string theme)
         {
-            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            this.Title = $"Teams2HA - Version {version}";
-        }
-        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
-        {
-            if (e.Mode == PowerModes.Resume)
+            isDarkTheme = theme == "Dark";
+            Uri themeUri;
+            if (theme == "Dark")
             {
-                Log.Information("System is waking up from sleep. Re-establishing connections...");
-                // Implement logic to re-establish connections
-                ReestablishConnections();
+                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
+                isDarkTheme = true;
             }
-        }
-        private void UpdateMqttStatus(string status)
-        {
-            Dispatcher.Invoke(() =>
+            else
             {
-                // Assuming MQTTConnectionStatus is a Label or similar control
-                MQTTConnectionStatus.Text = $"MQTT Status: {status}";
-                UpdateStatusMenuItems();
-            });
-        }
-        private void MqttManager_ConnectionStatusChanged(string status)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                MQTTConnectionStatus.Text = status; // Ensure MQTTConnectionStatus is the correct UI element's name
-            });
-        }
-        private async Task HandleCommandToTeams(string jsonMessage)
-        {
-            if (_teamsClient != null)
-            {
-                await _teamsClient.SendMessageAsync(jsonMessage);
+                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml");
+                isDarkTheme = false;
             }
-        }
-        private async void ReestablishConnections()
-        {
-            try
+
+            // Update the theme
+            var existingTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == themeUri);
+            if (existingTheme == null)
             {
-                if (!mqttClientWrapper.IsConnected)
-                {
-                    await mqttClientWrapper.ConnectAsync();
-                    await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                    await _mqttManager.SetupMqttSensors();
-                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
-                }
-                if (!_teamsClient.IsConnected)
-                {
-                    await initializeteamsconnection();
-                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
-                }
+                existingTheme = new ResourceDictionary() { Source = themeUri };
+                Application.Current.Resources.MergedDictionaries.Add(existingTheme);
             }
-            catch (Exception ex)
+
+            // Remove the other theme
+            var otherThemeUri = isDarkTheme
+                ? new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml")
+                : new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
+
+            var currentTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == otherThemeUri);
+            if (currentTheme != null)
             {
-                Log.Error($"Error re-establishing connections: {ex.Message}");
+                Application.Current.Resources.MergedDictionaries.Remove(currentTheme);
             }
         }
 
+        private bool CheckIfMqttSettingsChanged(AppSettings newSettings)
+        {
+            var currentSettings = AppSettings.Instance;
+            return newSettings.MqttAddress != currentSettings.MqttAddress ||
+                   newSettings.MqttPort != currentSettings.MqttPort ||
+                   newSettings.MqttUsername != currentSettings.MqttUsername ||
+                   newSettings.MqttPassword != currentSettings.MqttPassword ||
+                   newSettings.UseTLS != currentSettings.UseTLS ||
+                   newSettings.UseWebsockets != currentSettings.UseWebsockets ||
+                   newSettings.IgnoreCertificateErrors != currentSettings.IgnoreCertificateErrors;
+        }
+
+        private bool CheckIfSensorPrefixChanged(AppSettings newSettings)
+        {
+            var currentSettings = AppSettings.Instance;
+            deviceid = newSettings.SensorPrefix;
+            return newSettings.SensorPrefix != currentSettings.SensorPrefix;
+        }
+
+        private async void CheckMqttConnection()
+        {
+            if (mqttClientWrapper != null && !mqttClientWrapper.IsConnected && !mqttClientWrapper.IsAttemptingConnection)
+            {
+                Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
+                await mqttClientWrapper.ConnectAsync();
+                await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                UpdateConnectionStatus();
+                Dispatcher.Invoke(() => UpdateStatusMenuItems());
+            }
+        }
 
         private void CreateNotifyIconContextMenu()
         {
@@ -474,104 +479,20 @@ namespace TEAMS2HA
 
             MyNotifyIcon.ContextMenu = contextMenu;
         }
-        private void ShowHideMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-            if (this.IsVisible)
-            {
-                this.Hide();
-            }
-            else
-            {
-                this.Show();
-                this.WindowState = WindowState.Normal;
-            }
-        }
 
-        private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
-        {
-            string currentTheme = _settings.Theme; // Assuming this is where the theme is stored
-            var aboutWindow = new AboutWindow(deviceid, MyNotifyIcon);
-            aboutWindow.Owner = this;
-            aboutWindow.ShowDialog();
-        }
-
-
-        private void UpdateStatusMenuItems()
-        {
-            _mqttStatusMenuItem.Header = mqttClientWrapper != null && mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
-            _teamsStatusMenuItem.Header = _teamsClient != null && _teamsClient.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
-        }
         private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
             // Handle the click event for the exit menu item (Close the application)
             Application.Current.Shutdown();
         }
-        private void ApplyTheme(string theme)
+
+        private async Task HandleCommandToTeams(string jsonMessage)
         {
-            isDarkTheme = theme == "Dark";
-            Uri themeUri;
-            if (theme == "Dark")
+            if (_teamsClient != null)
             {
-                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
-                isDarkTheme = true;
-            }
-            else
-            {
-                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml");
-                isDarkTheme = false;
-            }
-
-            // Update the theme
-            var existingTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == themeUri);
-            if (existingTheme == null)
-            {
-                existingTheme = new ResourceDictionary() { Source = themeUri };
-                Application.Current.Resources.MergedDictionaries.Add(existingTheme);
-            }
-
-            // Remove the other theme
-            var otherThemeUri = isDarkTheme
-                ? new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml")
-                : new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
-
-            var currentTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == otherThemeUri);
-            if (currentTheme != null)
-            {
-                Application.Current.Resources.MergedDictionaries.Remove(currentTheme);
+                await _teamsClient.SendMessageAsync(jsonMessage);
             }
         }
-
-        private async void CheckMqttConnection()
-        {
-            if (mqttClientWrapper != null && !mqttClientWrapper.IsConnected && !mqttClientWrapper.IsAttemptingConnection)
-            {
-                Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
-                await mqttClientWrapper.ConnectAsync();
-                await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                UpdateConnectionStatus();
-                Dispatcher.Invoke(() => UpdateStatusMenuItems());
-            }
-        }
-
-        private void UpdateConnectionStatus()
-        {
-            Dispatcher.Invoke(() =>
-            {
-                MQTTConnectionStatus.Text = mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
-                Dispatcher.Invoke(() => UpdateStatusMenuItems());
-            });
-        }
-
-
-      
-
-
-        
-
-
-       
-
-       
 
         private async Task initializeteamsconnection()
         {
@@ -604,7 +525,7 @@ namespace TEAMS2HA
             {
                 Dispatcher.Invoke(() => TeamsConnectionStatus.Text = "Teams Status: Connected");
                 // ADD in code to set the connected status as a sensor
-                
+
                 State.Instance.teamsRunning = true;
                 Log.Debug("initializeteamsconnection: WebSocketClient Connected");
             }
@@ -655,7 +576,6 @@ namespace TEAMS2HA
             }
         }
 
-
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
             //LoadSettings();
@@ -669,14 +589,14 @@ namespace TEAMS2HA
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
             // Added to set the sensor prefix
-            if(string.IsNullOrEmpty(_settings.SensorPrefix))
+            if (string.IsNullOrEmpty(_settings.SensorPrefix))
             {
                 SensorPrefixBox.Text = System.Environment.MachineName;
             }
             else
             {
                 SensorPrefixBox.Text = _settings.SensorPrefix;
-            }   
+            }
             SensorPrefixBox.Text = _settings.SensorPrefix;
             MqttPort.Text = _settings.MqttPort;
             if (_settings.PlainTeamsToken == null)
@@ -707,6 +627,14 @@ namespace TEAMS2HA
             Log.Debug("MainPage_Unloaded: Teams Client Connection Status unsubscribed");
         }
 
+        private void MqttManager_ConnectionStatusChanged(string status)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                MQTTConnectionStatus.Text = status; // Ensure MQTTConnectionStatus is the correct UI element's name
+            });
+        }
+
         private void MyNotifyIcon_Click(object sender, EventArgs e)
         {
             if (this.WindowState == WindowState.Minimized)
@@ -722,7 +650,15 @@ namespace TEAMS2HA
             }
         }
 
-
+        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        {
+            if (e.Mode == PowerModes.Resume)
+            {
+                Log.Information("System is waking up from sleep. Re-establishing connections...");
+                // Implement logic to re-establish connections
+                ReestablishConnections();
+            }
+        }
 
         private void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)
         {
@@ -730,10 +666,39 @@ namespace TEAMS2HA
             CheckMqttConnection();
         }
 
-       
+        private async void ReestablishConnections()
+        {
+            try
+            {
+                if (!mqttClientWrapper.IsConnected)
+                {
+                    await mqttClientWrapper.ConnectAsync();
+                    await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                    await _mqttManager.SetupMqttSensors();
+                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
+                }
+                if (!_teamsClient.IsConnected)
+                {
+                    await initializeteamsconnection();
+                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error re-establishing connections: {ex.Message}");
+            }
+        }
 
-
-
+        private async void SaveSettings_Click(object sender, RoutedEventArgs e)
+        {
+            Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
+            // uncomment below for testing ** insecure as tokens exposed in logs! **
+            //foreach(var setting in _settings.GetType().GetProperties())
+            //{
+            //    Log.Debug(setting.Name + " " + setting.GetValue(_settings));
+            //}
+            await SaveSettingsAsync();
+        }
 
         private async Task SaveSettingsAsync()
         {
@@ -756,11 +721,9 @@ namespace TEAMS2HA
                     settings.SensorPrefix = System.Environment.MachineName;
                     SensorPrefixBox.Text = System.Environment.MachineName;
                 }
-                else { settings.SensorPrefix = SensorPrefixBox.Text;}
-               
-                
+                else { settings.SensorPrefix = SensorPrefixBox.Text; }
             });
-            
+
             // Check if MQTT settings have changed (consider abstracting this logic into a separate method)
             bool mqttSettingsChanged = CheckIfMqttSettingsChanged(settings);
             // Check if Sensore Prefix has changed
@@ -772,26 +735,30 @@ namespace TEAMS2HA
             await _mqttManager.ReconnectToMqttServerAsync();
             await _mqttManager.SetupMqttSensors();
             await _mqttManager.PublishConfigurations(_latestMeetingUpdate, _settings);
-
-        }
-
-        private async void SaveSettings_Click(object sender, RoutedEventArgs e)
-        {
-            Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
-            // uncomment below for testing ** insecure as tokens exposed in logs! **
-            //foreach(var setting in _settings.GetType().GetProperties())
-            //{
-            //    Log.Debug(setting.Name + " " + setting.GetValue(_settings));
-            //}
-            await SaveSettingsAsync();
         }
 
         private async Task SetStartupAsync(bool startWithWindows)
         {
-           
         }
 
-       
+        private void SetWindowTitle()
+        {
+            var version = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            this.Title = $"Teams2HA - Version {version}";
+        }
+
+        private void ShowHideMenuItem_Click(object sender, RoutedEventArgs e)
+        {
+            if (this.IsVisible)
+            {
+                this.Hide();
+            }
+            else
+            {
+                this.Show();
+                this.WindowState = WindowState.Normal;
+            }
+        }
 
         private async void TeamsClient_TeamsUpdateReceived(object sender, WebSocketClient.TeamsUpdateEventArgs e)
         {
@@ -812,24 +779,19 @@ namespace TEAMS2HA
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
                 UpdateStatusMenuItems();
-                if(isConnected == true)
+                if (isConnected == true)
                 {
-                        State.Instance.teamsRunning = true;
-                    
+                    State.Instance.teamsRunning = true;
                 }
                 else
                 {
                     State.Instance.teamsRunning = false;
-                    _=  _mqttManager.PublishConfigurations(null, _settings);
+                    _ = _mqttManager.PublishConfigurations(null, _settings);
                 }
-                
+
                 Log.Debug("TeamsConnectionStatusChanged: Teams Connection Status Changed {status}", TeamsConnectionStatus.Text);
-                
             });
         }
-       
-
-      
 
         private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {
@@ -849,24 +811,6 @@ namespace TEAMS2HA
                 await _teamsClient.PairWithTeamsAsync();
             }
         }
-        private bool CheckIfMqttSettingsChanged(AppSettings newSettings)
-        {
-            var currentSettings = AppSettings.Instance;
-            return newSettings.MqttAddress != currentSettings.MqttAddress ||
-                   newSettings.MqttPort != currentSettings.MqttPort ||
-                   newSettings.MqttUsername != currentSettings.MqttUsername ||
-                   newSettings.MqttPassword != currentSettings.MqttPassword ||
-                   newSettings.UseTLS != currentSettings.UseTLS ||
-                   newSettings.UseWebsockets != currentSettings.UseWebsockets ||
-                   newSettings.IgnoreCertificateErrors != currentSettings.IgnoreCertificateErrors;
-        }
-        private bool CheckIfSensorPrefixChanged(AppSettings newSettings)
-        {
-            var currentSettings = AppSettings.Instance;
-            deviceid = newSettings.SensorPrefix;
-            return newSettings.SensorPrefix != currentSettings.SensorPrefix;
-            
-        }
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
         {
@@ -879,23 +823,49 @@ namespace TEAMS2HA
             _ = SaveSettingsAsync();
         }
 
+        private void UpdateConnectionStatus()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                MQTTConnectionStatus.Text = mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
+                Dispatcher.Invoke(() => UpdateStatusMenuItems());
+            });
+        }
+
+        private void UpdateMqttConnectionStatus(string status)
+        {
+            Dispatcher.Invoke(() => MQTTConnectionStatus.Text = status);
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
+        }
+
+        private void UpdateMqttStatus(string status)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                // Assuming MQTTConnectionStatus is a Label or similar control
+                MQTTConnectionStatus.Text = $"MQTT Status: {status}";
+                UpdateStatusMenuItems();
+            });
+        }
+
+        private void UpdateStatusMenuItems()
+        {
+            _mqttStatusMenuItem.Header = mqttClientWrapper != null && mqttClientWrapper.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
+            _teamsStatusMenuItem.Header = _teamsClient != null && _teamsClient.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
+        }
+
         #endregion Private Methods
 
         private void Websockets_Checked(object sender, RoutedEventArgs e)
         {
-
             _settings.UseWebsockets = true;
-            // Disable the mqtt port box
-            // MqttPort.IsEnabled = false;
-
-
+            // Disable the mqtt port box MqttPort.IsEnabled = false;
         }
+
         private void Websockets_Unchecked(object sender, RoutedEventArgs e)
         {
-
             _settings.UseWebsockets = false;
             // MqttPort.IsEnabled = true;
-
         }
     }
 }
