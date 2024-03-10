@@ -32,7 +32,7 @@ namespace TEAMS2HA.API
 
         // Define properties for the different components of the state
         private string _status = "";
-
+        private bool _teamsRunning = false;
         #endregion Private Fields
 
         #region Public Delegates
@@ -138,6 +138,7 @@ namespace TEAMS2HA.API
                 }
             }
         }
+        public bool teamsRunning { get; set; }
 
         public string Recording
         {

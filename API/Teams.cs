@@ -237,6 +237,7 @@ namespace TEAMS2HA.API
                     meetingState["isRecordingOn"] = meetingUpdate.MeetingState.IsRecordingOn;
                     meetingState["isBackgroundBlurred"] = meetingUpdate.MeetingState.IsBackgroundBlurred;
                     meetingState["isSharing"] = meetingUpdate.MeetingState.IsSharing;
+                    meetingUpdate.MeetingState.teamsRunning = IsConnected;
                     if (meetingUpdate.MeetingState.IsVideoOn)
                     {
                         State.Instance.Camera = "On";
@@ -245,7 +246,14 @@ namespace TEAMS2HA.API
                     {
                         State.Instance.Camera = "Off";
                     }
-
+                    if (meetingUpdate.MeetingState.teamsRunning)
+                    {
+                        State.Instance.teamsRunning = true;
+                    }
+                    else
+                    {
+                        State.Instance.teamsRunning = false;
+                    }
                     if (meetingUpdate.MeetingState.IsInMeeting)
                     {
                         State.Instance.Activity = "In a meeting";
