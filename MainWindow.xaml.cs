@@ -687,15 +687,21 @@ namespace TEAMS2HA
             switch (sensor)
             {
                 case "IsMuted":
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
                 case "IsVideoOn":
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
                 case "IsBackgroundBlurred":
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
                 case "IsHandRaised":
                     // Cast to bool and then check the value
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
 
                 case "IsInMeeting":
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
                 case "HasUnreadMessages":
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
                 case "IsRecordingOn":
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
                 case "IsSharing":
                     // Similar casting for these properties
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
@@ -993,17 +999,25 @@ namespace TEAMS2HA
                     }
                     else if (deviceClass == "sensor")
                     {
-                        var sensorConfig = new
+                        var binarySensorConfig = new
                         {
                             name = sensorName,
                             unique_id = uniqueId,
                             device = deviceInfo,
                             icon = icon,
-                            state_topic = $"homeassistant/sensor/{sensorName}/state"
+                            state_topic = $"homeassistant/binary_sensor/{sensorName}/state",
+                            payload_on = "true",  // Assuming "True" states map to "ON"
+                            payload_off = "false" // Assuming "False" states map to "OFF"
                         };
-                        string configTopic = $"homeassistant/sensor/{sensorName}/config";
-                        await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(sensorConfig), true);
-                        await mqttClientWrapper.PublishAsync(sensorConfig.state_topic, stateValue);
+                        //string configTopic = $"homeassistant/binary_sensor/{sensorName}/config";
+                        //await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(binarySensorConfig), true);
+                        //await mqttClientWrapper.PublishAsync(binarySensorConfig.state_topic, stateValue);
+                        string configTopic = $"homeassistant/binary_sensor/{sensorName}/config";
+                        await mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(binarySensorConfig), true);
+
+                        // Here's the important part: publish the initial state for each sensor
+                        string stateTopic = $"homeassistant/binary_sensor/{sensorName}/state";
+                        await mqttClientWrapper.PublishAsync(stateTopic, stateValue.ToLowerInvariant()); // Convert "True"/"False" to "on"/"off" or keep "ON"/"OFF"
                     }
                 }
             }
@@ -1114,9 +1128,27 @@ namespace TEAMS2HA
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
                 UpdateStatusMenuItems();
-                
+                State.Instance.teamsRunning = isConnected;
                 Log.Debug("TeamsConnectionStatusChanged: Teams Connection Status Changed {status}", TeamsConnectionStatus.Text);
+                PublishTeamsConnectionStatus(isConnected);
             });
+        }
+        private async void PublishTeamsConnectionStatus(bool isConnected)
+        {
+            // Construct the topic and payload according to your naming convention
+            string topic = $"homeassistant/binary_sensor/{deviceid}_teamsConnected/state";
+            string payload = isConnected ? "ON" : "OFF";  // Use "ON" or "OFF" for binary_sensor in Home Assistant
+
+            // Use your existing MQTT client wrapper to publish the status
+            if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
+            {
+                await mqttClientWrapper.PublishAsync(topic, payload);
+                Log.Debug("Published Teams connection status: {status}", payload);
+            }
+            else
+            {
+                Log.Error("Cannot publish Teams connection status: MQTT client is not connected.");
+            }
         }
 
         private async void TestMQTTConnection_Click(object sender, RoutedEventArgs e)
