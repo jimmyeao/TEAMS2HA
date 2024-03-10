@@ -705,7 +705,8 @@ namespace TEAMS2HA
                 case "IsSharing":
                     // Similar casting for these properties
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
-
+                case "teamsRunning":
+                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
                 default:
                     return "unknown";
             }
@@ -963,7 +964,9 @@ namespace TEAMS2HA
                         IsRecordingOn = false,
                         IsBackgroundBlurred = false,
                         IsSharing = false,
-                        HasUnreadMessages = false
+                        HasUnreadMessages = false,
+                        teamsRunning = false
+
                     }
                 };
             }
@@ -1099,7 +1102,8 @@ namespace TEAMS2HA
                     IsRecordingOn = false,
                     IsBackgroundBlurred = false,
                     IsSharing = false,
-                    HasUnreadMessages = false
+                    HasUnreadMessages = false,
+                    teamsRunning = false
                 }
             };
 
@@ -1128,87 +1132,24 @@ namespace TEAMS2HA
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
                 UpdateStatusMenuItems();
-                State.Instance.teamsRunning = isConnected;
+                if(isConnected == true)
+                {
+                        State.Instance.teamsRunning = true;
+                    
+                }
+                else
+                {
+                    State.Instance.teamsRunning = false;
+                    _= PublishConfigurations(null, _settings);
+                }
+                
                 Log.Debug("TeamsConnectionStatusChanged: Teams Connection Status Changed {status}", TeamsConnectionStatus.Text);
-                PublishTeamsConnectionStatus(isConnected);
+                
             });
         }
-        private async void PublishTeamsConnectionStatus(bool isConnected)
-        {
-            // Construct the topic and payload according to your naming convention
-            string topic = $"homeassistant/binary_sensor/{deviceid}_teamsConnected/state";
-            string payload = isConnected ? "ON" : "OFF";  // Use "ON" or "OFF" for binary_sensor in Home Assistant
+       
 
-            // Use your existing MQTT client wrapper to publish the status
-            if (mqttClientWrapper != null && mqttClientWrapper.IsConnected)
-            {
-                await mqttClientWrapper.PublishAsync(topic, payload);
-                Log.Debug("Published Teams connection status: {status}", payload);
-            }
-            else
-            {
-                Log.Error("Cannot publish Teams connection status: MQTT client is not connected.");
-            }
-        }
-
-        private async void TestMQTTConnection_Click(object sender, RoutedEventArgs e)
-        {
-            Log.Debug("Testing MQTT COnnection");
-            if (mqttClientWrapper == null)
-            {
-                Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Client Not Initialized");
-                UpdateStatusMenuItems();
-                Log.Debug("TestMQTTConnection_Click: MQTT Client Not Initialized");
-                return;
-            }
-            //we need to test to see if we are already connected
-            if (mqttClientWrapper.IsConnected)
-            {
-                Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
-                UpdateStatusMenuItems();
-                Log.Debug("TestMQTTConnection_Click: MQTT Client Connected in testmqttconnection");
-                return;
-            }
-            //make sure we have an mqtt address
-            if (string.IsNullOrEmpty(_settings.MqttAddress))
-            {
-                Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Server Address Not Set");
-                UpdateStatusMenuItems();
-                Log.Debug("TestMQTTConnection_Click: MQTT Server Address Not Set");
-                return;
-            }
-            //we are not connected so lets try to connect
-            int retryCount = 0;
-            const int maxRetries = 5;
-
-            while (retryCount < maxRetries && !mqttClientWrapper.IsConnected)
-            {
-                try
-                {
-                    await mqttClientWrapper.ConnectAsync();
-                    if (mqttClientWrapper.IsConnected)
-                    {
-                        Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Connected");
-                    }
-                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
-                    Log.Debug("TestMQTTConnection_Click: MQTT Client Connected in TestMQTTConnection_Click");
-                    await mqttClientWrapper.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                    return; // Exit the method if connected
-                }
-                catch (Exception ex)
-                {
-                    Dispatcher.Invoke(() => MQTTConnectionStatus.Text = $"MQTT Status: Disconnected (Retry {retryCount + 1})");
-                    Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect {message}", ex.Message);
-                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
-                    retryCount++;
-                    await Task.Delay(2000); // Wait for 2 seconds before retrying
-                }
-            }
-
-            Dispatcher.Invoke(() => MQTTConnectionStatus.Text = "MQTT Status: Disconnected (Failed to connect)");
-            Log.Debug("TestMQTTConnection_Click: MQTT Client Failed to Connect");
-            Dispatcher.Invoke(() => UpdateStatusMenuItems());
-        }
+      
 
         private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {

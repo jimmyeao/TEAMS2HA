@@ -36,7 +36,7 @@ namespace TEAMS2HA.API
         public bool IsBackgroundBlurred { get; set; }
         public bool IsSharing { get; set; }
         public bool HasUnreadMessages { get; set; }
-
+        public bool teamsRunning { get; set; }
         #endregion Public Properties
     }
 
