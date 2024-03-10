@@ -674,6 +674,7 @@ namespace TEAMS2HA
 
                 // If the sensor does not match any of the above cases, return "mdi:eye"
                 _ => "mdi:eye"
+                
             };
         }
 
