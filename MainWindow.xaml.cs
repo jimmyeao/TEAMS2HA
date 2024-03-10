@@ -29,7 +29,8 @@ namespace TEAMS2HA
         private static readonly object _lock = new object();
 
         private static readonly string _settingsFilePath;
-
+        private string _mqttPassword; // Store the encrypted version internally
+        private string _teamsToken; // Store the encrypted version internally
         // Static variable for the singleton instance
         private static AppSettings _instance;
 
@@ -77,14 +78,26 @@ namespace TEAMS2HA
         }
 
         // Properties
-        public string EncryptedMqttPassword { get; set; }
-
+        public string EncryptedMqttPassword
+        {
+            get => _mqttPassword;
+            set => _mqttPassword = value; // Only for deserialization
+        }
+        public string EncryptedTeamsToken
+        {
+            get => _teamsToken;
+            set => _teamsToken = value; // Only for deserialization
+        }
         public bool IgnoreCertificateErrors { get; set; }
 
         public string MqttAddress { get; set; }
 
         [JsonIgnore]
-        public string MqttPassword { get; set; }
+        public string MqttPassword
+        {
+            get => CryptoHelper.DecryptString(_mqttPassword);
+            set => _mqttPassword = CryptoHelper.EncryptString(value);
+        }
 
         public string MqttPort { get; set; }
         public string MqttUsername { get; set; }
@@ -95,7 +108,12 @@ namespace TEAMS2HA
         public bool RunAtWindowsBoot { get; set; }
         public bool RunMinimized { get; set; }
         public string SensorPrefix { get; set; }
-        public string TeamsToken { get; set; }
+        [JsonIgnore]
+        public string TeamsToken
+        {
+            get => CryptoHelper.DecryptString(_teamsToken);
+            set => _teamsToken = CryptoHelper.EncryptString(value);
+        }
         public string Theme { get; set; }
         public bool UseTLS { get; set; }
         public bool UseWebsockets { get; set; }
@@ -213,7 +231,6 @@ namespace TEAMS2HA
         private string deviceid;
         private bool isDarkTheme = false;
         private MqttClientWrapper mqttClientWrapper;
-        private System.Timers.Timer mqttKeepAliveTimer;
 
         private List<string> sensorNames = new List<string>
         {
@@ -302,11 +319,6 @@ namespace TEAMS2HA
                 _previousSensorStates[$"{deviceid}_{sensor}"] = "";
             }
 
-            // Create a timer for MQTT keep alive
-            //mqttKeepAliveTimer = new System.Timers.Timer(60000); // Set interval to 60 seconds (60000 ms)
-            //mqttKeepAliveTimer.Elapsed += OnTimedEvent;
-            //mqttKeepAliveTimer.AutoReset = true;
-            //mqttKeepAliveTimer.Enabled = true;
 
             // Initialize the MQTT publish timer
             _mqttManager.InitializeMqttPublishTimer();
