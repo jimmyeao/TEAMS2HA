@@ -345,25 +345,7 @@ namespace TEAMS2HA
 
         protected override async void OnClosing(CancelEventArgs e)
         {
-            // Publish and update to set all binary_sensors and switches to "OFF"
-            foreach (var sensorName in sensorNames)
-            {
-                // Format the topics correctly without the device name prefix
-                string topicState = $"homeassistant/binary_sensor/{sensorName.ToLower()}/state";
-                string topicSwitch = $"homeassistant/switch/{sensorName.ToLower()}/state";
-
-                // Assuming the "OFF" state is correct for your devices, change as needed.
-                try
-                {
-                    await mqttClientWrapper.PublishAsync(topicState, "OFF", retain: true);
-                    await mqttClientWrapper.PublishAsync(topicSwitch, "OFF", retain: true);
-                }
-                catch (Exception ex)
-                {
-                    // Log or handle any exceptions thrown during publishing
-                    Log.Error($"Failed to publish 'off' state for {sensorName}: {ex.Message}");
-                }
-            }
+           
 
             // Unsubscribe from events and clean up
             if (_mqttManager != null)
@@ -377,6 +359,8 @@ namespace TEAMS2HA
                 _teamsClient.TeamsUpdateReceived -= TeamsClient_TeamsUpdateReceived;
                 Log.Debug("Teams Client Disconnected");
             }
+            // we want all the sensors to be off if we are exiting, lets initialise them, to do this
+            await _mqttManager.SetupMqttSensors();
             if (mqttClientWrapper != null)
             {
                 await mqttClientWrapper.DisconnectAsync(); // Properly disconnect before disposing
