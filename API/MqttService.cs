@@ -551,49 +551,33 @@ namespace TEAMS2HA.API
 
                 if (_settings.UseTLS)
                 {
-                    mqttClientOptionsBuilder.WithTls(new MqttClientOptionsBuilderTlsParameters
+                    // Create TLS parameters
+                    var tlsParameters = new MqttClientOptionsBuilderTlsParameters
                     {
-                        UseTls = true,
                         AllowUntrustedCertificates = _settings.IgnoreCertificateErrors,
                         IgnoreCertificateChainErrors = _settings.IgnoreCertificateErrors,
                         IgnoreCertificateRevocationErrors = _settings.IgnoreCertificateErrors,
-                        CertificateValidationHandler = context =>
+                        UseTls = true
+                    };
+
+                    // If you need to validate the server certificate, you can set the CertificateValidationHandler.
+                    // Note: Be cautious with bypassing certificate checks in production code.
+                    if (!_settings.IgnoreCertificateErrors)
+                    {
+                        tlsParameters.CertificateValidationHandler = context =>
                         {
-                            // Log the certificate subject
-                            Log.Debug("Certificate Subject: {0}", context.Certificate.Subject);
+                            // Log the SSL policy errors
+                            Log.Debug($"SSL policy errors: {context.SslPolicyErrors}");
 
-                            // This assumes you are trying to inspect the certificate directly;
-                            // MQTTnet may not provide a direct IsValid flag or ChainErrors like
-                            // .NET's X509Chain. Instead, you handle validation and log details manually:
+                            // Return true if there are no SSL policy errors, or if ignoring certificate errors is allowed
+                            return context.SslPolicyErrors == System.Net.Security.SslPolicyErrors.None;
+                        };
+                    }
 
-                            bool isValid = true; // You should define the logic to set this based on your validation requirements
 
-                            // Check for specific conditions, if necessary, such as expiry, issuer, etc.
-                            // For example, if you want to ensure the certificate is issued by a specific entity:
-                            //if (context.Certificate.Issuer != "CN=R3, O=Let's Encrypt, C=US")
-                            //{
-                            //    Log.Debug("Unexpected certificate issuer: {0}", context.Certificate.Issuer);
-                            //    isValid = false; // Set to false if the issuer is not the expected one
-                            //}
+                    // Apply the TLS parameters to the options builder
+                    mqttClientOptionsBuilder.WithTls(tlsParameters);
 
-                            // Log any errors from the SSL policy errors if they exist
-                            if (context.SslPolicyErrors != System.Net.Security.SslPolicyErrors.None)
-                            {
-                                Log.Debug("SSL policy errors: {0}", context.SslPolicyErrors.ToString());
-                                isValid = false; // Consider invalid if there are any SSL policy errors
-                            }
-
-                            // You can decide to ignore certain errors by setting isValid to true
-                            // regardless of the checks, but be careful as this might introduce
-                            // security vulnerabilities.
-                            if (_settings.IgnoreCertificateErrors)
-                            {
-                                isValid = true; // Ignore certificate errors if your settings dictate
-                            }
-
-                            return isValid; // Return the result of your checks
-                        }
-                    });
                 }
 
                 _mqttOptions = mqttClientOptionsBuilder.Build();

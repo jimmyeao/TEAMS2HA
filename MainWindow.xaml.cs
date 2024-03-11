@@ -18,6 +18,7 @@ using System.Timers;
 using System.Windows;
 using TEAMS2HA.API;
 using TEAMS2HA.Properties;
+using MaterialDesignThemes.Wpf;
 
 namespace TEAMS2HA
 {
