@@ -12,7 +12,7 @@ namespace TEAMS2HA
         #region Private Fields
 
         private TaskbarIcon _notifyIcon;
-
+        private MqttService _mqttService;
         #endregion Private Fields
 
         #region Public Constructors
@@ -25,7 +25,8 @@ namespace TEAMS2HA
 
             _notifyIcon = notifyIcon;
             SetVersionInfo();
-            var entityNames = MqttClientWrapper.GetEntityNames(deviceId);
+            var entityNames = MqttService.GetEntityNames(deviceId);
+
             EntitiesListBox.ItemsSource = entityNames;
         }
 
