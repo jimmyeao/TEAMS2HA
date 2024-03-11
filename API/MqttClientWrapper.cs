@@ -163,12 +163,12 @@ namespace TEAMS2HA.API
             $"switch.{deviceId}_ismuted",
             $"switch.{deviceId}_isvideoon",
             $"switch.{deviceId}_ishandraised",
-            $"sensor.{deviceId}_isrecordingon",
-            $"sensor.{deviceId}_isinmeeting",
-            $"sensor.{deviceId}_issharing",
-            $"sensor.{deviceId}_hasunreadmessages",
+            $"binary_sensor.{deviceId}_isrecordingon",
+            $"binary_sensor.{deviceId}_isinmeeting",
+            $"binary_sensor.{deviceId}_issharing",
+            $"binary_sensor.{deviceId}_hasunreadmessages",
             $"switch.{deviceId}_isbackgroundblurred",
-            $"sensor.{deviceId}_teamsRunning"
+            $"binary_sensor.{deviceId}_teamsRunning"
         };
 
             return entityNames;

@@ -343,8 +343,35 @@ namespace TEAMS2HA
 
         #region Protected Methods
 
-        protected override void OnClosing(CancelEventArgs e)
+        protected override async void OnClosing(CancelEventArgs e)
         {
+            // Publish and update to set all binary_sensors and switches to "OFF"
+            foreach (var sensorName in sensorNames)
+            {
+                // Format the topics correctly without the device name prefix
+                string topicState = $"homeassistant/binary_sensor/{sensorName.ToLower()}/state";
+                string topicSwitch = $"homeassistant/switch/{sensorName.ToLower()}/state";
+
+                // Assuming the "OFF" state is correct for your devices, change as needed.
+                try
+                {
+                    await mqttClientWrapper.PublishAsync(topicState, "OFF", retain: true);
+                    await mqttClientWrapper.PublishAsync(topicSwitch, "OFF", retain: true);
+                }
+                catch (Exception ex)
+                {
+                    // Log or handle any exceptions thrown during publishing
+                    Log.Error($"Failed to publish 'off' state for {sensorName}: {ex.Message}");
+                }
+            }
+
+            // Unsubscribe from events and clean up
+            if (_mqttManager != null)
+            {
+                _mqttManager.ConnectionStatusChanged -= MqttManager_ConnectionStatusChanged;
+                _mqttManager.StatusUpdated -= UpdateMqttStatus;
+                _mqttManager.CommandToTeams -= HandleCommandToTeams;
+            }
             if (_teamsClient != null)
             {
                 _teamsClient.TeamsUpdateReceived -= TeamsClient_TeamsUpdateReceived;
@@ -352,13 +379,15 @@ namespace TEAMS2HA
             }
             if (mqttClientWrapper != null)
             {
+                await mqttClientWrapper.DisconnectAsync(); // Properly disconnect before disposing
                 mqttClientWrapper.Dispose();
                 Log.Debug("MQTT Client Disposed");
             }
             MyNotifyIcon.Dispose();
-            base.OnClosing(e);
+            base.OnClosing(e); // Call the base class method
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         }
+
 
         protected override void OnStateChanged(EventArgs e)
         {

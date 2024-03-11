@@ -157,14 +157,14 @@ namespace TEAMS2HA.API
                     }
                 };
             }
-            foreach (var sensor in _sensorNames)
+            foreach (var binary_sensor in _sensorNames)
             {
-                string sensorKey = $"{_deviceId}_{sensor}";
-                string sensorName = $"{sensor}".ToLower().Replace(" ", "_");
-                string deviceClass = DetermineDeviceClass(sensor);
-                string icon = DetermineIcon(sensor, meetingUpdate.MeetingState);
-                string stateValue = GetStateValue(sensor, meetingUpdate);
-                string uniqueId = $"{_deviceId}_{sensor}";
+                string sensorKey = $"{_deviceId}_{binary_sensor}";
+                string sensorName = $"{binary_sensor}".ToLower().Replace(" ", "_");
+                string deviceClass = DetermineDeviceClass(binary_sensor);
+                string icon = DetermineIcon(binary_sensor, meetingUpdate.MeetingState);
+                string stateValue = GetStateValue(binary_sensor, meetingUpdate);
+                string uniqueId = $"{_deviceId}_{binary_sensor}";
 
                 if (!_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
                 {
@@ -193,17 +193,17 @@ namespace TEAMS2HA.API
                             }
                             else
                             {
-                                Log.Debug($"Switch configuration JSON is null or empty for sensor: {sensor}");
+                                Log.Debug($"Switch configuration JSON is null or empty for sensor: {binary_sensor}");
                             }
                         }
                         else
                         {
-                            Log.Debug($"configTopic or switchConfig is null for sensor: {sensor}");
+                            Log.Debug($"configTopic or switchConfig is null for sensor: {binary_sensor}");
                         }
                         await _mqttClientWrapper.PublishAsync(configTopic, JsonConvert.SerializeObject(switchConfig), true);
                         await _mqttClientWrapper.PublishAsync(switchConfig.state_topic, stateValue);
                     }
-                    else if (deviceClass == "sensor")
+                    else if (deviceClass == "binary_sensor")
                     {
                         var binarySensorConfig = new
                         {
@@ -363,7 +363,7 @@ namespace TEAMS2HA.API
                 case "IsRecordingOn":
                 case "IsSharing":
                 case "teamsRunning":
-                    return "sensor"; // These are true/false sensors
+                    return "binary_sensor"; // These are true/false sensors
                 default:
                     return null; // Or a default device class if appropriate
             }
