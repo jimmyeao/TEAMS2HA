@@ -3,18 +3,12 @@ using MQTTnet.Client;
 using MQTTnet.Protocol;
 using Serilog;
 using System;
-using System.Security.Cryptography.X509Certificates;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading.Tasks;
-using System.Windows.Threading;
-using System.Runtime.ConstrainedExecution;
-using System.Windows.Controls;
-using System.Security.Authentication;
 using System.Threading;
 using System.Timers;
 using Newtonsoft.Json;
-using static System.Windows.Forms.VisualStyles.VisualStyleElement.ListView;
 using System.Text;
 
 namespace TEAMS2HA.API
@@ -28,15 +22,17 @@ namespace TEAMS2HA.API
         private readonly string _deviceId;
         private bool _isAttemptingConnection = false;
         private MqttClient _mqttClient;
+        private bool _mqttClientsubscribed = false;
         private MqttClientOptions _mqttOptions;
         private Dictionary<string, string> _previousSensorStates;
         private List<string> _sensorNames;
         private AppSettings _settings;
-        private System.Timers.Timer mqttPublishTimer;
         private HashSet<string> _subscribedTopics = new HashSet<string>();
+        private System.Timers.Timer mqttPublishTimer;
         private bool mqttPublishTimerset = false;
+
         public delegate Task CommandToTeamsHandler(string jsonMessage);
-        private bool _mqttClientsubscribed = false;
+
         public event CommandToTeamsHandler CommandToTeams;
 
         public event Action<string> StatusUpdated;
@@ -82,24 +78,7 @@ namespace TEAMS2HA.API
         #endregion Public Properties
 
         #region Public Methods
-        public async Task UpdateClientOptionsAndReconnect()
-        {
-            InitializeClientOptions(); // Method to reinitialize client options with updated settings
-            await DisconnectAsync();
-            await ConnectAsync();
-        }
 
-        public async Task UpdateSettingsAsync(AppSettings newSettings)
-        {
-            _settings = newSettings;
-            InitializeClientOptions(); // Reinitialize MQTT client options
-
-            if (IsConnected)
-            {
-                await DisconnectAsync();
-                await ConnectAsync();
-            }
-        }
         public static List<string> GetEntityNames(string deviceId)
         {
             var entityNames = new List<string>
@@ -197,7 +176,7 @@ namespace TEAMS2HA.API
         public void InitializeMqttPublishTimer()
         {
             mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
-            if(mqttPublishTimerset == false)
+            if (mqttPublishTimerset == false)
             {
                 mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
                 mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
@@ -395,17 +374,35 @@ namespace TEAMS2HA.API
             }
         }
 
+        public async Task UpdateClientOptionsAndReconnect()
+        {
+            InitializeClientOptions(); // Method to reinitialize client options with updated settings
+            await DisconnectAsync();
+            await ConnectAsync();
+        }
 
-        public void UpdateConnectionStatus(string status)
+        public void UpdateConnectionStatus(string status) //could be obsolete
         {
             OnConnectionStatusChanged(status);
+        }
+
+        public async Task UpdateSettingsAsync(AppSettings newSettings)
+        {
+            _settings = newSettings;
+            InitializeClientOptions(); // Reinitialize MQTT client options
+
+            if (IsConnected)
+            {
+                await DisconnectAsync();
+                await ConnectAsync();
+            }
         }
 
         #endregion Public Methods
 
         #region Protected Methods
 
-        protected virtual void OnConnectionStatusChanged(string status)
+        protected virtual void OnConnectionStatusChanged(string status) //could be obsolete
         {
             ConnectionStatusChanged?.Invoke(status);
         }
@@ -413,8 +410,6 @@ namespace TEAMS2HA.API
         #endregion Protected Methods
 
         #region Private Methods
-
-
 
         private string DetermineDeviceClass(string sensor)
         {
@@ -561,12 +556,11 @@ namespace TEAMS2HA.API
                 _mqttClient = (MqttClient?)factory.CreateMqttClient(); // This creates an IMqttClient, not a MqttClient.
 
                 InitializeClientOptions(); // Ensure options are initialized with current settings
-                if(_mqttClientsubscribed == false)
+                if (_mqttClientsubscribed == false)
                 {
                     _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
                     _mqttClientsubscribed = true;
                 }
-                
             }
         }
 
@@ -637,12 +631,11 @@ namespace TEAMS2HA.API
                 _mqttOptions = mqttClientOptionsBuilder.Build();
                 if (_mqttClient != null)
                 {
-                    if(_mqttClientsubscribed == false)
+                    if (_mqttClientsubscribed == false)
                     {
                         _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
                         _mqttClientsubscribed = true;
                     }
-                    
                 }
             }
             catch (Exception ex)
@@ -669,7 +662,7 @@ namespace TEAMS2HA.API
                 string command = payload; // command should be ON or OFF based on the payload
 
                 // Now call the handle method
-                 HandleSwitchCommand(topic, command);
+                HandleSwitchCommand(topic, command);
             }
 
             return Task.CompletedTask;

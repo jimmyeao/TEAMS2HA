@@ -477,14 +477,14 @@ namespace TEAMS2HA
             return newSettings.SensorPrefix != currentSettings.SensorPrefix;
         }
 
-        private async void CheckMqttConnection()
+        private async void CheckMqttConnection()  //could be obsolete
         {
             if (_mqttService != null && !_mqttService.IsConnected && !_mqttService.IsAttemptingConnection)
             {
                 Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
                 await _mqttService.ConnectAsync();
                 await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                //UpdateConnectionStatus();
+                _mqttService.UpdateConnectionStatus("Connected");
                 UpdateStatusMenuItems();
             }
         }
@@ -718,7 +718,7 @@ namespace TEAMS2HA
             }
         }
 
-        private void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)
+        private void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)  //obsolete?
         {
             // Check the MQTT connection
             CheckMqttConnection();
