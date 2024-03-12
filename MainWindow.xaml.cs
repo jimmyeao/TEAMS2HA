@@ -232,8 +232,12 @@ namespace TEAMS2HA
         private Action<string> _updateTokenAction;
         private string deviceid;
         private bool isDarkTheme = false;
-        
-
+        private bool isTeamsSubscribed = false;
+        private bool isTeamsConnected = false;
+        private bool mqttConnectionStatusChanged = false;
+        private bool mqttStatusUpdated = false;
+        private bool mqttCommandToTeams = false;
+        private bool mqttConnectionAttempting = false;
         private List<string> sensorNames = new List<string>
         {
             "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages", "teamsRunning"
@@ -290,12 +294,28 @@ namespace TEAMS2HA
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
             CreateNotifyIconContextMenu();
             // Create a new instance of the MQTT Service class
-
+            if(mqttConnectionStatusChanged == false)
+            {
+                _mqttService = new MqttService(settings, deviceid, sensorNames);
+                mqttConnectionStatusChanged = true;
+            }
             _mqttService = new MqttService(settings, deviceid, sensorNames);
-            _mqttService.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
-            _mqttService.StatusUpdated += UpdateMqttStatus;
-            _mqttService.CommandToTeams += HandleCommandToTeams;
-            _mqttService.ConnectionAttempting += MqttManager_ConnectionAttempting;
+            if(mqttStatusUpdated == false)
+            {
+                _mqttService.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
+                mqttStatusUpdated = true;
+            }
+            if(mqttCommandToTeams == false)
+            {
+                _mqttService.CommandToTeams += HandleCommandToTeams;
+                mqttCommandToTeams = true;
+            }
+            if(mqttConnectionAttempting == false)
+            {
+                _mqttService.ConnectionAttempting += MqttManager_ConnectionAttempting;
+                mqttConnectionAttempting = true;
+            }
+   
             
             // Set the action to be performed when a new token is updated
             _updateTokenAction = newToken =>
@@ -314,9 +334,6 @@ namespace TEAMS2HA
                 _previousSensorStates[$"{deviceid}_{sensor}"] = "";
             }
 
-
-            // Initialize the MQTT publish timer
-            _mqttService.InitializeMqttPublishTimer();
         }
 
         #endregion Public Constructors
@@ -539,8 +556,18 @@ namespace TEAMS2HA
                     _settingsFilePath,
                     _updateTokenAction // Pass the action here
                 );
-                _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
-                _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+                if(isTeamsConnected == false)
+                {
+                    _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+                    isTeamsConnected = true;
+                }
+                
+                if(isTeamsSubscribed == false)
+                {
+                    _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+                    isTeamsSubscribed = true;
+                }
+                
             }
 
             // Connect if not already connected
@@ -722,7 +749,8 @@ namespace TEAMS2HA
 
         private async void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
-            Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString);
+            Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString());
+
             // uncomment below for testing ** insecure as tokens exposed in logs! **
             //foreach(var setting in _settings.GetType().GetProperties())
             //{
@@ -815,7 +843,7 @@ namespace TEAMS2HA
                 else
                 {
                     State.Instance.teamsRunning = false;
-                    _ = _mqttService.PublishConfigurations(null, _settings);
+                    _ = _mqttService.PublishConfigurations(null!, _settings);
                 }
 
                 Log.Debug("TeamsConnectionStatusChanged: Teams Connection Status Changed {status}", TeamsConnectionStatus.Text);

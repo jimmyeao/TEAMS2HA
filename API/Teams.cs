@@ -102,7 +102,6 @@ namespace TEAMS2HA.API
 
                 if (!string.IsNullOrEmpty(token))
                 {
-                    // Modify the URI to include the token
                     Log.Debug($"Token: {token}");
                     var builder = new UriBuilder(uri) { Query = $"token={token}&{uri.Query.TrimStart('?')}" };
                     uri = builder.Uri;
@@ -208,11 +207,10 @@ namespace TEAMS2HA.API
                     _updateTokenAction?.Invoke(AppSettings.Instance.PlainTeamsToken);
                 });
             }
-            else if (message.Contains("meetingPermissions")) // Replace with actual keyword/structure
+            else if (message.Contains("meetingPermissions")) 
             {
                 Log.Debug("Pairing...");
-                // Update UI, save settings, reinitialize connection as needed
-
+                
                 // Update the Message property of the State class
                 var settings = new JsonSerializerSettings
                 {
@@ -225,7 +223,7 @@ namespace TEAMS2HA.API
                 {
                     // The 'canPair' permission is true, initiate pairing
                     Log.Debug("Pairing with Teams");
-                    PairWithTeamsAsync();
+                    _= PairWithTeamsAsync();
                 }
                 // Update the meeting state dictionary
                 if (meetingUpdate.MeetingState != null)
@@ -421,7 +419,7 @@ namespace TEAMS2HA.API
         {
             #region Public Methods
 
-            public override MeetingUpdate ReadJson(JsonReader reader, Type objectType, MeetingUpdate existingValue, bool hasExistingValue, JsonSerializer serializer)
+            public override MeetingUpdate ReadJson(JsonReader reader, Type objectType, MeetingUpdate? existingValue, bool hasExistingValue, JsonSerializer serializer)
             {
                 JObject jsonObject = JObject.Load(reader);
                 MeetingState meetingState = null;
@@ -453,7 +451,7 @@ namespace TEAMS2HA.API
                 };
             }
 
-            public override void WriteJson(JsonWriter writer, MeetingUpdate value, JsonSerializer serializer)
+            public override void WriteJson(JsonWriter writer, MeetingUpdate? value, JsonSerializer serializer)
             {
                 throw new NotImplementedException();
             }
@@ -465,7 +463,7 @@ namespace TEAMS2HA.API
         {
             #region Public Properties
 
-            public MeetingUpdate MeetingUpdate { get; set; }
+            public MeetingUpdate? MeetingUpdate { get; set; }
 
             #endregion Public Properties
         }
@@ -475,7 +473,7 @@ namespace TEAMS2HA.API
             #region Public Properties
 
             [JsonProperty("tokenRefresh")]
-            public string NewToken { get; set; }
+            public string? NewToken { get; set; }
 
             #endregion Public Properties
         }
