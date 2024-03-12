@@ -31,17 +31,10 @@ namespace TEAMS2HA.API
         private System.Timers.Timer mqttPublishTimer;
         private bool mqttPublishTimerset = false;
 
-        public delegate Task CommandToTeamsHandler(string jsonMessage);
-
-        public event CommandToTeamsHandler CommandToTeams;
-
-        public event Action<string> StatusUpdated;
-
         #endregion Private Fields
 
         #region Public Constructors
 
-        // Constructor
         public MqttService(AppSettings settings, string deviceId, List<string> sensorNames)
         {
             _settings = settings;
@@ -55,13 +48,23 @@ namespace TEAMS2HA.API
 
         #endregion Public Constructors
 
+        #region Public Delegates
+
+        public delegate Task CommandToTeamsHandler(string jsonMessage);
+
+        #endregion Public Delegates
+
         #region Public Events
+
+        public event CommandToTeamsHandler CommandToTeams;
 
         public event Action<string> ConnectionAttempting;
 
         public event Action<string> ConnectionStatusChanged;
 
         public event Func<MqttApplicationMessageReceivedEventArgs, Task> MessageReceived;
+
+        public event Action<string> StatusUpdated;
 
         #endregion Public Events
 
@@ -692,6 +695,5 @@ namespace TEAMS2HA.API
 
         #endregion Private Methods
 
-        // Additional methods for sensor management, message handling, etc.
     }
 }
