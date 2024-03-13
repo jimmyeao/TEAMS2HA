@@ -196,6 +196,36 @@ namespace TEAMS2HA.API
             //mqttPublishTimer.Enabled = true; // Enable the timer
             //Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
         }
+        public async Task UnsubscribeAsync(string topic)
+        {
+            if (!_subscribedTopics.Contains(topic))
+            {
+                Log.Information($"Not subscribed to {topic}, no need to unsubscribe.");
+                return;
+            }
+
+            try
+            {
+                // Create the unsubscribe options, similar to how subscription options were created
+                var unsubscribeOptions = new MqttClientUnsubscribeOptionsBuilder()
+                    .WithTopicFilter(topic) // Add the topic from which to unsubscribe
+                    .Build();
+
+                // Perform the unsubscribe operation
+                await _mqttClient.UnsubscribeAsync(unsubscribeOptions);
+
+                // Remove the topic from the local tracking set
+                _subscribedTopics.Remove(topic);
+
+                Log.Information($"Successfully unsubscribed from {topic}.");
+            }
+            catch (Exception ex)
+            {
+                Log.Information($"Error during MQTT unsubscribe: {ex.Message}");
+                // Depending on your error handling strategy, you might want to handle this differently
+                // For example, you might want to throw the exception to let the caller know the unsubscribe failed
+            }
+        }
 
         public async Task PublishAsync(MqttApplicationMessage message)
         {
@@ -210,7 +240,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings)
+        public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings, bool forcePublish = false)
         {
             if (_mqttClient == null)
             {
@@ -253,10 +283,14 @@ namespace TEAMS2HA.API
                 string stateValue = GetStateValue(binary_sensor, meetingUpdate);
                 string uniqueId = $"{_deviceId}_{binary_sensor}";
                 string configTopic;
-                if (!_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
+                if (forcePublish || !_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
+               
                 {
                     _previousSensorStates[sensorKey] = stateValue; // Update the stored state
-
+                    if(forcePublish)
+                    {
+                        Log.Information($"Forced publish of {sensorName} state: {stateValue} Due to change in broker");
+                    }
                     if (deviceClass == "switch")
                     {
                         configTopic = $"homeassistant/switch/{sensorName}/config";
@@ -581,7 +615,7 @@ namespace TEAMS2HA.API
                 }
 
                 var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
-                    .WithClientId("Teams2HA")
+                    .WithClientId($"Teams2HA_{_deviceId}")
                     .WithCredentials(_settings.MqttUsername, _settings.MqttPassword)
                     .WithCleanSession()
                     .WithTimeout(TimeSpan.FromSeconds(5));

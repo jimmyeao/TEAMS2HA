@@ -1,5 +1,4 @@
 ﻿using Microsoft.Win32;
-using MQTTnet.Client;
 using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using Serilog;
@@ -9,16 +8,10 @@ using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Controls;
-
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
-using System.Timers;
-
 using System.Windows;
 using TEAMS2HA.API;
-using TEAMS2HA.Properties;
-using MaterialDesignThemes.Wpf;
 
 namespace TEAMS2HA
 {
@@ -30,10 +23,12 @@ namespace TEAMS2HA
         private static readonly object _lock = new object();
 
         private static readonly string _settingsFilePath;
-        private string _mqttPassword; // Store the encrypted version internally
-        private string _teamsToken; // Store the encrypted version internally
+
         // Static variable for the singleton instance
         private static AppSettings _instance;
+
+        private string _mqttPassword; // Store the encrypted version internally
+        private string _teamsToken; // Store the encrypted version internally
 
         #endregion Private Fields
 
@@ -84,11 +79,13 @@ namespace TEAMS2HA
             get => _mqttPassword;
             set => _mqttPassword = value; // Only for deserialization
         }
+
         public string EncryptedTeamsToken
         {
             get => _teamsToken;
             set => _teamsToken = value; // Only for deserialization
         }
+
         public bool IgnoreCertificateErrors { get; set; }
 
         public string MqttAddress { get; set; }
@@ -109,12 +106,14 @@ namespace TEAMS2HA
         public bool RunAtWindowsBoot { get; set; }
         public bool RunMinimized { get; set; }
         public string SensorPrefix { get; set; }
+
         [JsonIgnore]
         public string TeamsToken
         {
             get => CryptoHelper.DecryptString(_teamsToken);
             set => _teamsToken = CryptoHelper.EncryptString(value);
         }
+
         public string Theme { get; set; }
         public bool UseTLS { get; set; }
         public bool UseWebsockets { get; set; }
@@ -217,8 +216,10 @@ namespace TEAMS2HA
         private MeetingUpdate _latestMeetingUpdate;
 
         private MenuItem _logMenuItem;
+
         //private MqttManager _mqttManager;
         private MqttService _mqttService;
+
         private MenuItem _mqttStatusMenuItem;
 
         //private string Mqtttopic;
@@ -232,12 +233,13 @@ namespace TEAMS2HA
         private Action<string> _updateTokenAction;
         private string deviceid;
         private bool isDarkTheme = false;
-        private bool isTeamsSubscribed = false;
         private bool isTeamsConnected = false;
-        private bool mqttConnectionStatusChanged = false;
-        private bool mqttStatusUpdated = false;
+        private bool isTeamsSubscribed = false;
         private bool mqttCommandToTeams = false;
         private bool mqttConnectionAttempting = false;
+        private bool mqttConnectionStatusChanged = false;
+        private bool mqttStatusUpdated = false;
+
         private List<string> sensorNames = new List<string>
         {
             "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages", "teamsRunning"
@@ -294,29 +296,28 @@ namespace TEAMS2HA
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
             CreateNotifyIconContextMenu();
             // Create a new instance of the MQTT Service class
-            if(mqttConnectionStatusChanged == false)
+            if (mqttConnectionStatusChanged == false)
             {
                 _mqttService = new MqttService(settings, deviceid, sensorNames);
                 mqttConnectionStatusChanged = true;
             }
             _mqttService = new MqttService(settings, deviceid, sensorNames);
-            if(mqttStatusUpdated == false)
+            if (mqttStatusUpdated == false)
             {
                 _mqttService.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
                 mqttStatusUpdated = true;
             }
-            if(mqttCommandToTeams == false)
+            if (mqttCommandToTeams == false)
             {
                 _mqttService.CommandToTeams += HandleCommandToTeams;
                 mqttCommandToTeams = true;
             }
-            if(mqttConnectionAttempting == false)
+            if (mqttConnectionAttempting == false)
             {
                 _mqttService.ConnectionAttempting += MqttManager_ConnectionAttempting;
                 mqttConnectionAttempting = true;
             }
-   
-            
+
             // Set the action to be performed when a new token is updated
             _updateTokenAction = newToken =>
             {
@@ -333,7 +334,6 @@ namespace TEAMS2HA
             {
                 _previousSensorStates[$"{deviceid}_{sensor}"] = "";
             }
-
         }
 
         #endregion Public Constructors
@@ -357,8 +357,6 @@ namespace TEAMS2HA
 
         protected override async void OnClosing(CancelEventArgs e)
         {
-           
-
             // Unsubscribe from events and clean up
             if (_mqttService != null)
             {
@@ -383,7 +381,6 @@ namespace TEAMS2HA
             base.OnClosing(e); // Call the base class method
             SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         }
-
 
         protected override void OnStateChanged(EventArgs e)
         {
@@ -448,19 +445,11 @@ namespace TEAMS2HA
                 Application.Current.Resources.MergedDictionaries.Remove(currentTheme);
             }
         }
-        private void MqttManager_ConnectionAttempting(string status)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                MQTTConnectionStatus.Text = status;
-                _mqttStatusMenuItem.Header = status; // Update the system tray menu item as well
-                                                     // No need to update other status menu items as this is specifically for MQTT connection
-            });
-        }
 
         private bool CheckIfMqttSettingsChanged(AppSettings newSettings)
         {
-            var currentSettings = AppSettings.Instance;
+            var currentSettings = AppSettings.Instance; // Assuming this gets the current settings before they are changed
+
             return newSettings.MqttAddress != currentSettings.MqttAddress ||
                    newSettings.MqttPort != currentSettings.MqttPort ||
                    newSettings.MqttUsername != currentSettings.MqttUsername ||
@@ -477,17 +466,17 @@ namespace TEAMS2HA
             return newSettings.SensorPrefix != currentSettings.SensorPrefix;
         }
 
-        private async void CheckMqttConnection()  //could be obsolete
-        {
-            if (_mqttService != null && !_mqttService.IsConnected && !_mqttService.IsAttemptingConnection)
-            {
-                Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
-                await _mqttService.ConnectAsync();
-                await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                _mqttService.UpdateConnectionStatus("Connected");
-                UpdateStatusMenuItems();
-            }
-        }
+        //private async void CheckMqttConnection()  //could be obsolete
+        //{
+        //    if (_mqttService != null && !_mqttService.IsConnected && !_mqttService.IsAttemptingConnection)
+        //    {
+        //        Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
+        //        await _mqttService.ConnectAsync();
+        //        await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+        //        _mqttService.UpdateConnectionStatus("Connected");
+        //        UpdateStatusMenuItems();
+        //    }
+        //}
 
         private void CreateNotifyIconContextMenu()
         {
@@ -556,18 +545,17 @@ namespace TEAMS2HA
                     _settingsFilePath,
                     _updateTokenAction // Pass the action here
                 );
-                if(isTeamsConnected == false)
+                if (isTeamsConnected == false)
                 {
                     _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
                     isTeamsConnected = true;
                 }
-                
-                if(isTeamsSubscribed == false)
+
+                if (isTeamsSubscribed == false)
                 {
                     _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
                     isTeamsSubscribed = true;
                 }
-                
             }
 
             // Connect if not already connected
@@ -685,6 +673,17 @@ namespace TEAMS2HA
             Log.Debug("MainPage_Unloaded: Teams Client Connection Status unsubscribed");
         }
 
+        private void MqttManager_ConnectionAttempting(string status)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                MQTTConnectionStatus.Text = status;
+                _mqttStatusMenuItem.Header = status; // Update the system tray menu item as well
+                                                     // No need to update other status menu items as
+                                                     // this is specifically for MQTT connection
+            });
+        }
+
         private void MqttManager_ConnectionStatusChanged(string status)
         {
             Dispatcher.Invoke(() =>
@@ -718,11 +717,6 @@ namespace TEAMS2HA
             }
         }
 
-        private void OnTimedEvent(Object source, System.Timers.ElapsedEventArgs e)  //obsolete?
-        {
-            // Check the MQTT connection
-            CheckMqttConnection();
-        }
 
         private async void ReestablishConnections()
         {
@@ -761,9 +755,20 @@ namespace TEAMS2HA
 
         private async Task SaveSettingsAsync()
         {
+            // Get the current settings from the singleton instance
             var settings = AppSettings.Instance;
 
-            // Gather the current settings from UI components (make sure to do this on the UI thread)
+            // Temporary storage for old values to compare after updating
+            var oldMqttAddress = settings.MqttAddress;
+            var oldMqttPort = settings.MqttPort;
+            var oldMqttUsername = settings.MqttUsername;
+            var oldMqttPassword = settings.MqttPassword;
+            var oldUseTLS = settings.UseTLS;
+            var oldIgnoreCertificateErrors = settings.IgnoreCertificateErrors;
+            var oldUseWebsockets = settings.UseWebsockets;
+            var oldSensorPrefix = settings.SensorPrefix;
+
+            // Update the settings from UI components
             Dispatcher.Invoke(() =>
             {
                 settings.MqttAddress = MqttAddress.Text;
@@ -775,27 +780,34 @@ namespace TEAMS2HA
                 settings.RunMinimized = RunMinimisedCheckBox.IsChecked ?? false;
                 settings.UseWebsockets = Websockets.IsChecked ?? false;
                 settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
-                if (string.IsNullOrEmpty(SensorPrefixBox.Text))
-                {
-                    settings.SensorPrefix = System.Environment.MachineName;
-                    SensorPrefixBox.Text = System.Environment.MachineName;
-                }
-                else { settings.SensorPrefix = SensorPrefixBox.Text; }
+                settings.SensorPrefix = string.IsNullOrEmpty(SensorPrefixBox.Text) ? System.Environment.MachineName : SensorPrefixBox.Text;
             });
 
-            // Check if MQTT settings have changed (consider abstracting this logic into a separate method)
-            bool mqttSettingsChanged = CheckIfMqttSettingsChanged(settings);
-            // Check if Sensore Prefix has changed
-            bool sensorPrefixChanged = CheckIfSensorPrefixChanged(settings);
+            // Now check if MQTT settings have changed
+            bool mqttSettingsChanged = (oldMqttAddress != settings.MqttAddress) ||
+                                       (oldMqttPort != settings.MqttPort) ||
+                                       (oldMqttUsername != settings.MqttUsername) ||
+                                       (oldMqttPassword != settings.MqttPassword) ||
+                                       (oldUseTLS != settings.UseTLS) ||
+                                       (oldIgnoreCertificateErrors != settings.IgnoreCertificateErrors) ||
+                                       (oldUseWebsockets != settings.UseWebsockets);
+
+            bool sensorPrefixChanged = (oldSensorPrefix != settings.SensorPrefix);
 
             // Save the updated settings to file
             settings.SaveSettingsToFile();
-            await _mqttService.DisconnectAsync();
-            await _mqttService.UpdateSettingsAsync(AppSettings.Instance);
-            await _mqttService.ConnectAsync();
-            await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-            await _mqttService.SetupMqttSensors();
-            await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+
+            if (mqttSettingsChanged)
+            {
+                // Perform actions if MQTT settings have changed
+                Log.Debug("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
+                await _mqttService.UnsubscribeAsync("homeassistant/switch/+/set");
+                await _mqttService.DisconnectAsync();
+                await _mqttService.UpdateSettingsAsync(settings); // Make sure to pass the updated settings
+                await _mqttService.ConnectAsync();
+                await _mqttService.PublishConfigurations(_latestMeetingUpdate, settings, forcePublish: true);
+                await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+            }
         }
 
         private void SetWindowTitle()
@@ -903,9 +915,6 @@ namespace TEAMS2HA
             });
         }
 
-
-        #endregion Private Methods
-
         private void Websockets_Checked(object sender, RoutedEventArgs e)
         {
             _settings.UseWebsockets = true;
@@ -917,5 +926,7 @@ namespace TEAMS2HA
             _settings.UseWebsockets = false;
             // MqttPort.IsEnabled = true;
         }
+
+        #endregion Private Methods
     }
 }
