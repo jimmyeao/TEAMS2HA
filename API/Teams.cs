@@ -17,13 +17,12 @@ namespace TEAMS2HA.API
     {
         #region Private Fields
 
-        private ClientWebSocket _clientWebSocket;
         private readonly string _settingsFilePath;
         private readonly State _state;
         private readonly Action<string> _updateTokenAction;
-        private bool _isConnected;
+        private ClientWebSocket _clientWebSocket;
         private Uri _currentUri;
-
+        private bool _isConnected;
         private TaskCompletionSource<string> _pairingResponseTaskSource;
 
         private Dictionary<string, object> meetingState = new Dictionary<string, object>()
@@ -76,7 +75,7 @@ namespace TEAMS2HA.API
                 {
                     _isConnected = value;
                     ConnectionStatusChanged?.Invoke(_isConnected);
-                    Log.Debug($"Connection Status Changed: {_isConnected}");
+                    Log.Debug($"Teams Connection Status Changed: {_isConnected}");
                 }
             }
         }
@@ -161,7 +160,7 @@ namespace TEAMS2HA.API
         // Public method to initiate connection
         public async Task StartConnectionAsync(Uri uri)
         {
-            if (!_isConnected && _clientWebSocket.State != WebSocketState.Open)
+            if (!_isConnected || _clientWebSocket.State != WebSocketState.Open)
             {
                 await ConnectAsync(uri);
             }
@@ -169,25 +168,31 @@ namespace TEAMS2HA.API
 
         public async Task StopAsync(CancellationToken cancellationToken = default)
         {
-            MessageReceived -= OnMessageReceived;
-            if (_clientWebSocket.State == WebSocketState.Open)
+            try
             {
-                await _clientWebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Connection closed by client", cancellationToken);
-
-                Log.Debug("Websocket Connection Closed");
+                MessageReceived -= OnMessageReceived;
+                if (_clientWebSocket.State != WebSocketState.Closed)
+                {
+                    try
+                    {
+                        await _clientWebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Connection closed by client", cancellationToken);
+                        Log.Debug("Websocket Connection Closed");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "Error closing WebSocket");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error detaching event handler");
             }
         }
 
         #endregion Public Methods
 
         #region Private Methods
-
-        private bool IsPairingResponse(string message)
-        {
-            // Implement logic to determine if the message is a response to the pairing request This
-            // could be based on message content, format, etc.
-            return message.Contains("tokenRefresh");
-        }
 
         private void OnMessageReceived(object sender, string message)
         {
@@ -207,10 +212,8 @@ namespace TEAMS2HA.API
                     _updateTokenAction?.Invoke(AppSettings.Instance.PlainTeamsToken);
                 });
             }
-            else if (message.Contains("meetingPermissions")) 
+            else if (message.Contains("meetingPermissions"))
             {
-                Log.Debug("Pairing...");
-                
                 // Update the Message property of the State class
                 var settings = new JsonSerializerSettings
                 {
@@ -223,7 +226,7 @@ namespace TEAMS2HA.API
                 {
                     // The 'canPair' permission is true, initiate pairing
                     Log.Debug("Pairing with Teams");
-                    _= PairWithTeamsAsync();
+                    _ = PairWithTeamsAsync();
                 }
                 // Update the meeting state dictionary
                 if (meetingUpdate.MeetingState != null)
@@ -316,44 +319,6 @@ namespace TEAMS2HA.API
                 }
             }
         }
-        private async Task ReconnectAsync()
-        {
-            const int maxRetryCount = 5;
-            int retryDelay = 2000; // milliseconds
-            int retryCount = 0;
-
-            while (retryCount < maxRetryCount)
-            {
-                try
-                {
-                    Log.Debug($"Attempting reconnection, try {retryCount + 1} of {maxRetryCount}");
-                    _clientWebSocket = new ClientWebSocket(); // Create a new instance
-                    await ConnectAsync(_currentUri);
-                    if (IsConnected)
-                    {
-                        break;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log.Error($"Reconnect attempt {retryCount + 1} failed: {ex.Message}");
-                }
-
-                retryCount++;
-                await Task.Delay(retryDelay);
-            }
-
-            if (IsConnected)
-            {
-                Log.Information("Reconnected successfully.");
-            }
-            else
-            {
-                Log.Warning("Failed to reconnect after several attempts.");
-            }
-        }
-
-
 
         private async Task ReceiveLoopAsync(CancellationToken cancellationToken = default)
         {
@@ -403,12 +368,55 @@ namespace TEAMS2HA.API
             IsConnected = _clientWebSocket.State == WebSocketState.Open;
             Log.Debug($"IsConnected: {IsConnected}");
         }
-    
+
+        private async Task ReconnectAsync()
+        {
+            const int maxRetryCount = 5;
+            int retryDelay = 2000; // milliseconds
+            int retryCount = 0;
+
+            while (retryCount < maxRetryCount)
+            {
+                try
+                {
+                    Log.Debug($"Attempting reconnection, try {retryCount + 1} of {maxRetryCount}");
+                    _clientWebSocket = new ClientWebSocket(); // Create a new instance
+                    await ConnectAsync(_currentUri);
+                    if (IsConnected)
+                    {
+                        break;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Reconnect attempt {retryCount + 1} failed: {ex.Message}");
+                }
+
+                retryCount++;
+                await Task.Delay(retryDelay);
+            }
+
+            if (IsConnected)
+            {
+                Log.Information("Reconnected successfully.");
+            }
+            else
+            {
+                Log.Warning("Failed to reconnect after several attempts.");
+            }
+        }
 
         private void SaveAppSettings(AppSettings settings)
         {
             string json = JsonConvert.SerializeObject(settings, Formatting.Indented);
-            File.WriteAllText(_settingsFilePath, json);
+            try
+            {
+                File.WriteAllText(_settingsFilePath, json);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "Error saving settings to file");
+            }
         }
 
         #endregion Private Methods
