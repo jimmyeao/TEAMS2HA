@@ -7,20 +7,7 @@ namespace TEAMS2HA
 {
     public static class CryptoHelper
     {
-        public static string EncryptString(string plainText)
-        {
-            // Check if the input string is null or empty
-            if (string.IsNullOrEmpty(plainText))
-            {
-                // Return null or throw an exception as per your application's error handling policy
-                return null; // Or throw new ArgumentNullException(nameof(plainText));
-            }
-
-            byte[] plainTextBytes = Encoding.UTF8.GetBytes(plainText);
-            byte[] encryptedBytes = ProtectedData.Protect(plainTextBytes, null, DataProtectionScope.CurrentUser);
-
-            return Convert.ToBase64String(encryptedBytes);
-        }
+        #region Public Methods
 
         public static string DecryptString(string encryptedText)
         {
@@ -36,6 +23,22 @@ namespace TEAMS2HA
 
             return Encoding.UTF8.GetString(decryptedBytes);
         }
-    }
 
+        public static string EncryptString(string plainText)
+        {
+            // Check if the input string is null or empty
+            if (string.IsNullOrEmpty(plainText))
+            {
+                // Return null or throw an exception as per your application's error handling policy
+                return null; // Or throw new ArgumentNullException(nameof(plainText));
+            }
+
+            byte[] plainTextBytes = Encoding.UTF8.GetBytes(plainText);
+            byte[] encryptedBytes = ProtectedData.Protect(plainTextBytes, null, DataProtectionScope.CurrentUser);
+
+            return Convert.ToBase64String(encryptedBytes);
+        }
+
+        #endregion Public Methods
+    }
 }
