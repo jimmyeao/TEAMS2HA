@@ -167,7 +167,7 @@ namespace TEAMS2HA
                 }
             }
 
-            Log.Debug("SetStartupAsync: Startup set");
+            Log.Debug("SetStartupAsync: Startup options set");
             // Serialize and save
             string json = JsonConvert.SerializeObject(this, Formatting.Indented);
             File.WriteAllText(_settingsFilePath, json);
