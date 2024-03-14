@@ -10,14 +10,19 @@
                 <!-- Material Design's ResourceDictionaries -->
                 
                 <materialDesign:BundledTheme BaseTheme="Light" PrimaryColor="DeepPurple" SecondaryColor="Lime"/>
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml"/>
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Defaults.xaml"/>
+                <!--<ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml"/>-->
+                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign3.Defaults.xaml"/>
                
                 <!-- Other dictionaries -->
             </ResourceDictionary.MergedDictionaries>
-            <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
-                <Setter Property="materialDesign:ButtonAssist.CornerRadius" Value="30" />
+
+            <Style BasedOn="{StaticResource MaterialDesignRaisedButton}" TargetType="{x:Type Button}">
+                <Setter Property="materialDesign:ButtonAssist.CornerRadius" Value="20" />
             </Style>
+
+            <!--<Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+                <Setter Property="materialDesign:ButtonAssist.CornerRadius" Value="10" />
+            </Style>-->
         </ResourceDictionary>
     </Application.Resources>
 </Application>
