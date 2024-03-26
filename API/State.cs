@@ -12,26 +12,21 @@ namespace TEAMS2HA.API
 
         private static readonly State _instance = new State();
 
-        #endregion Private Fields
-
-
-
-        #region Private Fields
-
         private string _activity = "";
 
         private string _blurred = "";
         private string _camera = "";
+        private string? _handup;
         private string _issharing = "";
-
-        private string _handup;
         private string _message = "";
 
         private string _microphone = "";
-        private string _recording;
+        private string? _recording;
 
         // Define properties for the different components of the state
         private string _status = "";
+
+        private bool _teamsRunning = false;
 
         #endregion Private Fields
 
@@ -47,14 +42,14 @@ namespace TEAMS2HA.API
         // Define the event that will be triggered when the state changes
         public event StateChangedEventHandler StateChanged;
 
+        #endregion Public Events
+
+        #region Public Properties
+
         public static State Instance
         {
             get { return _instance; }
         }
-
-        #endregion Public Events
-
-        #region Public Properties
 
         public string Activity
         {
@@ -81,18 +76,6 @@ namespace TEAMS2HA.API
                 }
             }
         }
-        public string issharing
-        {
-            get => _issharing;
-            set
-            {
-                if (_issharing != value)
-                {
-                    _issharing = value;
-                    StateChanged?.Invoke(this, EventArgs.Empty);
-                }
-            }
-        }
 
         public string Camera
         {
@@ -115,6 +98,19 @@ namespace TEAMS2HA.API
                 if (_handup != value)
                 {
                     _handup = value;
+                    StateChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+        }
+
+        public string issharing
+        {
+            get => _issharing;
+            set
+            {
+                if (_issharing != value)
+                {
+                    _issharing = value;
                     StateChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
@@ -165,11 +161,17 @@ namespace TEAMS2HA.API
             }
         }
 
+        public bool teamsRunning { get; set; }
+
+        #endregion Public Properties
+
+        #region Public Methods
+
         public override string ToString()
         {
             return $"Status: {_status}, Activity: {_activity}";
         }
 
-        #endregion Public Properties
+        #endregion Public Methods
     }
 }
