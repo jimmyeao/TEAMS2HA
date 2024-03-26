@@ -1,5 +1,6 @@
 <h1>BREAKING CHANGES IN NEXT VERSION</h1>
 In the next version of Teams2HA, we will be moving to a model more aligned with Homeassistant, instead of individual sensors and switches, these will be moved under a Device:
+Sensores will also now be BINARY sensors
 
 ![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/b14a824e-b939-4ba5-9515-b06bf4150270)
 
