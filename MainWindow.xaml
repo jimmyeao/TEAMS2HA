@@ -17,24 +17,7 @@
         TextOptions.TextRenderingMode="Auto">
 
     <Window.Resources>
-        <!--<ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <materialDesign:BundledTheme BaseTheme="Light" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Primary/MaterialDesignColor.DeepPurple.xaml"/>
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Accent/MaterialDesignColor.Lime.xaml"/>
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Defaults.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.DataGrid.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Button.xaml" />
-            </ResourceDictionary.MergedDictionaries>
-            <Style TargetType="Button">
-                <Style.Resources>
-                    <Style TargetType="Border">
-                        <Setter Property="CornerRadius" Value="20"/>
-                    </Style>
-                </Style.Resources>
-            </Style>
-
-        </ResourceDictionary>-->
+       
     </Window.Resources>
     <DockPanel>
         <Menu DockPanel.Dock="Top">
@@ -64,7 +47,7 @@
             <StackPanel Grid.Row="1" Margin="0,10,0,0" Orientation="Horizontal" >
                 <TextBlock Text="Microsoft Teams Pairing:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0"/>
                 <TextBox x:Name="TeamsApiKeyBox" Width="300" Margin="10,0,0,0" IsReadOnly="True" Style="{DynamicResource MaterialDesignTextBox}"/>
-                <Button x:Name="PairButton" Content="Pair with Teams" Margin="10,0,0,0" Click="TestTeamsConnection_Click" materialDesign:ButtonAssist.CornerRadius="25" Width="232" Style="{DynamicResource MaterialDesignRaisedButton}"/>
+                <Button x:Name="PairButton" Content="Pair with Teams" Margin="10,0,0,0" Click="TestTeamsConnection_Click" materialDesign:ButtonAssist.CornerRadius="10" Width="232" Style="{DynamicResource MaterialDesignRaisedButton}"/>
             </StackPanel>
 
             <StackPanel Grid.Row="2" Margin="0,10,0,0" Orientation="Horizontal">

@@ -56,6 +56,7 @@ namespace TEAMS2HA
         #endregion Private Constructors
 
         #region Public Properties
+        public bool HasShownOneTimeNotice { get; set; } = false;
 
         // Public property to access the singleton instance
         public static AppSettings Instance
@@ -664,8 +665,23 @@ namespace TEAMS2HA
                 MyNotifyIcon.Visibility = Visibility.Visible; // Show the NotifyIcon in the system tray
             }
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
+            ShowOneTimeNoticeIfNeeded();
         }
+        private void ShowOneTimeNoticeIfNeeded()
+        {
+            // Check if the one-time notice has already been shown
+            if (!_settings.HasShownOneTimeNotice)
+            {
+                // Show the notice to the user
+                MessageBox.Show("Important: Due to recent updates, the functionality of TEAMS2HA has changed. Sensors are now Binarysensors - please make sure you update any automations etc that rely on the sensors.", "Notice", MessageBoxButton.OK, MessageBoxImage.Information);
 
+                // Update the setting so that the notice isn't shown again
+                _settings.HasShownOneTimeNotice = true;
+
+                // Save the updated settings to file
+                _settings.SaveSettingsToFile();
+            }
+        }
         private void MainPage_Unloaded(object sender, RoutedEventArgs e)
         {
             // Unsubscribe when the page is unloaded
