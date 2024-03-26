@@ -1,6 +1,6 @@
 [![CodeQL](https://github.com/jimmyeao/TEAMS2HA/actions/workflows/codeql.yml/badge.svg)](https://github.com/jimmyeao/TEAMS2HA/actions/workflows/codeql.yml)[![GitHub tag](https://img.shields.io/github/tag/jimmyeao/TEAMS2HA?include_prereleases=&sort=semver&color=blue)](https://github.com/jimmyeao/TEAMS2HA/releases/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](#license)
-[![issues - HA-Game-SPy](https://img.shields.io/github/issues/jimmyeao/TEAMS2HA)](https://github.com/jimmyeao/TEAMS2HA/issues)
+[![issues - Teams2HA](https://img.shields.io/github/issues/jimmyeao/TEAMS2HA)](https://github.com/jimmyeao/TEAMS2HA/issues)
 
 <H1>Teams2HA</H1>
 
@@ -15,7 +15,7 @@ This is an agent that runs on windows and uses the Local teams API (https://supp
 
 Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/fe12bf8a-6bf5-4998-a286-c2acc5d79117)
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/c79d09a4-0770-470f-a941-d21f85e1cf37)
 
 
 <h2>Pairing</h2>
@@ -32,7 +32,8 @@ We support plain MQTT, MQTT over TLS, MQTT over Websockets and MQTT over Websock
 <h2>Entities</h2>
 Click the Entities button to see a list of entities this program will create:
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/a39632e7-f61c-4c0c-a953-555da53b3e0d)
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/5c87da53-e66a-4bc8-af4b-34af0ddc6d47)
+
 
 You can either right click and copy or double click to copy the entity name to the clipboard.
 
