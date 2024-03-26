@@ -6,7 +6,7 @@
 
 <h3>IMPORTANT!!</h3>
 
-Please review Breaking changes ahead of the next version which will be released this weekend (9th Mar 2024) https://github.com/jimmyeao/TEAMS2HA/blob/master/breaking.md
+Please review Breaking changes ahead of the next version which will be released this weekend (26th Mar 2024) https://github.com/jimmyeao/TEAMS2HA/blob/master/breaking.md
 <br>
 
 
