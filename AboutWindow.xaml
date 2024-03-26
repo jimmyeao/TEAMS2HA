@@ -5,30 +5,35 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         mc:Ignorable="d"
-        Title="About" Height="486" Width="400"
+        Title="About" Height="531" Width="400"
         WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
-                TextElement.Foreground="{DynamicResource MaterialDesignBody}"
+        
+        TextElement.Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"
+        Background="{DynamicResource MaterialDesign.Brush.Background}"
         TextElement.FontWeight="Regular"
-        TextElement.FontSize="13"
+        TextElement.FontSize="12"
+        FontFamily="{materialDesign:MaterialDesignFont}"    
+    
         TextOptions.TextFormattingMode="Ideal"
-        TextOptions.TextRenderingMode="Auto"
-        Background="{DynamicResource MaterialDesignPaper}"
-        FontFamily="{DynamicResource MaterialDesignFont}">
+        TextOptions.TextRenderingMode="Auto">
+
     <Window.Resources>
-        <ResourceDictionary>
+        <!--<ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <materialDesign:BundledTheme BaseTheme="Light" />
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Primary/MaterialDesignColor.DeepPurple.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Accent/MaterialDesignColor.Lime.xaml"/>
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Defaults.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.DataGrid.xaml" />
-            </ResourceDictionary.MergedDictionaries>
-
-
-        </ResourceDictionary>
+            </ResourceDictionary.MergedDictionaries>-->
+        <!--</ResourceDictionary>-->
     </Window.Resources>
-    <Grid Margin="0,0,0,2">
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Height="434">
+    <Grid Margin="0,0,0,1">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="3*"/>
+            <ColumnDefinition Width="77*"/>
+        </Grid.ColumnDefinitions>
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left" Height="494" Grid.Column="1" Margin="10,0,0,0">
             <TextBlock Text="TEAMS2HA" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
             <TextBlock x:Name="VersionTextBlock" FontSize="16" HorizontalAlignment="Center"/>
             <TextBlock Text="Developed by Jimmy White" FontSize="16" HorizontalAlignment="Center"/>
@@ -38,7 +43,7 @@
             <Run Text="TEAMS2HA"/>
         </Hyperlink>
             </TextBlock>
-            <ListBox x:Name="EntitiesListBox" Width="350" Height="275" MouseDoubleClick="EntitiesListBox_MouseDoubleClick" >
+            <ListBox x:Name="EntitiesListBox" Width="350" Height="331" MouseDoubleClick="EntitiesListBox_MouseDoubleClick" >
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <TextBlock Text="{Binding}" Tag="{Binding}">
@@ -53,7 +58,7 @@
                 </ListBox.ItemTemplate>
 
             </ListBox>
-            <Button Content="Close" HorizontalAlignment="Center" Margin="10" Width="100" Click="CloseButton_Click" Style="{DynamicResource MaterialDesignRaisedButton}"/>
+            <Button Content="Close" Width="100" materialDesign:ButtonAssist.CornerRadius="25" Click="CloseButton_Click" Style="{DynamicResource MaterialDesignRaisedButton}"/>
         </StackPanel>
 
     </Grid>
