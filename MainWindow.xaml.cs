@@ -723,18 +723,23 @@ namespace TEAMS2HA
             }
         }
 
-        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        private async void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
         {
             if (e.Mode == PowerModes.Resume)
             {
                 Log.Information("System is waking up from sleep. Re-establishing connections...");
                 // Implement logic to re-establish connections
-                ReestablishConnections();
+                await ReestablishConnections();
+                // publish current meeting state
+                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
             }
         }
 
 
-        private async void ReestablishConnections()
+        private async 
+
+        Task
+ReestablishConnections()
         {
             try
             {
