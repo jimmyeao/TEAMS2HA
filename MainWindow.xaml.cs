@@ -728,6 +728,9 @@ namespace TEAMS2HA
             if (e.Mode == PowerModes.Resume)
             {
                 Log.Information("System is waking up from sleep. Re-establishing connections...");
+                // Add a delay to allow the network to come up
+                await Task.Delay(TimeSpan.FromSeconds(10)); // Adjust based on your needs
+
                 // Implement logic to re-establish connections
                 await ReestablishConnections();
                 // publish current meeting state
@@ -755,6 +758,8 @@ ReestablishConnections()
                     await initializeteamsconnection();
                     Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
+                // Force publish all sensor states after reconnection
+                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings, forcePublish: true);
             }
             catch (Exception ex)
             {

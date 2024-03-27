@@ -286,6 +286,8 @@ namespace TEAMS2HA.API
                 if (forcePublish || !_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
                
                 {
+                    Log.Information($"Force Publishing configuration for {sensorName} with state {stateValue}.");
+
                     _previousSensorStates[sensorKey] = stateValue; // Update the stored state
                     if(forcePublish)
                     {
@@ -311,7 +313,7 @@ namespace TEAMS2HA.API
                              .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                              .WithRetainFlag(true)
                              .Build();
-
+                        Log.Information($"Publishing configuration for {sensorName} with state {stateValue}.");
                         await PublishAsync(switchConfigMessage);
 
                         var stateMessage = new MqttApplicationMessageBuilder()
@@ -342,7 +344,7 @@ namespace TEAMS2HA.API
                              .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                              .WithRetainFlag(true)
                              .Build();
-
+                        Log.Information($"Publishing configuration for {sensorName} with state {stateValue}.");
                         await PublishAsync(binarySensorConfigMessage);
 
                         var binarySensorStateMessage = new MqttApplicationMessageBuilder()
