@@ -19,7 +19,7 @@ namespace TEAMS2HA.API
 
         private const int MaxConnectionRetries = 2;
         private const int RetryDelayMilliseconds = 1000;
-        private readonly string _deviceId;
+        private string _deviceId;
         private bool _isAttemptingConnection = false;
         private MqttClient _mqttClient;
         private bool _mqttClientsubscribed = false;
@@ -426,6 +426,7 @@ namespace TEAMS2HA.API
         public async Task UpdateSettingsAsync(AppSettings newSettings)
         {
             _settings = newSettings;
+            _deviceId = _settings.SensorPrefix;
             InitializeClientOptions(); // Reinitialize MQTT client options
 
             if (IsConnected)

@@ -813,7 +813,7 @@ namespace TEAMS2HA
             // Save the updated settings to file
             settings.SaveSettingsToFile();
 
-            if (mqttSettingsChanged)
+            if (mqttSettingsChanged || sensorPrefixChanged)
             {
                 // Perform actions if MQTT settings have changed
                 Log.Debug("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
