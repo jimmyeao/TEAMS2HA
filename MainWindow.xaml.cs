@@ -412,6 +412,7 @@ namespace TEAMS2HA
             aboutWindow.ShowDialog();
         }
 
+
         private void ApplyTheme(string theme)
         {
             isDarkTheme = theme == "Dark";
@@ -467,17 +468,6 @@ namespace TEAMS2HA
             return newSettings.SensorPrefix != currentSettings.SensorPrefix;
         }
 
-        //private async void CheckMqttConnection()  //could be obsolete
-        //{
-        //    if (_mqttService != null && !_mqttService.IsConnected && !_mqttService.IsAttemptingConnection)
-        //    {
-        //        Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
-        //        await _mqttService.ConnectAsync();
-        //        await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-        //        _mqttService.UpdateConnectionStatus("Connected");
-        //        UpdateStatusMenuItems();
-        //    }
-        //}
 
         private void CreateNotifyIconContextMenu()
         {
@@ -531,7 +521,16 @@ namespace TEAMS2HA
                 await _teamsClient.SendMessageAsync(jsonMessage);
             }
         }
-
+        private async void CheckTeamsConnectionStatus()
+        {
+            if (!_teamsClient.IsConnected)
+            {
+                string teamsToken = _settings.PlainTeamsToken;
+                var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+                Log.Debug("Teams appears to be disconnected. Attempting to reconnect...");
+                await _teamsClient.StartConnectionAsync(uri);
+            }
+        }
         private async Task initializeteamsconnection()
         {
             string teamsToken = _settings.PlainTeamsToken;
@@ -735,6 +734,9 @@ namespace TEAMS2HA
                 await ReestablishConnections();
                 // publish current meeting state
                 await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                CheckTeamsConnectionStatus();
+                _teamsClient.ConnectionStatusChanged -= TeamsConnectionStatusChanged;
+                _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
             }
         }
 
