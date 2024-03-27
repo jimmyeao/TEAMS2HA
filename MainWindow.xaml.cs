@@ -412,6 +412,7 @@ namespace TEAMS2HA
             aboutWindow.ShowDialog();
         }
 
+
         private void ApplyTheme(string theme)
         {
             isDarkTheme = theme == "Dark";
@@ -467,17 +468,6 @@ namespace TEAMS2HA
             return newSettings.SensorPrefix != currentSettings.SensorPrefix;
         }
 
-        //private async void CheckMqttConnection()  //could be obsolete
-        //{
-        //    if (_mqttService != null && !_mqttService.IsConnected && !_mqttService.IsAttemptingConnection)
-        //    {
-        //        Log.Debug("CheckMqttConnection: MQTT Client Not Connected. Attempting reconnection.");
-        //        await _mqttService.ConnectAsync();
-        //        await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-        //        _mqttService.UpdateConnectionStatus("Connected");
-        //        UpdateStatusMenuItems();
-        //    }
-        //}
 
         private void CreateNotifyIconContextMenu()
         {
@@ -531,7 +521,16 @@ namespace TEAMS2HA
                 await _teamsClient.SendMessageAsync(jsonMessage);
             }
         }
-
+        private async void CheckTeamsConnectionStatus()
+        {
+            if (!_teamsClient.IsConnected)
+            {
+                string teamsToken = _settings.PlainTeamsToken;
+                var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+                Log.Debug("Teams appears to be disconnected. Attempting to reconnect...");
+                await _teamsClient.StartConnectionAsync(uri);
+            }
+        }
         private async Task initializeteamsconnection()
         {
             string teamsToken = _settings.PlainTeamsToken;
@@ -723,18 +722,29 @@ namespace TEAMS2HA
             }
         }
 
-        private void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
+        private async void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
         {
             if (e.Mode == PowerModes.Resume)
             {
                 Log.Information("System is waking up from sleep. Re-establishing connections...");
+                // Add a delay to allow the network to come up
+                await Task.Delay(TimeSpan.FromSeconds(10)); // Adjust based on your needs
+
                 // Implement logic to re-establish connections
-                ReestablishConnections();
+                await ReestablishConnections();
+                // publish current meeting state
+                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                CheckTeamsConnectionStatus();
+                _teamsClient.ConnectionStatusChanged -= TeamsConnectionStatusChanged;
+                _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
             }
         }
 
 
-        private async void ReestablishConnections()
+        private async 
+
+        Task
+ReestablishConnections()
         {
             try
             {
@@ -750,6 +760,8 @@ namespace TEAMS2HA
                     await initializeteamsconnection();
                     Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
+                // Force publish all sensor states after reconnection
+                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings, forcePublish: true);
             }
             catch (Exception ex)
             {
@@ -813,7 +825,7 @@ namespace TEAMS2HA
             // Save the updated settings to file
             settings.SaveSettingsToFile();
 
-            if (mqttSettingsChanged)
+            if (mqttSettingsChanged || sensorPrefixChanged)
             {
                 // Perform actions if MQTT settings have changed
                 Log.Debug("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");

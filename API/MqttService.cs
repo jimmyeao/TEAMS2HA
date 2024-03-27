@@ -19,7 +19,7 @@ namespace TEAMS2HA.API
 
         private const int MaxConnectionRetries = 2;
         private const int RetryDelayMilliseconds = 1000;
-        private readonly string _deviceId;
+        private string _deviceId;
         private bool _isAttemptingConnection = false;
         private MqttClient _mqttClient;
         private bool _mqttClientsubscribed = false;
@@ -286,6 +286,8 @@ namespace TEAMS2HA.API
                 if (forcePublish || !_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
                
                 {
+                    Log.Information($"Force Publishing configuration for {sensorName} with state {stateValue}.");
+
                     _previousSensorStates[sensorKey] = stateValue; // Update the stored state
                     if(forcePublish)
                     {
@@ -311,7 +313,7 @@ namespace TEAMS2HA.API
                              .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                              .WithRetainFlag(true)
                              .Build();
-
+                        Log.Information($"Publishing configuration for {sensorName} with state {stateValue}.");
                         await PublishAsync(switchConfigMessage);
 
                         var stateMessage = new MqttApplicationMessageBuilder()
@@ -342,7 +344,7 @@ namespace TEAMS2HA.API
                              .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                              .WithRetainFlag(true)
                              .Build();
-
+                        Log.Information($"Publishing configuration for {sensorName} with state {stateValue}.");
                         await PublishAsync(binarySensorConfigMessage);
 
                         var binarySensorStateMessage = new MqttApplicationMessageBuilder()
@@ -426,6 +428,7 @@ namespace TEAMS2HA.API
         public async Task UpdateSettingsAsync(AppSettings newSettings)
         {
             _settings = newSettings;
+            _deviceId = _settings.SensorPrefix;
             InitializeClientOptions(); // Reinitialize MQTT client options
 
             if (IsConnected)
