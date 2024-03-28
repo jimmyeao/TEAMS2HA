@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Documents;
 using TEAMS2HA.Properties;
 
 namespace TEAMS2HA.API
@@ -65,7 +66,7 @@ namespace TEAMS2HA.API
         #endregion Public Events
 
         #region Public Properties
-
+        public event EventHandler RequirePairing;
         public bool IsConnected
         {
             get => _isConnected;
@@ -115,13 +116,19 @@ namespace TEAMS2HA.API
             {
                 IsConnected = false;
                 Log.Error(ex, "ConnectAsync: Error connecting to WebSocket");
+                if (ex.Message.Contains("Unable to connect to the remote server")) // Simplified example, adjust based on actual error handling
+                {
+                    // Signal need for re-pairing, e.g., via an event or state change
+                    RequirePairing?.Invoke(this, EventArgs.Empty);
+                }
+                RequirePairing?.Invoke(this, EventArgs.Empty);
                 await ReconnectAsync();
             }
 
             // Start receiving messages
             await ReceiveLoopAsync();
         }
-
+        
         public async Task PairWithTeamsAsync()
         {
             if (_isConnected)
@@ -428,6 +435,7 @@ namespace TEAMS2HA.API
             else
             {
                 Log.Warning("Failed to reconnect after several attempts.");
+
             }
         }
 

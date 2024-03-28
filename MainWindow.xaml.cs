@@ -331,6 +331,7 @@ namespace TEAMS2HA
 
             // Initialize connections
             InitializeConnections();
+            
             foreach (var sensor in sensorNames)
             {
                 _previousSensorStates[$"{deviceid}_{sensor}"] = "";
@@ -349,7 +350,7 @@ namespace TEAMS2HA
 
             // Other initialization code...
             await initializeteamsconnection();
-
+            
             // Other initialization code...
         }
 
@@ -546,9 +547,11 @@ namespace TEAMS2HA
                     _settingsFilePath,
                     _updateTokenAction // Pass the action here
                 );
+                _teamsClient.RequirePairing += TeamsClient_RequirePairing;
                 if (isTeamsConnected == false)
                 {
                     _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
+                    
                     isTeamsConnected = true;
                 }
 
@@ -626,7 +629,7 @@ namespace TEAMS2HA
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
             //LoadSettings();
-
+           
             RunAtWindowsBootCheckBox.IsChecked = _settings.RunAtWindowsBoot;
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
             MqttUserNameBox.Text = _settings.MqttUsername;
@@ -667,6 +670,16 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
             ShowOneTimeNoticeIfNeeded();
         }
+        // Event handler that enables the PairButton in WPF
+        private void TeamsClient_RequirePairing(object sender, EventArgs e)
+        {
+            // Use Dispatcher.Invoke to update the UI from a non-UI thread
+            Dispatcher.Invoke(() =>
+            {
+                PairButton.IsEnabled = true; // Note: Use IsEnabled in WPF, not Enabled
+            });
+        }
+
         private void ShowOneTimeNoticeIfNeeded()
         {
             // Check if the one-time notice has already been shown
@@ -742,30 +755,7 @@ namespace TEAMS2HA
         }
 
 
-        //private async Task ReestablishConnections() // reestablish connections after sleep
-        //{
-        //    try
-        //    {
-        //        if (!_mqttService.IsConnected)
-        //        {
-        //            await _mqttService.ConnectAsync();
-        //            await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-        //            await _mqttService.SetupMqttSensors();
-        //            Dispatcher.Invoke(() => UpdateStatusMenuItems());
-        //        }
-        //        if (!_teamsClient.IsConnected)
-        //        {
-        //            await initializeteamsconnection();
-        //            Dispatcher.Invoke(() => UpdateStatusMenuItems());
-        //        }
-        //        // Force publish all sensor states after reconnection
-        //        await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings, forcePublish: true);
-        //    }
-        //    catch (Exception ex)
-        //    {
-        //        Log.Error($"Error re-establishing connections: {ex.Message}");
-        //    }
-        //}
+
         private async Task ReestablishConnections() // reestablish connections after sleep
         {
             try
