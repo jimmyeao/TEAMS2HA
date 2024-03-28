@@ -291,6 +291,7 @@ namespace TEAMS2HA.API
                 string stateValue = GetStateValue(binary_sensor, meetingUpdate);
                 string uniqueId = $"{_deviceId}_{binary_sensor}";
                 string configTopic;
+                string stateTopic;
                 if (forcePublish || !_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
                
                 {
@@ -303,7 +304,8 @@ namespace TEAMS2HA.API
                     }
                     if (deviceClass == "switch")
                     {
-                        configTopic = $"homeassistant/switch/{sensorName}/config";
+                        configTopic = $"homeassistant/switch/{_deviceId}/{sensorName}/config";
+                        stateTopic = $"homeassistant/switch/{_deviceId}/{sensorName}/state";
                         var switchConfig = new
                         {
                             name = sensorName,
@@ -311,7 +313,7 @@ namespace TEAMS2HA.API
                             device = deviceInfo,
                             icon = icon,
                             command_topic = $"homeassistant/switch/{sensorName}/set",
-                            state_topic = $"homeassistant/switch/{sensorName}/state",
+                            state_topic = stateTopic,
                             payload_on = "ON",
                             payload_off = "OFF"
                         };
@@ -335,14 +337,16 @@ namespace TEAMS2HA.API
                     }
                     else if (deviceClass == "binary_sensor")
                     {
-                        configTopic = $"homeassistant/binary_sensor/{sensorName}/config";
+                        configTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/config";
+                        stateTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state";
+
                         var binarySensorConfig = new
                         {
                             name = sensorName,
                             unique_id = uniqueId,
                             device = deviceInfo,
                             icon = icon,
-                            state_topic = $"homeassistant/binary_sensor/{sensorName}/state",
+                            state_topic = stateTopic,
                             payload_on = "true",  // Assuming "True" states map to "ON"
                             payload_off = "false" // Assuming "False" states map to "OFF"
                         };
