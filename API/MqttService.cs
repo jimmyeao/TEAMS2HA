@@ -406,10 +406,10 @@ namespace TEAMS2HA.API
             await PublishConfigurations(dummyMeetingUpdate, _settings);
         }
 
-        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos) //subscribes to a topic on MQTT
+        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos,bool force) //subscribes to a topic on MQTT
         {
             // Check if already subscribed
-            if (_subscribedTopics.Contains(topic))
+            if (_subscribedTopics.Contains(topic) && !force)
             {
                 Log.Information($"Already subscribed to {topic}.");
                 return;
