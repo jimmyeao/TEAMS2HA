@@ -149,6 +149,31 @@ namespace TEAMS2HA.API
                 }
             }
         }
+        public async Task<bool> CheckConnectionHealthAsync()
+        {
+            if (_clientWebSocket.State != WebSocketState.Open)
+            {
+                return false;
+            }
+
+            try
+            {
+                // Example of sending a simple message to check for response
+                // Adjust according to how your Teams WebSocket server expects communication
+                string healthCheckMessage = "{\"action\":\"healthCheck\"}";
+                await SendMessageAsync(healthCheckMessage);
+
+                // Awaiting a simple acknowledgment or using an existing mechanism to confirm the message was received and processed
+                // This part depends on how your server responds. You may need an additional mechanism to await the response.
+
+                return true; // Assuming sending succeeds and you somehow confirm receipt
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error checking WebSocket connection health: {ex}");
+                return false;
+            }
+        }
 
         public async Task SendMessageAsync(string message, CancellationToken cancellationToken = default)
         {
@@ -418,6 +443,8 @@ namespace TEAMS2HA.API
                 Log.Error(ex, "Error saving settings to file");
             }
         }
+
+
 
         #endregion Private Methods
 

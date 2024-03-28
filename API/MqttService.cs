@@ -35,7 +35,7 @@ namespace TEAMS2HA.API
 
         #region Public Constructors
 
-        public MqttService(AppSettings settings, string deviceId, List<string> sensorNames)
+        public MqttService(AppSettings settings, string deviceId, List<string> sensorNames) //constructor for the MQTT service
         {
             _settings = settings;
             _deviceId = deviceId;
@@ -70,19 +70,19 @@ namespace TEAMS2HA.API
 
         #region Public Properties
 
-        public bool IsAttemptingConnection
+        public bool IsAttemptingConnection //gets if the MQTT client is attempting to connect
         {
             get { return _isAttemptingConnection; }
             private set { _isAttemptingConnection = value; }
         }
 
-        public bool IsConnected => _mqttClient.IsConnected;
+        public bool IsConnected => _mqttClient.IsConnected; //gets if the MQTT client is connected
 
         #endregion Public Properties
 
         #region Public Methods
 
-        public static List<string> GetEntityNames(string deviceId)
+        public static List<string> GetEntityNames(string deviceId) //gets the entity names for the device
         {
             var entityNames = new List<string>
                 {
@@ -100,7 +100,7 @@ namespace TEAMS2HA.API
             return entityNames;
         }
 
-        public async Task ConnectAsync()
+        public async Task ConnectAsync() //connects to MQTT
         {
             // Check if MQTT client is already connected or connection attempt is in progress
             if (_mqttClient.IsConnected || _isAttemptingConnection)
@@ -144,8 +144,16 @@ namespace TEAMS2HA.API
                 Log.Error("Failed to connect to MQTT broker after several attempts.");
             }
         }
+        public Task<bool> CheckConnectionHealthAsync()
+        {
+            // Simple version: Just check if the client believes it's connected
+            return Task.FromResult(_mqttClient.IsConnected);
 
-        public async Task DisconnectAsync()
+            // More thorough version could involve sending a test message
+            // and optionally waiting for an acknowledgment if your MQTT setup supports it
+        }
+
+        public async Task DisconnectAsync() //disconnects from MQTT
         {
             if (!_mqttClient.IsConnected)
             {
@@ -166,7 +174,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        public void Dispose()
+        public void Dispose() //disposes the MQTT client
         {
             if (_mqttClient != null)
             {
@@ -176,7 +184,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        public void InitializeMqttPublishTimer()
+        public void InitializeMqttPublishTimer() //initializes the MQTT publish timer
         {
             mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
             if (mqttPublishTimerset == false)
@@ -196,7 +204,7 @@ namespace TEAMS2HA.API
             //mqttPublishTimer.Enabled = true; // Enable the timer
             //Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
         }
-        public async Task UnsubscribeAsync(string topic)
+        public async Task UnsubscribeAsync(string topic) //unsubscribes from a topic on MQTT
         {
             if (!_subscribedTopics.Contains(topic))
             {
@@ -227,7 +235,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task PublishAsync(MqttApplicationMessage message)
+        public async Task PublishAsync(MqttApplicationMessage message) //publishes a message to MQTT
         {
             try
             {
@@ -240,7 +248,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings, bool forcePublish = false)
+        public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings, bool forcePublish = false) //publishes the configurations to MQTT
         {
             if (_mqttClient == null)
             {
@@ -365,7 +373,7 @@ namespace TEAMS2HA.API
             // Consolidated reconnection logic
         }
 
-        public async Task SetupMqttSensors()
+        public async Task SetupMqttSensors() //sets up the MQTT sensors
         {
             // Create a dummy MeetingUpdate with default values
             var dummyMeetingUpdate = new MeetingUpdate
@@ -388,7 +396,7 @@ namespace TEAMS2HA.API
             await PublishConfigurations(dummyMeetingUpdate, _settings);
         }
 
-        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
+        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos) //subscribes to a topic on MQTT
         {
             // Check if already subscribed
             if (_subscribedTopics.Contains(topic))
@@ -413,7 +421,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task UpdateClientOptionsAndReconnect()
+        public async Task UpdateClientOptionsAndReconnect() //updates the client options and reconnects to MQTT
         {
             InitializeClientOptions(); // Method to reinitialize client options with updated settings
             await DisconnectAsync();
@@ -425,7 +433,7 @@ namespace TEAMS2HA.API
             OnConnectionStatusChanged(status);
         }
 
-        public async Task UpdateSettingsAsync(AppSettings newSettings)
+        public async Task UpdateSettingsAsync(AppSettings newSettings) //updates the settings and reconnects to MQTT
         {
             _settings = newSettings;
             _deviceId = _settings.SensorPrefix;
@@ -442,7 +450,7 @@ namespace TEAMS2HA.API
 
         #region Protected Methods
 
-        protected virtual void OnConnectionStatusChanged(string status) //could be obsolete
+        protected virtual void OnConnectionStatusChanged(string status) //triggers when the connection status changes
         {
             ConnectionStatusChanged?.Invoke(status);
         }
@@ -451,7 +459,7 @@ namespace TEAMS2HA.API
 
         #region Private Methods
 
-        private string DetermineDeviceClass(string sensor)
+        private string DetermineDeviceClass(string sensor) //determines the device class for the sensor
         {
             switch (sensor)
             {
@@ -471,7 +479,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        private string DetermineIcon(string sensor, MeetingState state)
+        private string DetermineIcon(string sensor, MeetingState state) //determines the icon for the sensor
         {
             return sensor switch
             {
@@ -512,7 +520,7 @@ namespace TEAMS2HA.API
             };
         }
 
-        private string GetStateValue(string sensor, MeetingUpdate meetingUpdate)
+        private string GetStateValue(string sensor, MeetingUpdate meetingUpdate) //gets the state value of the sensor
         {
             switch (sensor)
             {
@@ -550,7 +558,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        private void HandleSwitchCommand(string topic, string command)
+        private void HandleSwitchCommand(string topic, string command) //handles the switch command when a message is received from MQTT
         {
             // Determine which switch is being controlled based on the topic
             string switchName = topic.Split('/')[2]; // Assuming topic format is "homeassistant/switch/{switchName}/set"
@@ -588,7 +596,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        private void InitializeClient()
+        private void InitializeClient() //initializes the MQTT client
         {
             if (_mqttClient == null)
             {
@@ -604,7 +612,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        private void InitializeClientOptions()
+        private void InitializeClientOptions() //initializes the MQTT client options
         {
             try
             {
@@ -685,7 +693,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e)
+        private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e) //triggered when a message is received from MQTT
         {
             Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
             string topic = e.ApplicationMessage.Topic;
@@ -708,13 +716,16 @@ namespace TEAMS2HA.API
             return Task.CompletedTask;
         }
 
-        private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e)
+        private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e) //sends keep alice message to MQTT
         {
             if (_mqttClient != null && _mqttClient.IsConnected)
             {
                 // Example: Publish a keep-alive message
                 string keepAliveTopic = "TEAMS2HA/keepalive";
                 string keepAliveMessage = "alive";
+                // we should publish the current meeting state
+
+
 
                 // Create the MQTT message
                 var message = new MqttApplicationMessageBuilder()

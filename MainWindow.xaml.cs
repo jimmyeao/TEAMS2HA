@@ -741,25 +741,52 @@ namespace TEAMS2HA
         }
 
 
-        private async 
-
-        Task
-ReestablishConnections()
+        //private async Task ReestablishConnections() // reestablish connections after sleep
+        //{
+        //    try
+        //    {
+        //        if (!_mqttService.IsConnected)
+        //        {
+        //            await _mqttService.ConnectAsync();
+        //            await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+        //            await _mqttService.SetupMqttSensors();
+        //            Dispatcher.Invoke(() => UpdateStatusMenuItems());
+        //        }
+        //        if (!_teamsClient.IsConnected)
+        //        {
+        //            await initializeteamsconnection();
+        //            Dispatcher.Invoke(() => UpdateStatusMenuItems());
+        //        }
+        //        // Force publish all sensor states after reconnection
+        //        await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings, forcePublish: true);
+        //    }
+        //    catch (Exception ex)
+        //    {
+        //        Log.Error($"Error re-establishing connections: {ex.Message}");
+        //    }
+        //}
+        private async Task ReestablishConnections() // reestablish connections after sleep
         {
             try
             {
-                if (!_mqttService.IsConnected)
+                // Check MQTT Service Connection Health
+                if (!_mqttService.IsConnected || !await _mqttService.CheckConnectionHealthAsync())
                 {
+                    await _mqttService.DisconnectAsync(); // Ensure a clean state
                     await _mqttService.ConnectAsync();
                     await _mqttService.SubscribeAsync("homeassistant/switch/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                     await _mqttService.SetupMqttSensors();
                     Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
-                if (!_teamsClient.IsConnected)
+
+                // Check Teams WebSocket Connection Health
+                if (!_teamsClient.IsConnected || !await _teamsClient.CheckConnectionHealthAsync())
                 {
+                    await _teamsClient.StopAsync(); // Ensure a clean state
                     await initializeteamsconnection();
                     Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
+
                 // Force publish all sensor states after reconnection
                 await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings, forcePublish: true);
             }
@@ -768,6 +795,7 @@ ReestablishConnections()
                 Log.Error($"Error re-establishing connections: {ex.Message}");
             }
         }
+
 
         private async void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
