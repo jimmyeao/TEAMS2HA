@@ -245,6 +245,12 @@ namespace TEAMS2HA.API
             catch (Exception ex)
             {
                 Log.Information($"Error during MQTT publish: {ex.Message}");
+                await CheckConnectionHealthAsync();
+                if (!_mqttClient.IsConnected)
+                {
+                    Log.Information("Reconnecting to MQTT");
+                    await ConnectAsync();
+                }
             }
         }
 
@@ -312,7 +318,7 @@ namespace TEAMS2HA.API
                             unique_id = uniqueId,
                             device = deviceInfo,
                             icon = icon,
-                            command_topic = $"homeassistant/switch/{sensorName}/set",
+                            command_topic = $"homeassistant/switch/{_deviceId}/{sensorName}/set",
                             state_topic = stateTopic,
                             payload_on = "ON",
                             payload_off = "OFF"
@@ -562,41 +568,56 @@ namespace TEAMS2HA.API
             }
         }
 
-        private void HandleSwitchCommand(string topic, string command) //handles the switch command when a message is received from MQTT
+        
+        private void HandleSwitchCommand(string topic, string command)
         {
-            // Determine which switch is being controlled based on the topic
-            string switchName = topic.Split('/')[2]; // Assuming topic format is "homeassistant/switch/{switchName}/set"
-            int underscoreIndex = switchName.IndexOf('_');
-            if (underscoreIndex != -1 && underscoreIndex < switchName.Length - 1)
+            // Split the topic to extract parts
+            string[] topicParts = topic.Split('/');
+            if (topicParts.Length < 5) // Ensure the topic has all expected parts
             {
-                switchName = switchName.Substring(underscoreIndex + 1);
+                Log.Warning($"Unexpected topic format: {topic}");
+                return;
             }
-            string jsonMessage = "";
-            switch (switchName)
-            {
-                case "ismuted":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
 
-                case "isvideoon":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
+            // Extract deviceId and sensorName from the topic
+            string deviceId = topicParts[2];
+            string sensorName = topicParts[3]; // No need to strip prefix since we're using the new structure
 
-                case "isbackgroundblurred":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-
-                case "ishandraised":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-
-                    // Add other cases as needed
-            }
+            // Generate the JSON message based on the sensorName
+            string jsonMessage = GenerateJsonMessageForSwitch(sensorName, deviceId);
 
             if (!string.IsNullOrEmpty(jsonMessage))
             {
-                // Raise the event
+                // Log the command and deviceId for debugging
+                Log.Information($"Executing command for {sensorName} on device {deviceId}");
+
+                // Raise the event with the generated JSON message
                 CommandToTeams?.Invoke(jsonMessage);
+            }
+        }
+
+        private string GenerateJsonMessageForSwitch(string switchName, string deviceId)
+        {
+            // Generate JSON message based on switchName
+            switch (switchName.ToLower())
+            {
+                case "ismuted":
+                    return $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"{deviceId}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+
+                case "isvideoon":
+                    return $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"{deviceId}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+
+                case "isbackgroundblurred":
+                    return $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"{deviceId}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+
+                case "ishandraised":
+                    return $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"{deviceId}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+
+                // Add other cases as necessary
+
+                default:
+                    Log.Warning($"Unrecognized switch command: {switchName}");
+                    return string.Empty; // Return an empty string for unrecognized switch names
             }
         }
 
@@ -699,6 +720,14 @@ namespace TEAMS2HA.API
 
         private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e) //triggered when a message is received from MQTT
         {
+            if(e.ApplicationMessage.Payload == null)
+            {
+                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}");
+            }
+            else
+            {
+                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+            }
             Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
             if(MessageReceived != null)
             {
@@ -711,10 +740,10 @@ namespace TEAMS2HA.API
             // topic format and extract the switchName
             var topicParts = topic.Split(','); //not sure this is required
             topicParts = topic.Split('/');
-            if (topicParts.Length == 4 && topicParts[0].Equals("homeassistant") && topicParts[1].Equals("switch") && topicParts[3].EndsWith("set"))
+            if (topicParts.Length == 5 && topicParts[0].Equals("homeassistant") && topicParts[1].Equals("switch") && topicParts[4].EndsWith("set"))
             {
                 // Extract the action and switch name from the topic
-                string switchName = topicParts[2];
+                string switchName = topicParts[3];
                 string command = payload; // command should be ON or OFF based on the payload
 
                 // Now call the handle method
