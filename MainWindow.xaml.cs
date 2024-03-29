@@ -846,17 +846,16 @@ namespace TEAMS2HA
             // Save the updated settings to file
             settings.SaveSettingsToFile();
 
-            if (mqttSettingsChanged || sensorPrefixChanged)
-            {
+           
                 // Perform actions if MQTT settings have changed
-                Log.Debug("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
+                Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
                 await _mqttService.UnsubscribeAsync("homeassistant/switch/+/set");
                 await _mqttService.DisconnectAsync();
                 await _mqttService.UpdateSettingsAsync(settings); // Make sure to pass the updated settings
                 await _mqttService.ConnectAsync();
                 await _mqttService.PublishConfigurations(_latestMeetingUpdate, settings, forcePublish: true);
                 await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
-            }
+            
         }
 
         private void SetWindowTitle()

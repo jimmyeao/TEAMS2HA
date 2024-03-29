@@ -81,6 +81,67 @@ namespace TEAMS2HA.API
         #endregion Public Properties
 
         #region Public Methods
+        public async Task PublishPermissionSensorsAsync()
+        {
+            var permissions = new Dictionary<string, bool>
+            {
+                { "canToggleMute", State.Instance.CanToggleMute },
+                { "canToggleVideo", State.Instance.CanToggleVideo },
+                { "canToggleHand", State.Instance.CanToggleHand },
+                { "canToggleBlur", State.Instance.CanToggleBlur },
+                { "canLeave", State.Instance.CanLeave },
+                { "canReact", State.Instance.CanReact},
+                { "canToggleShareTray", State.Instance.CanToggleShareTray },
+                { "canToggleChat", State.Instance.CanToggleChat },
+                { "canStopSharing", State.Instance.CanStopSharing },
+                { "canPair", State.Instance.CanPair}
+                // Add other permissions here
+            };
+            var deviceInfo = new
+            {
+                ids = new[] { $"teams2ha_{_deviceId}" }, // Unique device identifier
+                mf = "Jimmy White", // Manufacturer name
+                mdl = "Teams2HA Device", // Model
+                name = _deviceId, // Device name
+                sw = "v1.0" // Software version
+            };
+            foreach (var permission in permissions)
+            {
+                string sensorName = permission.Key.ToLower();
+                bool isAllowed = permission.Value;
+
+                string configTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/config";
+                var configPayload = new
+                {
+                    name = sensorName,
+                    unique_id = $"{_deviceId}_{sensorName}",
+                    device = deviceInfo,
+                    icon = "mdi:eye", // You can customize the icon based on the sensor
+                    state_topic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state",
+                    payload_on = "true",
+                    payload_off = "false"
+                };
+
+                var configMessage = new MqttApplicationMessageBuilder()
+                    .WithTopic(configTopic)
+                    .WithPayload(JsonConvert.SerializeObject(configPayload))
+                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithRetainFlag(true)
+                    .Build();
+                await PublishAsync(configMessage);
+
+                // State topic and message
+                string stateTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state";
+                string statePayload = isAllowed ? "true" : "false"; // Adjust based on your true/false representation
+                var stateMessage = new MqttApplicationMessageBuilder()
+                    .WithTopic(stateTopic)
+                    .WithPayload(statePayload)
+                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithRetainFlag(true)
+                    .Build();
+                await PublishAsync(stateMessage);
+            }
+        }
 
         public static List<string> GetEntityNames(string deviceId) //gets the entity names for the device
         {
@@ -124,6 +185,7 @@ namespace TEAMS2HA.API
                     if (_mqttClient.IsConnected)
                     {
                         ConnectionStatusChanged?.Invoke("MQTT Status: Connected");
+                        await PublishPermissionSensorsAsync();
                         break; // Exit the loop if successfully connected
                     }
                 }
@@ -373,6 +435,7 @@ namespace TEAMS2HA.API
                             .Build();
 
                         await PublishAsync(binarySensorStateMessage);
+                        await PublishPermissionSensorsAsync();
                     }
                 }
             }

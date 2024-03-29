@@ -260,7 +260,90 @@ namespace TEAMS2HA.API
                     Log.Debug("Pairing with Teams");
                     _ = PairWithTeamsAsync();
                 }
-                // Update the meeting state dictionary
+                // need to add in sensors for permissions
+                if (meetingUpdate?.MeetingPermissions?.CanToggleMute == true)
+                {
+                    State.Instance.CanToggleMute = true;
+                }
+                else
+                {
+                    State.Instance.CanToggleMute = false;
+                }
+
+                if (meetingUpdate?.MeetingPermissions?.CanToggleVideo == true)
+                {
+                    State.Instance.CanToggleVideo = true;
+                }
+                else
+                {
+                    State.Instance.CanToggleVideo = false;
+                }
+
+                if (meetingUpdate?.MeetingPermissions?.CanToggleHand == true)
+                {
+                    State.Instance.CanToggleHand = true;
+                }
+                else
+                {
+                    State.Instance.CanToggleHand = false;
+                }
+
+                if (meetingUpdate?.MeetingPermissions?.CanToggleBlur == true)
+                {
+                    State.Instance.CanToggleBlur = true;
+                }
+                else
+                {
+                    State.Instance.CanToggleBlur = false;
+                }
+
+                if (meetingUpdate?.MeetingPermissions?.CanLeave == true)
+                {
+                    State.Instance.CanLeave = true;
+                }
+                else
+                {
+                    State.Instance.CanLeave = false;
+                }
+
+                if (meetingUpdate?.MeetingPermissions?.CanReact == true)
+                {
+                    State.Instance.CanReact = true;
+                }
+                else
+                {
+                    State.Instance.CanReact = false;
+                }
+
+                if (meetingUpdate?.MeetingPermissions?.CanToggleShareTray == true)
+                {
+                    State.Instance.CanToggleShareTray = true;
+                }
+                else
+                {
+                    State.Instance.CanToggleShareTray = false;
+                }
+
+                if (meetingUpdate?.MeetingPermissions?.CanToggleChat == true)
+                {
+                    State.Instance.CanToggleChat = true;
+                }
+                else
+                {
+                    State.Instance.CanToggleChat = false;
+                }
+
+                if (meetingUpdate?.MeetingPermissions?.CanStopSharing == true)
+                {
+                    State.Instance.CanStopSharing = true;
+                }
+                else
+                {
+                    State.Instance.CanStopSharing = false;
+                }
+                
+
+                //              update the meeting state dictionary
                 if (meetingUpdate.MeetingState != null)
                 {
                     meetingState["isMuted"] = meetingUpdate.MeetingState.IsMuted;
