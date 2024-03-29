@@ -30,6 +30,7 @@ namespace TEAMS2HA.API
         private HashSet<string> _subscribedTopics = new HashSet<string>();
         private System.Timers.Timer mqttPublishTimer;
         private bool mqttPublishTimerset = false;
+        private dynamic _deviceInfo;
 
         #endregion Private Fields
 
@@ -41,7 +42,14 @@ namespace TEAMS2HA.API
             _deviceId = deviceId;
             _sensorNames = sensorNames;
             _previousSensorStates = new Dictionary<string, string>();
-
+            _deviceInfo = new
+            {
+                ids = new[] { $"teams2ha_{_deviceId}" },
+                mf = "Jimmy White",
+                mdl = "Teams2HA Device",
+                name = _deviceId,
+                sw = "v1.0"
+            };
             InitializeClient();
             InitializeMqttPublishTimer();
         }
@@ -97,14 +105,7 @@ namespace TEAMS2HA.API
                 { "canPair", State.Instance.CanPair}
                 // Add other permissions here
             };
-            var deviceInfo = new
-            {
-                ids = new[] { $"teams2ha_{_deviceId}" }, // Unique device identifier
-                mf = "Jimmy White", // Manufacturer name
-                mdl = "Teams2HA Device", // Model
-                name = _deviceId, // Device name
-                sw = "v1.0" // Software version
-            };
+           
             foreach (var permission in permissions)
             {
                 string sensorName = permission.Key.ToLower();
@@ -115,7 +116,7 @@ namespace TEAMS2HA.API
                 {
                     name = sensorName,
                     unique_id = $"{_deviceId}_{sensorName}",
-                    device = deviceInfo,
+                    device = _deviceInfo,
                     icon = "mdi:eye", // You can customize the icon based on the sensor
                     state_topic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state",
                     payload_on = "true",
@@ -325,14 +326,7 @@ namespace TEAMS2HA.API
                 return;
             }
             // Define common device information for all entities.
-            var deviceInfo = new
-            {
-                ids = new[] { "teams2ha_" + _deviceId }, // Unique device identifier
-                mf = "Jimmy White", // Manufacturer name
-                mdl = "Teams2HA Device", // Model
-                name = _deviceId, // Device name
-                sw = "v1.0" // Software version
-            };
+           
             if (meetingUpdate == null)
             {
                 meetingUpdate = new MeetingUpdate
@@ -379,7 +373,7 @@ namespace TEAMS2HA.API
                         {
                             name = sensorName,
                             unique_id = uniqueId,
-                            device = deviceInfo,
+                            device = _deviceInfo,
                             icon = icon,
                             command_topic = $"homeassistant/switch/{_deviceId}/{sensorName}/set",
                             state_topic = stateTopic,
@@ -413,7 +407,7 @@ namespace TEAMS2HA.API
                         {
                             name = sensorName,
                             unique_id = uniqueId,
-                            device = deviceInfo,
+                            device = _deviceInfo,
                             icon = icon,
                             state_topic = stateTopic,
                             payload_on = "true",  // Assuming "True" states map to "ON"
