@@ -69,6 +69,7 @@ namespace TEAMS2HA.API
         public event Action<string> ConnectionAttempting;
 
         public event Action<string> ConnectionStatusChanged;
+        public event Action Disconnected;
 
         public event Func<MqttApplicationMessageReceivedEventArgs, Task> MessageReceived;
 
@@ -161,7 +162,13 @@ namespace TEAMS2HA.API
 
             return entityNames;
         }
-
+        public async Task SetupSubscriptionsAsync()
+        {
+            // Subscribe to necessary topics
+            await SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
+            await SubscribeToReactionButtonsAsync();
+            // Add any other necessary subscriptions here
+        }
         public async Task ConnectAsync() //connects to MQTT
         {
             // Check if MQTT client is already connected or connection attempt is in progress
@@ -188,6 +195,7 @@ namespace TEAMS2HA.API
                         ConnectionStatusChanged?.Invoke("MQTT Status: Connected");
                         await PublishPermissionSensorsAsync();
                         await PublishReactionButtonsAsync();
+                        await SetupSubscriptionsAsync();
                         break; // Exit the loop if successfully connected
                     }
                 }
@@ -204,12 +212,18 @@ namespace TEAMS2HA.API
             // Notify if failed to connect after all retry attempts
             if (!_mqttClient.IsConnected)
             {
+
                 ConnectionStatusChanged?.Invoke("MQTT Status: Disconnected (Failed to connect)");
                 Log.Error("Failed to connect to MQTT broker after several attempts.");
             }
         }
         public Task<bool> CheckConnectionHealthAsync()
         {
+            if (!_mqttClient.IsConnected)
+            {
+                Log.Information("MQTT client is not connected.");
+                Disconnected?.Invoke();
+            }
             // Simple version: Just check if the client believes it's connected
             return Task.FromResult(_mqttClient.IsConnected);
 
@@ -313,9 +327,19 @@ namespace TEAMS2HA.API
                 if (!_mqttClient.IsConnected)
                 {
                     Log.Information("Reconnecting to MQTT");
-                    await ConnectAsync();
+                    Disconnected?.Invoke();
                 }
             }
+        }
+        public async Task SubscribeToAllTopicsAsync()
+        {
+            // Subscribe to switch set commands
+            await SubscribeAsync($"homeassistant/switch/{_deviceId}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
+
+            // Subscribe to reaction buttons
+            await SubscribeToReactionButtonsAsync();
+
+            // You can add more subscriptions here as needed
         }
 
         public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings, bool forcePublish = false) //publishes the configurations to MQTT

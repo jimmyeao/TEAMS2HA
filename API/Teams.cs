@@ -64,6 +64,8 @@ namespace TEAMS2HA.API
 
         public event EventHandler<TeamsUpdateEventArgs> TeamsUpdateReceived;
 
+        public event Action Disconnected;
+
         #endregion Public Events
 
         #region Public Properties
@@ -494,7 +496,7 @@ namespace TEAMS2HA.API
                 {
                     Log.Error($"WebSocketException in ReceiveLoopAsync: {ex.Message}");
                     IsConnected = false;
-                    await ReconnectAsync();
+                    Disconnected?.Invoke();
                     break;
                 }
             }

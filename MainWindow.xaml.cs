@@ -350,7 +350,9 @@ namespace TEAMS2HA
             await _mqttService.SubscribeToReactionButtonsAsync();
             // Other initialization code...
             await initializeteamsconnection();
-            
+            _mqttService.Disconnected += OnServiceDisconnected;
+            _teamsClient.Disconnected += OnServiceDisconnected;
+
             // Other initialization code...
         }
 
@@ -412,6 +414,10 @@ namespace TEAMS2HA
             var aboutWindow = new AboutWindow(deviceid, MyNotifyIcon);
             aboutWindow.Owner = this;
             aboutWindow.ShowDialog();
+        }
+        private async void OnServiceDisconnected()
+        {
+            await ReestablishConnections();
         }
 
 
@@ -747,49 +753,48 @@ namespace TEAMS2HA
                 // Implement logic to re-establish connections
                 await ReestablishConnections();
                 // publish current meeting state
-                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
-                CheckTeamsConnectionStatus();
-                _teamsClient.ConnectionStatusChanged -= TeamsConnectionStatusChanged;
-                _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
-                // we should also re-subscribe to mqtt topics
-                await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
-                await _mqttService.SubscribeToReactionButtonsAsync();
+                
             }
         }
 
 
 
-        private async Task ReestablishConnections() // reestablish connections after sleep
+        private async Task ReestablishConnections() // reestablish connections after sleep or connectivity issues
         {
             try
             {
-                // Check MQTT Service Connection Health
-                if (!_mqttService.IsConnected || !await _mqttService.CheckConnectionHealthAsync())
+                // Use a more aggressive check to determine if reconnection is necessary
+                var mqttHealth = await _mqttService.CheckConnectionHealthAsync();
+                var teamsHealth = await _teamsClient.CheckConnectionHealthAsync();
+
+                if (!mqttHealth || !teamsHealth)
+                {
+                    Log.Information("Re-establishing connections due to detected connectivity issues.");
+                }
+
+                if (!_mqttService.IsConnected || !mqttHealth)
                 {
                     await _mqttService.DisconnectAsync(); // Ensure a clean state
                     await _mqttService.ConnectAsync();
-                    await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
-                    await _mqttService.SubscribeToReactionButtonsAsync();
-                    await _mqttService.SetupMqttSensors();
+                    await _mqttService.SubscribeToAllTopicsAsync(); // A new method to manage all subscriptions centrally
                     Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
 
-                // Check Teams WebSocket Connection Health
-                if (!_teamsClient.IsConnected || !await _teamsClient.CheckConnectionHealthAsync())
+                if (!_teamsClient.IsConnected || !teamsHealth)
                 {
                     await _teamsClient.StopAsync(); // Ensure a clean state
-                    await initializeteamsconnection();
+                    await _teamsClient.StartConnectionAsync(new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26")); // Simplified connection logic
                     Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
 
-                // Force publish all sensor states after reconnection
-                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings, forcePublish: true);
+                // Re-publish configurations or perform other necessary setup after reconnection
             }
             catch (Exception ex)
             {
                 Log.Error($"Error re-establishing connections: {ex.Message}");
             }
         }
+
 
 
         private async void SaveSettings_Click(object sender, RoutedEventArgs e)
@@ -847,18 +852,17 @@ namespace TEAMS2HA
 
             // Save the updated settings to file
             settings.SaveSettingsToFile();
-
-           
-                // Perform actions if MQTT settings have changed
-                Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
-                await _mqttService.UnsubscribeAsync("homeassistant/switch/+/set");
+            if (mqttSettingsChanged)
+            {
                 await _mqttService.DisconnectAsync();
-                await _mqttService.UpdateSettingsAsync(settings); // Make sure to pass the updated settings
                 await _mqttService.ConnectAsync();
-                await _mqttService.PublishConfigurations(_latestMeetingUpdate, settings, forcePublish: true);
-                await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
-            await _mqttService.SubscribeToReactionButtonsAsync();
-            
+            }
+
+
+            // Perform actions if MQTT settings have changed
+            Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
+                
+
         }
 
         private void SetWindowTitle()
