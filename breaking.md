@@ -6,16 +6,14 @@ Sensores will also now be BINARY sensors
 
 The Device will appear in the MQTT integration as the Prefix name
 
-The sensor names should NOT change, but there is a small risk that they will for your setup which _may_ break integrations you already have. I have attempted to prevent this much as possible, but I can make no guarantees :)
+The sensor names will change, please check them and update your automations as required. This should be the last time we have to do this.
 
-As the old sensor names may conflict, you may need to remove them from MQTT - I use https://mqtt-explorer.com/ MQTT Explorer
+As the old sensor names may still exist, you may need to remove them from MQTT - I use https://mqtt-explorer.com/ MQTT Explorer
 
 Simply expand the view to **Homeassistant - switch** and remove all entries that start with your prefix, e.g. myprefix_isinmeeting, myprefix_isrecording on etc and then repeat for the entries under **homeasistant - sensor**
 
-In the below example for switches, you can see the new names and the old ones, so I would remove the ones that start with ryzen_ in this list and leave the new ones such as ismuted, isbackgroundblurred,israisedhand,isvidoeon
+In the below example for switches, the highlighed area shows the new format, notice that "Ryzen" is the prefix I am using - any of these sensors or switches that exist outside of a topic that starts with your prefix can be removed
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/7ff4428e-5f1d-460b-8954-1e4e82c9e3d7)
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/c2cd4559-7a1c-4b11-8ce5-4cc315eb3f4d)
 
-likewise for sensors, you would od the same:
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/14546eef-91f5-465b-9e18-8c716c469f86)
