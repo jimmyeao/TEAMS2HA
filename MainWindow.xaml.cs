@@ -347,7 +347,7 @@ namespace TEAMS2HA
             await _mqttService.ConnectAsync();
 
             await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, false);
-
+            await _mqttService.SubscribeToReactionButtonsAsync();
             // Other initialization code...
             await initializeteamsconnection();
             
@@ -753,6 +753,7 @@ namespace TEAMS2HA
                 _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
                 // we should also re-subscribe to mqtt topics
                 await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
+                await _mqttService.SubscribeToReactionButtonsAsync();
             }
         }
 
@@ -768,6 +769,7 @@ namespace TEAMS2HA
                     await _mqttService.DisconnectAsync(); // Ensure a clean state
                     await _mqttService.ConnectAsync();
                     await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
+                    await _mqttService.SubscribeToReactionButtonsAsync();
                     await _mqttService.SetupMqttSensors();
                     Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
@@ -855,6 +857,7 @@ namespace TEAMS2HA
                 await _mqttService.ConnectAsync();
                 await _mqttService.PublishConfigurations(_latestMeetingUpdate, settings, forcePublish: true);
                 await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
+            await _mqttService.SubscribeToReactionButtonsAsync();
             
         }
 

@@ -4,6 +4,7 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -220,6 +221,23 @@ namespace TEAMS2HA.API
             {
                 Log.Error(ex, "Error detaching event handler");
             }
+        }
+
+        public async Task SendReactionToTeamsAsync(string reactionType)
+        {
+            // Construct the JSON payload for the reaction message
+            var reactionPayload = new
+            {
+                action = "send-reaction",
+                parameters = new { type = reactionType },
+                requestId = new Random().Next(1, int.MaxValue) // Generate a random request ID
+            };
+
+            string message = JsonConvert.SerializeObject(reactionPayload);
+
+            // Use the SendMessageAsync method to send the reaction message
+            await SendMessageAsync(message);
+            Log.Information($"Reaction '{reactionType}' sent to Teams.");
         }
 
         #endregion Public Methods

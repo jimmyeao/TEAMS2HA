@@ -186,6 +186,7 @@ namespace TEAMS2HA.API
                     {
                         ConnectionStatusChanged?.Invoke("MQTT Status: Connected");
                         await PublishPermissionSensorsAsync();
+                        await PublishReactionButtonsAsync();
                         break; // Exit the loop if successfully connected
                     }
                 }
@@ -436,6 +437,7 @@ namespace TEAMS2HA.API
 
                         await PublishAsync(binarySensorStateMessage);
                         await PublishPermissionSensorsAsync();
+                        await PublishReactionButtonsAsync();
                     }
                 }
             }
@@ -492,6 +494,9 @@ namespace TEAMS2HA.API
             {
                 Log.Information($"Error during MQTT subscribe: {ex.Message}");
             }
+
+            // new code for reactions
+           
         }
 
         public async Task UpdateClientOptionsAndReconnect() //updates the client options and reconnects to MQTT
@@ -500,11 +505,63 @@ namespace TEAMS2HA.API
             await DisconnectAsync();
             await ConnectAsync();
         }
-
+        public async Task SubscribeToReactionButtonsAsync()
+        {
+            var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
+            foreach (var reaction in reactions)
+            {
+                string commandTopic = $"homeassistant/button/{_deviceId}/{reaction}/set";
+                try
+                {
+                    await SubscribeAsync(commandTopic, MqttQualityOfServiceLevel.AtLeastOnce, true);
+                }
+                catch (Exception ex)
+                {
+                    Log.Information($"Error during reaction button MQTT subscribe: {ex.Message}");
+                }
+            }
+        }
         public void UpdateConnectionStatus(string status) //could be obsolete
         {
             OnConnectionStatusChanged(status);
         }
+        public async Task PublishReactionButtonsAsync()
+        {
+            var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
+            var deviceInfo = new
+            {
+                ids = new[] { $"teams2ha_{_deviceId}" },
+                mf = "Jimmy White",
+                mdl = "Teams2HA Device",
+                name = _deviceId,
+                sw = "v1.0"
+            };
+            foreach (var reaction in reactions)
+            {
+                string configTopic = $"homeassistant/button/{_deviceId}/{reaction}/config";
+                var payload = new
+                {
+                    name = reaction,
+                    unique_id = $"{_deviceId}_{reaction}_reaction",
+                    icon = GetIconForReaction(reaction),
+                    device = deviceInfo, // Include the device information
+                    command_topic = $"homeassistant/button/{_deviceId}/{reaction}/set",
+                    payload_press = "press"
+                    // Notice there's no state_topic or payload_on/off as it's a button, not a switch
+                };
+
+                var message = new MqttApplicationMessageBuilder()
+                    .WithTopic(configTopic)
+                    .WithPayload(JsonConvert.SerializeObject(payload))
+                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithRetainFlag(true)
+                    .Build();
+
+                await _mqttClient.PublishAsync(message);
+            }
+        }
+
+
 
         public async Task UpdateSettingsAsync(AppSettings newSettings) //updates the settings and reconnects to MQTT
         {
@@ -531,6 +588,18 @@ namespace TEAMS2HA.API
         #endregion Protected Methods
 
         #region Private Methods
+        private string GetIconForReaction(string reaction)
+        {
+            return reaction switch
+            {
+                "like" => "mdi:thumb-up-outline",
+                "love" => "mdi:heart-outline",
+                "applause" => "mdi:hand-clap",
+                "wow" => "mdi:emoticon-excited-outline",
+                "laugh" => "mdi:emoticon-happy-outline",
+                _ => "mdi:hand-okay" // Default icon
+            };
+        }
 
         private string DetermineDeviceClass(string sensor) //determines the device class for the sensor
         {
@@ -798,6 +867,28 @@ namespace TEAMS2HA.API
             }
             string topic = e.ApplicationMessage.Topic;
             string payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
+
+            if (topic.StartsWith($"homeassistant/button/{_deviceId}/") && payload == "press")
+            {
+                var parts = topic.Split('/');
+                if (parts.Length > 3)
+                {
+                    var reaction = parts[3]; // Extract the reaction type from the topic
+
+                    // Construct the JSON message for the reaction
+                    var reactionPayload = new
+                    {
+                        action = "send-reaction",
+                        parameters = new { type = reaction },
+                        requestId = 1
+                    };
+
+                    string reactionPayloadJson = JsonConvert.SerializeObject(reactionPayload);
+
+                    // Invoke the command to send the reaction to Teams
+                    CommandToTeams?.Invoke(reactionPayloadJson);
+                }
+            }
 
             // Assuming the format is homeassistant/switch/{deviceId}/{switchName}/set Validate the
             // topic format and extract the switchName
