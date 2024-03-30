@@ -816,6 +816,7 @@ namespace TEAMS2HA.API
                 InitializeClientOptions(); // Ensure options are initialized with current settings
                 if (_mqttClientsubscribed == false)
                 {
+                    _mqttClient.ApplicationMessageReceivedAsync -= OnMessageReceivedAsync;
                     _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
                     _mqttClientsubscribed = true;
                 }
