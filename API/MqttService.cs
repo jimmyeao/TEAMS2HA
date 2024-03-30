@@ -33,11 +33,13 @@ namespace TEAMS2HA.API
         private bool mqttPublishTimerset = false;
         private dynamic _deviceInfo;
         private readonly object connectionLock = new object();
+        private static MqttService _instance;
+        private static readonly object _lock = new object();
         #endregion Private Fields
 
         #region Public Constructors
 
-        public MqttService(AppSettings settings, string deviceId, List<string> sensorNames) //constructor for the MQTT service
+        private MqttService(AppSettings settings, string deviceId, List<string> sensorNames)
         {
             _settings = settings;
             _deviceId = deviceId;
@@ -64,7 +66,20 @@ namespace TEAMS2HA.API
         #endregion Public Delegates
 
         #region Public Events
-
+        public static MqttService GetInstance(AppSettings settings, string deviceId, List<string> sensorNames)
+        {
+            if (_instance == null)
+            {
+                lock (_lock)
+                {
+                    if (_instance == null)
+                    {
+                        _instance = new MqttService(settings, deviceId, sensorNames);
+                    }
+                }
+            }
+            return _instance;
+        }
         public event CommandToTeamsHandler CommandToTeams;
 
         public event Action<string> ConnectionAttempting;

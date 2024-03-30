@@ -322,38 +322,22 @@ namespace TEAMS2HA
         #endregion Public Constructors
 
         #region Public Methods
-
         public async Task InitializeConnections()
         {
-            if (mqttConnectionStatusChanged == false)
-            {
-                _mqttService = new MqttService(_settings, deviceid, sensorNames);
-                mqttConnectionStatusChanged = true;
-            }
-            _mqttService = new MqttService(_settings, deviceid, sensorNames);
-            if (mqttStatusUpdated == false)
-            {
-                _mqttService.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
-                mqttStatusUpdated = true;
-            }
-            if (mqttCommandToTeams == false)
-            {
-                _mqttService.CommandToTeams += HandleCommandToTeams;
-                mqttCommandToTeams = true;
-            }
-            if (mqttConnectionAttempting == false)
-            {
-                _mqttService.ConnectionAttempting += MqttManager_ConnectionAttempting;
-                mqttConnectionAttempting = true;
-            }
-            await _mqttService.ConnectAsync();
-            // Other initialization code...
-            await initializeteamsconnection();
-            _mqttService.Disconnected += OnServiceDisconnected;
-            _teamsClient.Disconnected += OnServiceDisconnected;
+            _mqttService = MqttService.GetInstance(_settings, deviceid, sensorNames);
 
-            // Other initialization code...
+            // Subscribing to events without flag checks, assuming idempotent setup or one-time initialization
+            _mqttService.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
+            _mqttService.CommandToTeams += HandleCommandToTeams;
+            _mqttService.ConnectionAttempting += MqttManager_ConnectionAttempting;
+            _mqttService.Disconnected += OnServiceDisconnected;
+
+            await _mqttService.ConnectAsync();
+
+            // Initialize and manage Teams connection
+            await initializeteamsconnection();
         }
+       
 
         #endregion Public Methods
 
