@@ -31,7 +31,7 @@ namespace TEAMS2HA.API
         private System.Timers.Timer mqttPublishTimer;
         private bool mqttPublishTimerset = false;
         private dynamic _deviceInfo;
-
+        private readonly object connectionLock = new object();
         #endregion Private Fields
 
         #region Public Constructors
@@ -171,12 +171,17 @@ namespace TEAMS2HA.API
         }
         public async Task ConnectAsync() //connects to MQTT
         {
-            // Check if MQTT client is already connected or connection attempt is in progress
-            if (_mqttClient.IsConnected || _isAttemptingConnection)
+            lock (connectionLock)
             {
-                Log.Information("MQTT client is already connected or connection attempt is in progress.");
-                return;
+                if (_isAttemptingConnection || _mqttClient.IsConnected) return;
+                _isAttemptingConnection = true;
             }
+            // Check if MQTT client is already connected or connection attempt is in progress
+            //if (_mqttClient.IsConnected || _isAttemptingConnection)
+            //{
+            //    Log.Information("MQTT client is already connected or connection attempt is in progress.");
+            //    return;
+            //}
 
             _isAttemptingConnection = true;
             ConnectionAttempting?.Invoke("MQTT Status: Connecting...");
@@ -216,19 +221,20 @@ namespace TEAMS2HA.API
                 ConnectionStatusChanged?.Invoke("MQTT Status: Disconnected (Failed to connect)");
                 Log.Error("Failed to connect to MQTT broker after several attempts.");
             }
+            lock (connectionLock)
+            {
+                _isAttemptingConnection = false;
+            }
         }
-        public Task<bool> CheckConnectionHealthAsync()
+        public async Task CheckConnectionHealthAsync()
         {
             if (!_mqttClient.IsConnected)
             {
                 Log.Information("MQTT client is not connected.");
-                Disconnected?.Invoke();
+                await ReconnectAsync();
             }
             // Simple version: Just check if the client believes it's connected
-            return Task.FromResult(_mqttClient.IsConnected);
 
-            // More thorough version could involve sending a test message
-            // and optionally waiting for an acknowledgment if your MQTT setup supports it
         }
 
         public async Task DisconnectAsync() //disconnects from MQTT
@@ -264,7 +270,7 @@ namespace TEAMS2HA.API
 
         public void InitializeMqttPublishTimer() //initializes the MQTT publish timer
         {
-            mqttPublishTimer = new System.Timers.Timer(60000); // Set the interval to 60 seconds
+            mqttPublishTimer = new System.Timers.Timer(15000); // Set the interval to 60 seconds
             if (mqttPublishTimerset == false)
             {
                 mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
@@ -463,8 +469,33 @@ namespace TEAMS2HA.API
 
         public async Task ReconnectAsync()
         {
-            // Consolidated reconnection logic
+            int attempt = 0;
+            while (!_mqttClient.IsConnected && attempt < MaxConnectionRetries)
+            {
+                attempt++;
+                try
+                {
+                    Log.Information($"Reconnection attempt {attempt}...");
+                    var result = await _mqttClient.ConnectAsync(_mqttOptions);
+                    if (result.ResultCode == MqttClientConnectResultCode.Success)
+                    {
+                        Log.Information("Reconnected to MQTT broker.");
+                        return; // Successfully reconnected
+                    }
+                    else
+                    {
+                        Log.Warning($"Reconnection failed with result code: {result.ResultCode}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Reconnection attempt failed: {ex.Message}");
+                }
+                await Task.Delay(RetryDelayMilliseconds * attempt); // Exponential back-off
+            }
         }
+
+
 
         public async Task SetupMqttSensors() //sets up the MQTT sensors
         {
@@ -773,8 +804,7 @@ namespace TEAMS2HA.API
 
         private void InitializeClient() //initializes the MQTT client
         {
-            if (_mqttClient == null)
-            {
+            
                 var factory = new MqttFactory();
                 _mqttClient = (MqttClient?)factory.CreateMqttClient(); // This creates an IMqttClient, not a MqttClient.
 
@@ -784,7 +814,21 @@ namespace TEAMS2HA.API
                     _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
                     _mqttClientsubscribed = true;
                 }
-            }
+                _mqttClient.ConnectedAsync += async e =>
+                {
+                    Log.Information("Connected to MQTT broker.");
+                    // Handle post-connection setup, e.g., subscriptions.
+                    await SetupSubscriptionsAsync();
+                };
+
+                _mqttClient.DisconnectedAsync += async e =>
+                {
+                    Log.Information("Disconnected from MQTT broker, attempting to reconnect...");
+                    // Implement your reconnection logic here
+                    await ReconnectAsync();
+                };
+
+
         }
 
         private void InitializeClientOptions() //initializes the MQTT client options
@@ -927,7 +971,7 @@ namespace TEAMS2HA.API
 
         private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e) //sends keep alice message to MQTT
         {
-            if (_mqttClient != null && _mqttClient.IsConnected)
+            if (_mqttClient.IsConnected)
             {
                 // Example: Publish a keep-alive message
                 string keepAliveTopic = "TEAMS2HA/keepalive";
@@ -947,6 +991,10 @@ namespace TEAMS2HA.API
                 _ = _mqttClient.PublishAsync(message);
 
                 Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
+            }
+            else
+            {
+                Log.Debug("OnMqttPublishTimerElapsed: MQTT Client is not connected");
             }
         }
 
