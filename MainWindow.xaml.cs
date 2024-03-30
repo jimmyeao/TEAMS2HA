@@ -12,6 +12,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
 using TEAMS2HA.API;
+using TEAMS2HA.Properties;
 
 namespace TEAMS2HA
 {
@@ -297,27 +298,7 @@ namespace TEAMS2HA
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
             CreateNotifyIconContextMenu();
             // Create a new instance of the MQTT Service class
-            if (mqttConnectionStatusChanged == false)
-            {
-                _mqttService = new MqttService(settings, deviceid, sensorNames);
-                mqttConnectionStatusChanged = true;
-            }
-            _mqttService = new MqttService(settings, deviceid, sensorNames);
-            if (mqttStatusUpdated == false)
-            {
-                _mqttService.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
-                mqttStatusUpdated = true;
-            }
-            if (mqttCommandToTeams == false)
-            {
-                _mqttService.CommandToTeams += HandleCommandToTeams;
-                mqttCommandToTeams = true;
-            }
-            if (mqttConnectionAttempting == false)
-            {
-                _mqttService.ConnectionAttempting += MqttManager_ConnectionAttempting;
-                mqttConnectionAttempting = true;
-            }
+
 
             // Set the action to be performed when a new token is updated
             _updateTokenAction = newToken =>
@@ -344,10 +325,28 @@ namespace TEAMS2HA
 
         public async Task InitializeConnections()
         {
+            if (mqttConnectionStatusChanged == false)
+            {
+                _mqttService = new MqttService(_settings, deviceid, sensorNames);
+                mqttConnectionStatusChanged = true;
+            }
+            _mqttService = new MqttService(_settings, deviceid, sensorNames);
+            if (mqttStatusUpdated == false)
+            {
+                _mqttService.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
+                mqttStatusUpdated = true;
+            }
+            if (mqttCommandToTeams == false)
+            {
+                _mqttService.CommandToTeams += HandleCommandToTeams;
+                mqttCommandToTeams = true;
+            }
+            if (mqttConnectionAttempting == false)
+            {
+                _mqttService.ConnectionAttempting += MqttManager_ConnectionAttempting;
+                mqttConnectionAttempting = true;
+            }
             await _mqttService.ConnectAsync();
-
-            await _mqttService.SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, false);
-            await _mqttService.SubscribeToReactionButtonsAsync();
             // Other initialization code...
             await initializeteamsconnection();
             _mqttService.Disconnected += OnServiceDisconnected;
@@ -764,20 +763,12 @@ namespace TEAMS2HA
             try
             {
                 // Use a more aggressive check to determine if reconnection is necessary
-                var mqttHealth = await _mqttService.CheckConnectionHealthAsync();
+               
                 var teamsHealth = await _teamsClient.CheckConnectionHealthAsync();
 
-                if (!mqttHealth || !teamsHealth)
+                if (!teamsHealth)
                 {
                     Log.Information("Re-establishing connections due to detected connectivity issues.");
-                }
-
-                if (!_mqttService.IsConnected || !mqttHealth)
-                {
-                    await _mqttService.DisconnectAsync(); // Ensure a clean state
-                    await _mqttService.ConnectAsync();
-                    await _mqttService.SubscribeToAllTopicsAsync(); // A new method to manage all subscriptions centrally
-                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
                 }
 
                 if (!_teamsClient.IsConnected || !teamsHealth)
@@ -852,6 +843,7 @@ namespace TEAMS2HA
 
             // Save the updated settings to file
             settings.SaveSettingsToFile();
+            // only reconnect if the mqtt settings have changed
             if (mqttSettingsChanged)
             {
                 await _mqttService.DisconnectAsync();
