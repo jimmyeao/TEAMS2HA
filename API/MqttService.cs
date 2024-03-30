@@ -177,12 +177,12 @@ namespace TEAMS2HA.API
                 if (_isAttemptingConnection || _mqttClient.IsConnected) return;
                 _isAttemptingConnection = true;
             }
-            // Check if MQTT client is already connected or connection attempt is in progress
-            //if (_mqttClient.IsConnected || _isAttemptingConnection)
-            //{
-            //    Log.Information("MQTT client is already connected or connection attempt is in progress.");
-            //    return;
-            //}
+            //Check if MQTT client is already connected
+            if (_mqttClient.IsConnected )
+            {
+                Log.Information("MQTT client is already connected ");
+                return;
+            }
 
             _isAttemptingConnection = true;
             ConnectionAttempting?.Invoke("MQTT Status: Connecting...");
@@ -523,7 +523,14 @@ namespace TEAMS2HA.API
 
         public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos,bool force) //subscribes to a topic on MQTT
         {
+            // check if we are connected
+            if (!_mqttClient.IsConnected)
+            {
+                Log.Information("Cant subscribe MQTT client is not connected.");
+                return;
+            }
             // Check if already subscribed
+
             if (_subscribedTopics.Contains(topic) && !force)
             {
                 Log.Information($"Already subscribed to {topic}.");
@@ -995,10 +1002,7 @@ namespace TEAMS2HA.API
                 
                 UpdateClientOptionsAndReconnect();
             }
-            else
-            {
-                Log.Debug("OnMqttPublishTimerElapsed: MQTT Client is not connected");
-            }
+
         }
 
         #endregion Private Methods
