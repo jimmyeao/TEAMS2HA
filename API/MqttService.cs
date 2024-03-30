@@ -10,6 +10,7 @@ using System.Threading;
 using System.Timers;
 using Newtonsoft.Json;
 using System.Text;
+using System.Data;
 
 namespace TEAMS2HA.API
 {
@@ -324,7 +325,7 @@ namespace TEAMS2HA.API
             try
             {
                 await _mqttClient.PublishAsync(message, CancellationToken.None); // Note: Add using System.Threading; if CancellationToken is undefined
-                Log.Information("Publish successful." + message.Topic);
+                //Log.Information("Publish successful." + message.Topic);
             }
             catch (Exception ex)
             {
@@ -570,10 +571,7 @@ namespace TEAMS2HA.API
                 }
             }
         }
-        public void UpdateConnectionStatus(string status) //could be obsolete
-        {
-            OnConnectionStatusChanged(status);
-        }
+
         public async Task PublishReactionButtonsAsync()
         {
             var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
@@ -605,8 +603,11 @@ namespace TEAMS2HA.API
                     .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
                     .WithRetainFlag(true)
                     .Build();
-
-                await _mqttClient.PublishAsync(message);
+                if(_mqttClient.IsConnected)
+                {
+                    await PublishAsync(message);
+                }
+               
             }
         }
 
@@ -629,10 +630,7 @@ namespace TEAMS2HA.API
 
         #region Protected Methods
 
-        protected virtual void OnConnectionStatusChanged(string status) //triggers when the connection status changes
-        {
-            ConnectionStatusChanged?.Invoke(status);
-        }
+
 
         #endregion Protected Methods
 
@@ -991,6 +989,11 @@ namespace TEAMS2HA.API
                 _ = _mqttClient.PublishAsync(message);
 
                 Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
+            }else
+            {
+                Log.Debug("OnMqttPublishTimerElapsed: MQTT Client is not connected");
+                
+                UpdateClientOptionsAndReconnect();
             }
             else
             {
