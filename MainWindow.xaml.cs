@@ -736,7 +736,7 @@ namespace TEAMS2HA
                 // Implement logic to re-establish connections
                 await ReestablishConnections();
                 // publish current meeting state
-                
+
             }
         }
 
