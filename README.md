@@ -42,6 +42,9 @@ You can right click the system tray icon for a selection of functions:
 
 ![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/a8878f2e-38f6-4fce-a823-32f2008a0763)
 
+This is how it should look in MQTT in Homeassistant
+
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/ce524451-a96a-4eac-bb94-67e36f449527)
 
 
 
