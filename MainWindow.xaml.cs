@@ -337,38 +337,55 @@ namespace TEAMS2HA
             // Initialize and manage Teams connection
             await initializeteamsconnection();
         }
-       
+
 
         #endregion Public Methods
 
         #region Protected Methods
 
-        protected override async void OnClosing(CancelEventArgs e)
+        protected override void OnClosing(CancelEventArgs e)
         {
-            // Unsubscribe from events and clean up
-            if (_mqttService != null)
+            _mqttService.BeginShutdownProcess();
+            try
             {
-                _mqttService.ConnectionStatusChanged -= MqttManager_ConnectionStatusChanged;
-                _mqttService.StatusUpdated -= UpdateMqttStatus;
-                _mqttService.CommandToTeams -= HandleCommandToTeams;
+                // Initialize sensors for a clean state on exit without awaiting
+                _ = _mqttService.SetupMqttSensors();
+
+                if (_mqttService != null)
+                {
+                    _mqttService.ConnectionStatusChanged -= MqttManager_ConnectionStatusChanged;
+                    _mqttService.StatusUpdated -= UpdateMqttStatus;
+                    _mqttService.CommandToTeams -= HandleCommandToTeams;
+
+                    // Disconnect asynchronously without waiting
+                    _ = _mqttService.DisconnectAsync();
+
+                    // Dispose of the MQTT service
+                    _mqttService.Dispose();
+                    Log.Debug("MQTT Client Disposed");
+                }
+
+                if (_teamsClient != null)
+                {
+                    _teamsClient.TeamsUpdateReceived -= TeamsClient_TeamsUpdateReceived;
+                    Log.Debug("Teams Client Disconnected");
+                }
             }
-            if (_teamsClient != null)
+            catch (Exception ex)
             {
-                _teamsClient.TeamsUpdateReceived -= TeamsClient_TeamsUpdateReceived;
-                Log.Debug("Teams Client Disconnected");
+                Log.Error($"Error during application closing: {ex.Message}");
             }
-            // we want all the sensors to be off if we are exiting, lets initialise them, to do this
-            await _mqttService.SetupMqttSensors();
-            if (_mqttService != null)
+            finally
             {
-                await _mqttService.DisconnectAsync(); // Properly disconnect before disposing
-                _mqttService.Dispose();
-                Log.Debug("MQTT Client Disposed");
+                // Dispose of the NotifyIcon
+                MyNotifyIcon.Dispose();
+                SystemEvents.PowerModeChanged -= OnPowerModeChanged;
             }
-            MyNotifyIcon.Dispose();
-            base.OnClosing(e); // Call the base class method
-            SystemEvents.PowerModeChanged -= OnPowerModeChanged;
+
+            // Ensure to call the base class method to properly close the application
+            base.OnClosing(e);
         }
+
 
         protected override void OnStateChanged(EventArgs e)
         {

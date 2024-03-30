@@ -35,6 +35,7 @@ namespace TEAMS2HA.API
         private readonly object connectionLock = new object();
         private static MqttService _instance;
         private static readonly object _lock = new object();
+        private bool isShuttingDown = false; // Flag to indicate shutdow
         #endregion Private Fields
 
         #region Public Constructors
@@ -102,7 +103,10 @@ namespace TEAMS2HA.API
         }
 
         public bool IsConnected => _mqttClient.IsConnected; //gets if the MQTT client is connected
-
+        public void BeginShutdownProcess()
+        {
+            isShuttingDown = true;
+        }
         #endregion Public Properties
 
         #region Public Methods
@@ -337,6 +341,12 @@ namespace TEAMS2HA.API
 
         public async Task PublishAsync(MqttApplicationMessage message) //publishes a message to MQTT
         {
+            // check if we are connected
+            if (!_mqttClient.IsConnected)
+            {
+                Log.Information("Cant publish MQTT client is not connected.");
+                return;
+            }
             try
             {
                 await _mqttClient.PublishAsync(message, CancellationToken.None); // Note: Add using System.Threading; if CancellationToken is undefined
@@ -485,6 +495,11 @@ namespace TEAMS2HA.API
 
         public async Task ReconnectAsync()
         {
+            if (isShuttingDown )
+            {
+                
+                return;
+            }
             int attempt = 0;
             while (!_mqttClient.IsConnected && attempt < MaxConnectionRetries)
             {
@@ -842,12 +857,19 @@ namespace TEAMS2HA.API
                     await SetupSubscriptionsAsync();
                 };
 
-                _mqttClient.DisconnectedAsync += async e =>
+            _mqttClient.DisconnectedAsync += async e =>
+            {
+                if (!isShuttingDown)
                 {
                     Log.Information("Disconnected from MQTT broker, attempting to reconnect...");
                     // Implement your reconnection logic here
                     await ReconnectAsync();
-                };
+                }
+                else
+                {
+                    //Log.Information("MQTT client disconnected and shutdown in progress, skipping reconnection.");
+                }
+            };
 
 
         }

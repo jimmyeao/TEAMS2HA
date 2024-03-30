@@ -187,6 +187,11 @@ namespace TEAMS2HA.API
 
         public async Task SendMessageAsync(string message, CancellationToken cancellationToken = default)
         {
+            if (_clientWebSocket.State != WebSocketState.Open)
+            {
+                Log.Warning("WebSocket is not open. Cannot send message.");
+                return;
+            }
             byte[] messageBytes = Encoding.UTF8.GetBytes(message);
             await _clientWebSocket.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, cancellationToken);
             Log.Debug($"Message Sent: {message}");
