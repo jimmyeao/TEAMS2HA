@@ -1,5 +1,4 @@
 ﻿using Microsoft.Win32;
-using MQTTnet.Protocol;
 using Newtonsoft.Json;
 using Serilog;
 using System;
@@ -7,12 +6,11 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
-using System.Windows.Controls;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
 using TEAMS2HA.API;
-using TEAMS2HA.Properties;
 
 namespace TEAMS2HA
 {
@@ -57,6 +55,7 @@ namespace TEAMS2HA
         #endregion Private Constructors
 
         #region Public Properties
+
         public bool HasShownOneTimeNotice { get; set; } = false;
 
         // Public property to access the singleton instance
@@ -244,7 +243,7 @@ namespace TEAMS2HA
 
         private List<string> sensorNames = new List<string>
         {
-            "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages", "teamsRunning"
+            "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages", "teamsRunning", "CanToggleMute", "CanToggleVideo, CanToggleHand", "CanToggleBlur", "CanLeave", "CanReact", "CanToggleShareTray", "CanToggleChat", "CanStopSharing", "CanPair"
         };
 
         private bool teamspaired = false;
@@ -299,7 +298,6 @@ namespace TEAMS2HA
             CreateNotifyIconContextMenu();
             // Create a new instance of the MQTT Service class
 
-
             // Set the action to be performed when a new token is updated
             _updateTokenAction = newToken =>
             {
@@ -312,7 +310,7 @@ namespace TEAMS2HA
 
             // Initialize connections
             InitializeConnections();
-            
+
             foreach (var sensor in sensorNames)
             {
                 _previousSensorStates[$"{deviceid}_{sensor}"] = "";
@@ -322,6 +320,7 @@ namespace TEAMS2HA
         #endregion Public Constructors
 
         #region Public Methods
+
         public async Task InitializeConnections()
         {
             _mqttService = MqttService.GetInstance(_settings, deviceid, sensorNames);
@@ -338,18 +337,17 @@ namespace TEAMS2HA
             await initializeteamsconnection();
         }
 
-
         #endregion Public Methods
 
         #region Protected Methods
 
         protected override void OnClosing(CancelEventArgs e)
         {
-            _mqttService.BeginShutdownProcess();
             try
             {
                 // Initialize sensors for a clean state on exit without awaiting
-                _ = _mqttService.SetupMqttSensors();
+
+                _mqttService.BeginShutdownProcess();
 
                 if (_mqttService != null)
                 {
@@ -386,7 +384,6 @@ namespace TEAMS2HA
             base.OnClosing(e);
         }
 
-
         protected override void OnStateChanged(EventArgs e)
         {
             if (WindowState == WindowState.Minimized)
@@ -415,11 +412,11 @@ namespace TEAMS2HA
             aboutWindow.Owner = this;
             aboutWindow.ShowDialog();
         }
+
         private async void OnServiceDisconnected()
         {
             await ReestablishConnections();
         }
-
 
         private void ApplyTheme(string theme)
         {
@@ -476,7 +473,6 @@ namespace TEAMS2HA
             return newSettings.SensorPrefix != currentSettings.SensorPrefix;
         }
 
-
         private void CreateNotifyIconContextMenu()
         {
             ContextMenu contextMenu = new ContextMenu();
@@ -529,6 +525,7 @@ namespace TEAMS2HA
                 await _teamsClient.SendMessageAsync(jsonMessage);
             }
         }
+
         private async void CheckTeamsConnectionStatus()
         {
             if (!_teamsClient.IsConnected)
@@ -539,6 +536,7 @@ namespace TEAMS2HA
                 await _teamsClient.StartConnectionAsync(uri);
             }
         }
+
         private async Task initializeteamsconnection()
         {
             string teamsToken = _settings.PlainTeamsToken;
@@ -557,7 +555,7 @@ namespace TEAMS2HA
                 if (isTeamsConnected == false)
                 {
                     _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
-                    
+
                     isTeamsConnected = true;
                 }
 
@@ -635,7 +633,7 @@ namespace TEAMS2HA
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
             //LoadSettings();
-           
+
             RunAtWindowsBootCheckBox.IsChecked = _settings.RunAtWindowsBoot;
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
             MqttUserNameBox.Text = _settings.MqttUsername;
@@ -676,6 +674,7 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
             ShowOneTimeNoticeIfNeeded();
         }
+
         // Event handler that enables the PairButton in WPF
         private void TeamsClient_RequirePairing(object sender, EventArgs e)
         {
@@ -701,6 +700,7 @@ namespace TEAMS2HA
                 _settings.SaveSettingsToFile();
             }
         }
+
         private void MainPage_Unloaded(object sender, RoutedEventArgs e)
         {
             // Unsubscribe when the page is unloaded
@@ -753,18 +753,15 @@ namespace TEAMS2HA
                 // Implement logic to re-establish connections
                 await ReestablishConnections();
                 // publish current meeting state
-
             }
         }
-
-
 
         private async Task ReestablishConnections() // reestablish connections after sleep or connectivity issues
         {
             try
             {
                 // Use a more aggressive check to determine if reconnection is necessary
-               
+
                 var teamsHealth = await _teamsClient.CheckConnectionHealthAsync();
 
                 if (!teamsHealth)
@@ -786,8 +783,6 @@ namespace TEAMS2HA
                 Log.Error($"Error re-establishing connections: {ex.Message}");
             }
         }
-
-
 
         private async void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
@@ -851,11 +846,8 @@ namespace TEAMS2HA
                 await _mqttService.ConnectAsync();
             }
 
-
             // Perform actions if MQTT settings have changed
             Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
-                
-
         }
 
         private void SetWindowTitle()

@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace TEAMS2HA.API
 {
@@ -37,6 +33,7 @@ namespace TEAMS2HA.API
         private bool canToggleChat = false;
         private bool canStopSharing = false;
         private bool canPair = false;
+
         #endregion Private Fields
 
         #region Public Delegates
