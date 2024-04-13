@@ -4,14 +4,11 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Documents;
-using TEAMS2HA.Properties;
 
 namespace TEAMS2HA.API
 {
@@ -69,7 +66,9 @@ namespace TEAMS2HA.API
         #endregion Public Events
 
         #region Public Properties
+
         public event EventHandler RequirePairing;
+
         public bool IsConnected
         {
             get => _isConnected;
@@ -141,7 +140,7 @@ namespace TEAMS2HA.API
             // Start receiving messages
             await ReceiveLoopAsync();
         }
-        
+
         public async Task PairWithTeamsAsync()
         {
             if (_isConnected)
@@ -169,6 +168,7 @@ namespace TEAMS2HA.API
                 }
             }
         }
+
         public async Task<bool> CheckConnectionHealthAsync()
         {
             if (_clientWebSocket.State != WebSocketState.Open)
@@ -376,7 +376,6 @@ namespace TEAMS2HA.API
                 {
                     State.Instance.CanStopSharing = false;
                 }
-                
 
                 //              update the meeting state dictionary
                 if (meetingUpdate.MeetingState != null)
@@ -553,7 +552,6 @@ namespace TEAMS2HA.API
             else
             {
                 Log.Warning("Failed to reconnect after several attempts.");
-
             }
         }
 
@@ -569,8 +567,6 @@ namespace TEAMS2HA.API
                 Log.Error(ex, "Error saving settings to file");
             }
         }
-
-
 
         #endregion Private Methods
 
