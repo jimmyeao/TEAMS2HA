@@ -91,6 +91,7 @@ namespace TEAMS2HA.API
         public async Task ConnectAsync(Uri uri)
         {
             _currentUri = uri;
+            var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5)); // 30 seconds timeout
             try
             {
                 // Check if the WebSocket is already connecting or connected
@@ -109,8 +110,17 @@ namespace TEAMS2HA.API
                     var builder = new UriBuilder(uri) { Query = $"token={token}&{uri.Query.TrimStart('?')}" };
                     uri = builder.Uri;
                 }
+                Log.Debug($"WebSocket State before connecting: {_clientWebSocket.State}");
 
-                await _clientWebSocket.ConnectAsync(uri, CancellationToken.None);
+                Log.Debug($"Connecting to Teams on {uri}");
+                try
+                {
+                    await _clientWebSocket.ConnectAsync(uri, cancellationTokenSource.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    Log.Error("Connection timed out.");
+                }
                 Log.Debug($"Connected to {uri}");
                 IsConnected = _clientWebSocket.State == WebSocketState.Open;
                 Log.Debug($"IsConnected: {IsConnected}");

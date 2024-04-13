@@ -312,6 +312,7 @@ namespace TEAMS2HA
 
             // Initialize connections
             InitializeConnections();
+
             
             foreach (var sensor in sensorNames)
             {
@@ -324,18 +325,22 @@ namespace TEAMS2HA
         #region Public Methods
         public async Task InitializeConnections()
         {
-            _mqttService = MqttService.GetInstance(_settings, deviceid, sensorNames);
+            MqttService.Instance.Initialize(_settings, _settings.SensorPrefix, sensorNames);
+            await MqttService.Instance.ConnectAsync(AppSettings.Instance);
+            if(_mqttService == null)
+            {
+                _mqttService = MqttService.Instance;
+                _mqttService.StatusUpdated += UpdateMqttStatus;
+               // _mqttService.CommandToTeams += HandleCommandToTeams;
+            }
+            await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+            await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+            // await _mqttService.SubscribeAsync("#", MqttQualityOfServiceLevel.AtLeastOnce); //line to test all topics
 
-            // Subscribing to events without flag checks, assuming idempotent setup or one-time initialization
-            _mqttService.ConnectionStatusChanged += MqttManager_ConnectionStatusChanged;
+            _ = _mqttService.PublishConfigurations(null!, _settings);
             _mqttService.CommandToTeams += HandleCommandToTeams;
-            _mqttService.ConnectionAttempting += MqttManager_ConnectionAttempting;
-            _mqttService.Disconnected += OnServiceDisconnected;
-
-            await _mqttService.ConnectAsync();
-
-            // Initialize and manage Teams connection
             await initializeteamsconnection();
+
         }
 
 
@@ -345,42 +350,19 @@ namespace TEAMS2HA
 
         protected override void OnClosing(CancelEventArgs e)
         {
-            _mqttService.BeginShutdownProcess();
-            try
+            if(_mqttService != null)
             {
-                // Initialize sensors for a clean state on exit without awaiting
-                _ = _mqttService.SetupMqttSensors();
+                _mqttService.StatusUpdated -= UpdateMqttStatus;
+                _mqttService.CommandToTeams -= HandleCommandToTeams;
 
-                if (_mqttService != null)
-                {
-                    _mqttService.ConnectionStatusChanged -= MqttManager_ConnectionStatusChanged;
-                    _mqttService.StatusUpdated -= UpdateMqttStatus;
-                    _mqttService.CommandToTeams -= HandleCommandToTeams;
+                // Disconnect asynchronously without waiting
+                _ = _mqttService.DisconnectAsync();
 
-                    // Disconnect asynchronously without waiting
-                    _ = _mqttService.DisconnectAsync();
-
-                    // Dispose of the MQTT service
-                    _mqttService.Dispose();
-                    Log.Debug("MQTT Client Disposed");
-                }
-
-                if (_teamsClient != null)
-                {
-                    _teamsClient.TeamsUpdateReceived -= TeamsClient_TeamsUpdateReceived;
-                    Log.Debug("Teams Client Disconnected");
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error during application closing: {ex.Message}");
-            }
-            finally
-            {
-                // Dispose of the NotifyIcon
-                MyNotifyIcon.Dispose();
-                SystemEvents.PowerModeChanged -= OnPowerModeChanged;
-            }
+                // Dispose of the MQTT service
+                _mqttService.Dispose();
+                Log.Debug("MQTT Client Disposed");
+            }   
+           
 
             // Ensure to call the base class method to properly close the application
             base.OnClosing(e);
@@ -805,7 +787,7 @@ namespace TEAMS2HA
         {
             // Get the current settings from the singleton instance
             var settings = AppSettings.Instance;
-
+            var oldSettings = settings;
             // Temporary storage for old values to compare after updating
             var oldMqttAddress = settings.MqttAddress;
             var oldMqttPort = settings.MqttPort;
@@ -847,8 +829,17 @@ namespace TEAMS2HA
             // only reconnect if the mqtt settings have changed
             if (mqttSettingsChanged)
             {
-                await _mqttService.DisconnectAsync();
-                await _mqttService.ConnectAsync();
+                _mqttService.CommandToTeams -= HandleCommandToTeams;
+                await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid}/+/set");
+                await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state");
+                
+                await MqttService.Instance.ConnectAsync(AppSettings.Instance);
+                // republish sensors
+                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                //re subscribe to topics
+                await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+                _mqttService.CommandToTeams += HandleCommandToTeams;
             }
 
 

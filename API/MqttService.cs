@@ -1,314 +1,307 @@
 ﻿using MQTTnet;
 using MQTTnet.Client;
+using MQTTnet.Extensions.ManagedClient;
+using MQTTnet.Packets;
 using MQTTnet.Protocol;
+using MQTTnet.Server;
+using Newtonsoft.Json;
 using Serilog;
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
-using System.Threading.Tasks;
-using System.Threading;
-using System.Timers;
-using Newtonsoft.Json;
+using System.Configuration;
+using System.Security.Authentication;
 using System.Text;
-using System.Data;
+using System.Threading;
+using System.Threading.Tasks;
+using TEAMS2HA.Properties;
 
 namespace TEAMS2HA.API
 {
     public class MqttService
     {
-        #region Private Fields
-
-        private const int MaxConnectionRetries = 2;
-        private const int RetryDelayMilliseconds = 1000;
+        private static readonly Lazy<MqttService> _instance = new Lazy<MqttService>(() => new MqttService());
+        private IManagedMqttClient _mqttClient;
+        private MqttClientOptionsBuilder _mqttClientOptionsBuilder;
+        private AppSettings _settings;
         private string _deviceId;
-        private bool _isAttemptingConnection = false;
-        private MqttClient _mqttClient;
-        private bool _mqttClientsubscribed = false;
-        private MqttClientOptions _mqttOptions;
         private Dictionary<string, string> _previousSensorStates;
         private List<string> _sensorNames;
-        private AppSettings _settings;
+        private bool _isInitialized = false;
+        public static MqttService Instance => _instance.Value;
         private HashSet<string> _subscribedTopics = new HashSet<string>();
-        private System.Timers.Timer mqttPublishTimer;
-        private bool mqttPublishTimerset = false;
-        private dynamic _deviceInfo;
-        private readonly object connectionLock = new object();
-        private static MqttService _instance;
-        private static readonly object _lock = new object();
-        private bool isShuttingDown = false; // Flag to indicate shutdow
-        #endregion Private Fields
-
-        #region Public Constructors
-
-        private MqttService(AppSettings settings, string deviceId, List<string> sensorNames)
-        {
-            _settings = settings;
-            _deviceId = deviceId;
-            _sensorNames = sensorNames;
-            _previousSensorStates = new Dictionary<string, string>();
-            _deviceInfo = new
-            {
-                ids = new[] { $"teams2ha_{_deviceId}" },
-                mf = "Jimmy White",
-                mdl = "Teams2HA Device",
-                name = _deviceId,
-                sw = "v1.0"
-            };
-            InitializeClient();
-            InitializeMqttPublishTimer();
-        }
-
-        #endregion Public Constructors
-
-        #region Public Delegates
-
+        public event Func<MqttApplicationMessageReceivedEventArgs, Task> MessageReceived;
         public delegate Task CommandToTeamsHandler(string jsonMessage);
-
-        #endregion Public Delegates
-
-        #region Public Events
-        public static MqttService GetInstance(AppSettings settings, string deviceId, List<string> sensorNames)
+        public event CommandToTeamsHandler CommandToTeams;
+        public void Initialize(AppSettings settings, string deviceId, List<string> sensorNames)
         {
-            if (_instance == null)
+            if (!_isInitialized)
             {
-                lock (_lock)
+                _settings = settings;
+                _deviceId = deviceId;
+                _sensorNames = sensorNames;
+                _isInitialized = true;
+                //_mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+
+            }
+            else
+            {
+                // Optionally handle re-initialization if needed
+            }
+        }
+        public bool IsConnected => _mqttClient?.IsConnected ?? false;
+
+        private MqttService()
+        {
+            
+            _previousSensorStates = new Dictionary<string, string>();
+            var factory = new MqttFactory();
+            _mqttClient = factory.CreateManagedMqttClient();
+
+            _mqttClient.ConnectedAsync += async e =>
+            {
+                Log.Information("Connected to MQTT broker.");
+                _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+                await Task.CompletedTask;
+            };
+
+            _mqttClient.DisconnectedAsync += async e =>
+            {
+                Log.Information("Disconnected from MQTT broker.");
+                _mqttClient.ApplicationMessageReceivedAsync -= OnMessageReceivedAsync;
+                
+                await Task.CompletedTask;
+            };
+            Log.Information("MQTT client created.");
+           // _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+
+        }
+        public async Task SubscribeToReactionButtonsAsync()
+        {
+            var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
+            foreach (var reaction in reactions)
+            {
+                string commandTopic = $"homeassistant/button/{_deviceId}/{reaction}/set";
+                try
                 {
-                    if (_instance == null)
-                    {
-                        _instance = new MqttService(settings, deviceId, sensorNames);
-                    }
+                    await SubscribeAsync(commandTopic, MqttQualityOfServiceLevel.AtLeastOnce);
+                }
+                catch (Exception ex)
+                {
+                    Log.Information($"Error during reaction button MQTT subscribe: {ex.Message}");
                 }
             }
-            return _instance;
         }
-        public event CommandToTeamsHandler CommandToTeams;
-
-        public event Action<string> ConnectionAttempting;
-
-        public event Action<string> ConnectionStatusChanged;
-        public event Action Disconnected;
-
-        public event Func<MqttApplicationMessageReceivedEventArgs, Task> MessageReceived;
-
-        public event Action<string> StatusUpdated;
-
-        #endregion Public Events
-
-        #region Public Properties
-
-        public bool IsAttemptingConnection //gets if the MQTT client is attempting to connect
+        private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e) //triggered when a message is received from MQTT
         {
-            get { return _isAttemptingConnection; }
-            private set { _isAttemptingConnection = value; }
-        }
-
-        public bool IsConnected => _mqttClient.IsConnected; //gets if the MQTT client is connected
-        public void BeginShutdownProcess()
-        {
-            isShuttingDown = true;
-        }
-        #endregion Public Properties
-
-        #region Public Methods
-        public async Task PublishPermissionSensorsAsync()
-        {
-            var permissions = new Dictionary<string, bool>
+            if (e.ApplicationMessage.Payload == null)
             {
-                { "canToggleMute", State.Instance.CanToggleMute },
-                { "canToggleVideo", State.Instance.CanToggleVideo },
-                { "canToggleHand", State.Instance.CanToggleHand },
-                { "canToggleBlur", State.Instance.CanToggleBlur },
-                { "canLeave", State.Instance.CanLeave },
-                { "canReact", State.Instance.CanReact},
-                { "canToggleShareTray", State.Instance.CanToggleShareTray },
-                { "canToggleChat", State.Instance.CanToggleChat },
-                { "canStopSharing", State.Instance.CanStopSharing },
-                { "canPair", State.Instance.CanPair}
-                // Add other permissions here
-            };
-           
-            foreach (var permission in permissions)
+                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}");
+            }
+            else
             {
-                string sensorName = permission.Key.ToLower();
-                bool isAllowed = permission.Value;
+                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+            }
+            Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
+            if (MessageReceived != null)
+            {
+                return MessageReceived(e);
+            }
+            string topic = e.ApplicationMessage.Topic;
+            string payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
 
-                string configTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/config";
-                var configPayload = new
+            if (topic.StartsWith($"homeassistant/button/{_deviceId}/") && payload == "press")
+            {
+                var parts = topic.Split('/');
+                if (parts.Length > 3)
                 {
-                    name = sensorName,
-                    unique_id = $"{_deviceId}_{sensorName}",
-                    device = _deviceInfo,
-                    icon = "mdi:eye", // You can customize the icon based on the sensor
-                    state_topic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state",
-                    payload_on = "true",
-                    payload_off = "false"
-                };
+                    var reaction = parts[3]; // Extract the reaction type from the topic
 
-                var configMessage = new MqttApplicationMessageBuilder()
-                    .WithTopic(configTopic)
-                    .WithPayload(JsonConvert.SerializeObject(configPayload))
-                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                    .WithRetainFlag(true)
-                    .Build();
-                await PublishAsync(configMessage);
+                    // Construct the JSON message for the reaction
+                    var reactionPayload = new
+                    {
+                        action = "send-reaction",
+                        parameters = new { type = reaction },
+                        requestId = 1
+                    };
 
-                // State topic and message
-                string stateTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state";
-                string statePayload = isAllowed ? "true" : "false"; // Adjust based on your true/false representation
-                var stateMessage = new MqttApplicationMessageBuilder()
-                    .WithTopic(stateTopic)
-                    .WithPayload(statePayload)
-                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                    .WithRetainFlag(true)
-                    .Build();
-                await PublishAsync(stateMessage);
+                    string reactionPayloadJson = JsonConvert.SerializeObject(reactionPayload);
+
+                    // Invoke the command to send the reaction to Teams
+                    CommandToTeams?.Invoke(reactionPayloadJson);
+                }
+            }
+
+            // Assuming the format is homeassistant/switch/{deviceId}/{switchName}/set Validate the
+            // topic format and extract the switchName
+            var topicParts = topic.Split('/'); //not sure this is required
+            //topicParts = topic.Split('/');
+            if (topicParts.Length == 5 && topicParts[0].Equals("homeassistant") && topicParts[1].Equals("switch") && topicParts[4].EndsWith("set"))
+            {
+                // Extract the action and switch name from the topic
+                string switchName = topicParts[3];
+                string command = payload; // command should be ON or OFF based on the payload
+
+                // Now call the handle method
+                HandleSwitchCommand(topic, command);
+            }
+
+            return Task.CompletedTask;
+        }
+        private void HandleSwitchCommand(string topic, string command)
+        {
+            // Determine which switch is being controlled based on the topic
+            string switchName = topic.Split('/')[3]; // Assuming topic format is "homeassistant/switch/{switchName}/set"
+            int underscoreIndex = switchName.IndexOf('_');
+            if (underscoreIndex != -1 && underscoreIndex < switchName.Length - 1)
+            {
+                switchName = switchName.Substring(underscoreIndex + 1);
+            }
+            string jsonMessage = "";
+            switch (switchName)
+            {
+                case "ismuted":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "isvideoon":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "isbackgroundblurred":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                case "ishandraised":
+                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
+                    break;
+
+                    // Add other cases as needed
+            }
+
+            if (!string.IsNullOrEmpty(jsonMessage))
+            {
+                // Raise the event
+                CommandToTeams?.Invoke(jsonMessage);
             }
         }
-
-        public static List<string> GetEntityNames(string deviceId) //gets the entity names for the device
+        public async Task ConnectAsync(AppSettings settings)
         {
-            var entityNames = new List<string>
-                {
-                    $"switch.{deviceId}_ismuted",
-                    $"switch.{deviceId}_isvideoon",
-                    $"switch.{deviceId}_ishandraised",
-                    $"binary_sensor.{deviceId}_isrecordingon",
-                    $"binary_sensor.{deviceId}_isinmeeting",
-                    $"binary_sensor.{deviceId}_issharing",
-                    $"binary_sensor.{deviceId}_hasunreadmessages",
-                    $"switch.{deviceId}_isbackgroundblurred",
-                    $"binary_sensor.{deviceId}_teamsRunning"
-                };
+            _settings = settings ?? throw new ArgumentNullException(nameof(settings), "MQTT settings must be provided.");
+            if (!_isInitialized)
+            {
+                throw new InvalidOperationException("MqttService must be initialized before connecting.");
+            }
+            if (_mqttClient.IsConnected || _mqttClient.IsStarted)
+            {
+                await _mqttClient.StopAsync();
+                Log.Information("Existing MQTT client stopped successfully.");
+            }
 
-            return entityNames;
+            var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
+                .WithClientId("TEAMS2HA")
+                .WithCredentials(settings.MqttUsername, settings.MqttPassword);
+            if (settings.UseWebsockets && !settings.UseTLS)
+            {
+                mqttClientOptionsBuilder.WithWebSocketServer($"ws://{settings.MqttAddress}:{settings.MqttPort}");
+                Log.Information($"WebSocket server set to ws://{settings.MqttAddress}:{settings.MqttPort}");
+            }
+            else if (settings.UseWebsockets && settings.UseTLS)
+            {
+                mqttClientOptionsBuilder.WithWebSocketServer($"wss://{settings.MqttAddress}:{settings.MqttPort}");
+                Log.Information($"WebSocket server set to wss://{settings.MqttAddress}:{settings.MqttPort}");
+            }
+            else
+            {
+                mqttClientOptionsBuilder.WithTcpServer(settings.MqttAddress, Convert.ToInt32(settings.MqttPort));
+                Log.Information($"TCP server set to {settings.MqttAddress}:{settings.MqttPort}");
+            }
+
+            if (settings.UseTLS)
+            {
+                mqttClientOptionsBuilder.WithTlsOptions(o =>
+                {
+                    o.WithSslProtocols(SslProtocols.Tls12);
+                    Log.Information("TLS is enabled.");
+                });
+            }
+
+            if (settings.IgnoreCertificateErrors)
+            {
+                mqttClientOptionsBuilder.WithTlsOptions(o =>
+                {
+                    // The used public broker sometimes has invalid certificates. This sample
+                    // accepts all certificates. This should not be used in live environments.
+                    o.WithCertificateValidationHandler(_ =>
+                    {
+                        Log.Warning("Certificate validation is disabled; this is not recommended for production.");
+                        return true;
+                    });
+                });
+            }
+
+            var options = new ManagedMqttClientOptionsBuilder()
+                .WithAutoReconnectDelay(TimeSpan.FromSeconds(5))
+               
+                .WithClientOptions(mqttClientOptionsBuilder.Build())
+                .Build();
+            
+            try
+            {
+                
+                await _mqttClient.StartAsync(options);
+
+
+                Log.Information($"MQTT client connected with new settings. {_mqttClient.IsStarted}");
+                //if mqtt is connected, lets subsctribed to incominfg messages
+                await SetupSubscriptionsAsync();
+                Log.Information("Subscribed to incoming messages.");
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Failed to start MQTT client: {ex.Message}");
+            }
         }
         public async Task SetupSubscriptionsAsync()
         {
             // Subscribe to necessary topics
-            await SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
+           // await SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
             await SubscribeToReactionButtonsAsync();
             // Add any other necessary subscriptions here
         }
-        public async Task ConnectAsync() //connects to MQTT
+        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
         {
-            lock (connectionLock)
+            if (_subscribedTopics.Contains(topic))
             {
-                if (_isAttemptingConnection || _mqttClient.IsConnected) return;
-                _isAttemptingConnection = true;
-            }
-            //Check if MQTT client is already connected
-            if (_mqttClient.IsConnected )
-            {
-                Log.Information("MQTT client is already connected ");
-                return;
-            }
-
-            _isAttemptingConnection = true;
-            ConnectionAttempting?.Invoke("MQTT Status: Connecting...");
-            int retryCount = 0;
-
-            // Retry connecting to MQTT broker up to a maximum number of times
-            while (retryCount < MaxConnectionRetries && !_mqttClient.IsConnected)
-            {
-                try
-                {
-                    Log.Information($"Attempting to connect to MQTT (Attempt {retryCount + 1}/{MaxConnectionRetries})");
-                    await _mqttClient.ConnectAsync(_mqttOptions);
-                    Log.Information("Connected to MQTT broker.");
-                    if (_mqttClient.IsConnected)
-                    {
-                        ConnectionStatusChanged?.Invoke("MQTT Status: Connected");
-                        await PublishPermissionSensorsAsync();
-                        await PublishReactionButtonsAsync();
-                        await SetupSubscriptionsAsync();
-                        break; // Exit the loop if successfully connected
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log.Debug($"Failed to connect to MQTT broker: {ex.Message}");
-                    ConnectionStatusChanged?.Invoke($"MQTT Status: Disconnected (Retry {retryCount + 1}) {ex.Message}");
-                    retryCount++;
-                    await Task.Delay(RetryDelayMilliseconds); // Delay before retrying
-                }
-            }
-
-            _isAttemptingConnection = false;
-            // Notify if failed to connect after all retry attempts
-            if (!_mqttClient.IsConnected)
-            {
-
-                ConnectionStatusChanged?.Invoke("MQTT Status: Disconnected (Failed to connect)");
-                Log.Error("Failed to connect to MQTT broker after several attempts.");
-            }
-            lock (connectionLock)
-            {
-                _isAttemptingConnection = false;
-            }
-        }
-        public async Task CheckConnectionHealthAsync()
-        {
-            if (!_mqttClient.IsConnected)
-            {
-                Log.Information("MQTT client is not connected.");
-                await ReconnectAsync();
-            }
-            // Simple version: Just check if the client believes it's connected
-
-        }
-
-        public async Task DisconnectAsync() //disconnects from MQTT
-        {
-            if (!_mqttClient.IsConnected)
-            {
-                Log.Debug("MQTTClient is not connected");
-                ConnectionStatusChanged?.Invoke("MQTTClient is not connected");
+                Log.Information($"Already subscribed to {topic}.");
                 return;
             }
 
             try
             {
-                await _mqttClient.DisconnectAsync();
-                Log.Information("MQTT Disconnected");
-                ConnectionStatusChanged?.Invoke("MQTTClient is not connected");
+                var topicFilter = new MqttTopicFilterBuilder()
+                    .WithTopic(topic)
+                    .WithQualityOfServiceLevel(qos)
+                    .Build();
+
+                Log.Debug($"Attempting to subscribe to {topic} with QoS {qos}.");
+                await _mqttClient.SubscribeAsync(new List<MqttTopicFilter> { topicFilter });
+                _subscribedTopics.Add(topic); // Track the subscription
+                Log.Information("Subscribed to " + topic);
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Failed to disconnect from MQTT broker: {ex.Message}");
+                Log.Error($"Error during MQTT subscribe for {topic}: {ex.Message}");
             }
         }
 
-        public void Dispose() //disposes the MQTT client
-        {
-            if (_mqttClient != null)
-            {
-                _ = _mqttClient.DisconnectAsync(); // Disconnect asynchronously
-                _mqttClient.Dispose();
-                Log.Information("MQTT Client Disposed");
-            }
-        }
 
-        public void InitializeMqttPublishTimer() //initializes the MQTT publish timer
+
+        public void Dispose()
         {
-            mqttPublishTimer = new System.Timers.Timer(15000); // Set the interval to 60 seconds
-            if (mqttPublishTimerset == false)
-            {
-                mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
-                mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
-                mqttPublishTimer.Enabled = true; // Enable the timer
-                mqttPublishTimerset = true;
-                Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
-            }
-            else
-            {
-                Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer already set");
-            }
-            //mqttPublishTimer.Elapsed += OnMqttPublishTimerElapsed;
-            //mqttPublishTimer.AutoReset = true; // Reset the timer after it elapses
-            //mqttPublishTimer.Enabled = true; // Enable the timer
-            //Log.Debug("InitializeMqttPublishTimer: MQTT Publish Timer Initialized");
+            _mqttClient?.Dispose();
+            Log.Information("MQTT Client disposed.");
         }
-        public async Task UnsubscribeAsync(string topic) //unsubscribes from a topic on MQTT
+        public async Task UnsubscribeAsync(string topic)
         {
             if (!_subscribedTopics.Contains(topic))
             {
@@ -318,71 +311,33 @@ namespace TEAMS2HA.API
 
             try
             {
-                // Create the unsubscribe options, similar to how subscription options were created
-                var unsubscribeOptions = new MqttClientUnsubscribeOptionsBuilder()
-                    .WithTopicFilter(topic) // Add the topic from which to unsubscribe
-                    .Build();
-
-                // Perform the unsubscribe operation
-                await _mqttClient.UnsubscribeAsync(unsubscribeOptions);
-
-                // Remove the topic from the local tracking set
+                await _mqttClient.UnsubscribeAsync(new List<string> { topic });
                 _subscribedTopics.Remove(topic);
-
                 Log.Information($"Successfully unsubscribed from {topic}.");
             }
             catch (Exception ex)
             {
                 Log.Information($"Error during MQTT unsubscribe: {ex.Message}");
-                // Depending on your error handling strategy, you might want to handle this differently
-                // For example, you might want to throw the exception to let the caller know the unsubscribe failed
             }
         }
 
-        public async Task PublishAsync(MqttApplicationMessage message) //publishes a message to MQTT
+        public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings, bool forcePublish = false)
         {
-            // check if we are connected
-            if (!_mqttClient.IsConnected)
-            {
-                Log.Information("Cant publish MQTT client is not connected.");
-                return;
-            }
-            try
-            {
-                await _mqttClient.PublishAsync(message, CancellationToken.None); // Note: Add using System.Threading; if CancellationToken is undefined
-                //Log.Information("Publish successful." + message.Topic);
-            }
-            catch (Exception ex)
-            {
-                Log.Information($"Error during MQTT publish: {ex.Message}");
-                await CheckConnectionHealthAsync();
-                if (!_mqttClient.IsConnected)
-                {
-                    Log.Information("Reconnecting to MQTT");
-                    Disconnected?.Invoke();
-                }
-            }
-        }
-        public async Task SubscribeToAllTopicsAsync()
-        {
-            // Subscribe to switch set commands
-            await SubscribeAsync($"homeassistant/switch/{_deviceId}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
-
-            // Subscribe to reaction buttons
-            await SubscribeToReactionButtonsAsync();
-
-            // You can add more subscriptions here as needed
-        }
-
-        public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings, bool forcePublish = false) //publishes the configurations to MQTT
-        {
+            _settings = settings;
             if (_mqttClient == null)
             {
                 Log.Debug("MQTT Client Wrapper is not initialized.");
                 return;
             }
             // Define common device information for all entities.
-           
+            var deviceInfo = new
+            {
+                ids = new[] { "teams2ha_" + _deviceId }, // Unique device identifier
+                mf = "Jimmy White", // Manufacturer name
+                mdl = "Teams2HA Device", // Model
+                name = _deviceId, // Device name
+                sw = "v1.0" // Software version
+            };
             if (meetingUpdate == null)
             {
                 meetingUpdate = new MeetingUpdate
@@ -410,29 +365,27 @@ namespace TEAMS2HA.API
                 string stateValue = GetStateValue(binary_sensor, meetingUpdate);
                 string uniqueId = $"{_deviceId}_{binary_sensor}";
                 string configTopic;
-                string stateTopic;
                 if (forcePublish || !_previousSensorStates.TryGetValue(sensorKey, out var previousState) || previousState != stateValue)
-               
+
                 {
                     Log.Information($"Force Publishing configuration for {sensorName} with state {stateValue}.");
 
                     _previousSensorStates[sensorKey] = stateValue; // Update the stored state
-                    if(forcePublish)
+                    if (forcePublish)
                     {
                         Log.Information($"Forced publish of {sensorName} state: {stateValue} Due to change in broker");
                     }
                     if (deviceClass == "switch")
                     {
                         configTopic = $"homeassistant/switch/{_deviceId}/{sensorName}/config";
-                        stateTopic = $"homeassistant/switch/{_deviceId}/{sensorName}/state";
                         var switchConfig = new
                         {
                             name = sensorName,
                             unique_id = uniqueId,
-                            device = _deviceInfo,
+                            device = deviceInfo,
                             icon = icon,
                             command_topic = $"homeassistant/switch/{_deviceId}/{sensorName}/set",
-                            state_topic = stateTopic,
+                            state_topic = $"homeassistant/switch/{_deviceId}/{sensorName}/state",
                             payload_on = "ON",
                             payload_off = "OFF"
                         };
@@ -457,15 +410,13 @@ namespace TEAMS2HA.API
                     else if (deviceClass == "binary_sensor")
                     {
                         configTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/config";
-                        stateTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state";
-
                         var binarySensorConfig = new
                         {
                             name = sensorName,
                             unique_id = uniqueId,
-                            device = _deviceInfo,
+                            device = deviceInfo,
                             icon = icon,
-                            state_topic = stateTopic,
+                            state_topic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state",
                             payload_on = "true",  // Assuming "True" states map to "ON"
                             payload_off = "false" // Assuming "False" states map to "OFF"
                         };
@@ -486,226 +437,11 @@ namespace TEAMS2HA.API
                             .Build();
 
                         await PublishAsync(binarySensorStateMessage);
-                        await PublishPermissionSensorsAsync();
-                        await PublishReactionButtonsAsync();
                     }
                 }
             }
         }
-
-        public async Task ReconnectAsync()
-        {
-            if (isShuttingDown )
-            {
-                
-                return;
-            }
-            int attempt = 0;
-            while (!_mqttClient.IsConnected && attempt < MaxConnectionRetries)
-            {
-                attempt++;
-                try
-                {
-                    Log.Information($"Reconnection attempt {attempt}...");
-                    var result = await _mqttClient.ConnectAsync(_mqttOptions);
-                    if (result.ResultCode == MqttClientConnectResultCode.Success)
-                    {
-                        Log.Information("Reconnected to MQTT broker.");
-                        return; // Successfully reconnected
-                    }
-                    else
-                    {
-                        Log.Warning($"Reconnection failed with result code: {result.ResultCode}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Log.Error($"Reconnection attempt failed: {ex.Message}");
-                }
-                await Task.Delay(RetryDelayMilliseconds * attempt); // Exponential back-off
-            }
-        }
-
-
-
-        public async Task SetupMqttSensors() //sets up the MQTT sensors
-        {
-            // Create a dummy MeetingUpdate with default values
-            var dummyMeetingUpdate = new MeetingUpdate
-            {
-                MeetingState = new MeetingState
-                {
-                    IsMuted = false,
-                    IsVideoOn = false,
-                    IsHandRaised = false,
-                    IsInMeeting = false,
-                    IsRecordingOn = false,
-                    IsBackgroundBlurred = false,
-                    IsSharing = false,
-                    HasUnreadMessages = false,
-                    teamsRunning = false
-                }
-            };
-
-            // Call PublishConfigurations with the dummy MeetingUpdate
-            await PublishConfigurations(dummyMeetingUpdate, _settings);
-        }
-
-        public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos,bool force) //subscribes to a topic on MQTT
-        {
-            // check if we are connected
-            if (!_mqttClient.IsConnected)
-            {
-                Log.Information("Cant subscribe MQTT client is not connected.");
-                return;
-            }
-            // Check if already subscribed
-
-            if (_subscribedTopics.Contains(topic) && !force)
-            {
-                Log.Information($"Already subscribed to {topic}.");
-                return;
-            }
-
-            var subscribeOptions = new MqttClientSubscribeOptionsBuilder()
-                .WithTopicFilter(f => f.WithTopic(topic).WithQualityOfServiceLevel(qos))
-                .Build();
-
-            try
-            {
-                await _mqttClient.SubscribeAsync(subscribeOptions);
-                _subscribedTopics.Add(topic); // Track the subscription
-                Log.Information("Subscribed to " + topic);
-            }
-            catch (Exception ex)
-            {
-                Log.Information($"Error during MQTT subscribe: {ex.Message}");
-            }
-
-            // new code for reactions
-           
-        }
-
-        public async Task UpdateClientOptionsAndReconnect() //updates the client options and reconnects to MQTT
-        {
-            InitializeClientOptions(); // Method to reinitialize client options with updated settings
-            await DisconnectAsync();
-            await ConnectAsync();
-        }
-        public async Task SubscribeToReactionButtonsAsync()
-        {
-            var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
-            foreach (var reaction in reactions)
-            {
-                string commandTopic = $"homeassistant/button/{_deviceId}/{reaction}/set";
-                try
-                {
-                    await SubscribeAsync(commandTopic, MqttQualityOfServiceLevel.AtLeastOnce, true);
-                }
-                catch (Exception ex)
-                {
-                    Log.Information($"Error during reaction button MQTT subscribe: {ex.Message}");
-                }
-            }
-        }
-
-        public async Task PublishReactionButtonsAsync()
-        {
-            var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
-            var deviceInfo = new
-            {
-                ids = new[] { $"teams2ha_{_deviceId}" },
-                mf = "Jimmy White",
-                mdl = "Teams2HA Device",
-                name = _deviceId,
-                sw = "v1.0"
-            };
-            foreach (var reaction in reactions)
-            {
-                string configTopic = $"homeassistant/button/{_deviceId}/{reaction}/config";
-                var payload = new
-                {
-                    name = reaction,
-                    unique_id = $"{_deviceId}_{reaction}_reaction",
-                    icon = GetIconForReaction(reaction),
-                    device = deviceInfo, // Include the device information
-                    command_topic = $"homeassistant/button/{_deviceId}/{reaction}/set",
-                    payload_press = "press"
-                    // Notice there's no state_topic or payload_on/off as it's a button, not a switch
-                };
-
-                var message = new MqttApplicationMessageBuilder()
-                    .WithTopic(configTopic)
-                    .WithPayload(JsonConvert.SerializeObject(payload))
-                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                    .WithRetainFlag(true)
-                    .Build();
-                if(_mqttClient.IsConnected)
-                {
-                    await PublishAsync(message);
-                }
-               
-            }
-        }
-
-
-
-        public async Task UpdateSettingsAsync(AppSettings newSettings) //updates the settings and reconnects to MQTT
-        {
-            _settings = newSettings;
-            _deviceId = _settings.SensorPrefix;
-            InitializeClientOptions(); // Reinitialize MQTT client options
-
-            if (IsConnected)
-            {
-                await DisconnectAsync();
-                await ConnectAsync();
-            }
-        }
-
-        #endregion Public Methods
-
-        #region Protected Methods
-
-
-
-        #endregion Protected Methods
-
-        #region Private Methods
-        private string GetIconForReaction(string reaction)
-        {
-            return reaction switch
-            {
-                "like" => "mdi:thumb-up-outline",
-                "love" => "mdi:heart-outline",
-                "applause" => "mdi:hand-clap",
-                "wow" => "mdi:emoticon-excited-outline",
-                "laugh" => "mdi:emoticon-happy-outline",
-                _ => "mdi:hand-okay" // Default icon
-            };
-        }
-
-        private string DetermineDeviceClass(string sensor) //determines the device class for the sensor
-        {
-            switch (sensor)
-            {
-                case "IsMuted":
-                case "IsVideoOn":
-                case "IsHandRaised":
-                case "IsBackgroundBlurred":
-                    return "switch"; // These are ON/OFF switches
-                case "IsInMeeting":
-                case "HasUnreadMessages":
-                case "IsRecordingOn":
-                case "IsSharing":
-                case "teamsRunning":
-                    return "binary_sensor"; // These are true/false sensors
-                default:
-                    return "unknown"; // Or a default device class if appropriate
-            }
-        }
-
-        private string DetermineIcon(string sensor, MeetingState state) //determines the icon for the sensor
+        private string DetermineIcon(string sensor, MeetingState state)
         {
             return sensor switch
             {
@@ -746,7 +482,7 @@ namespace TEAMS2HA.API
             };
         }
 
-        private string GetStateValue(string sensor, MeetingUpdate meetingUpdate) //gets the state value of the sensor
+        private string GetStateValue(string sensor, MeetingUpdate meetingUpdate)
         {
             switch (sensor)
             {
@@ -783,267 +519,82 @@ namespace TEAMS2HA.API
                     return "unknown";
             }
         }
-
-        
-        private void HandleSwitchCommand(string topic, string command)
+        private string DetermineDeviceClass(string sensor)
         {
-            // Split the topic to extract parts
-            string[] topicParts = topic.Split('/');
-            if (topicParts.Length < 5) // Ensure the topic has all expected parts
+            switch (sensor)
             {
-                Log.Warning($"Unexpected topic format: {topic}");
-                return;
-            }
-
-            // Extract deviceId and sensorName from the topic
-            string deviceId = topicParts[2];
-            string sensorName = topicParts[3]; // No need to strip prefix since we're using the new structure
-
-            // Generate the JSON message based on the sensorName
-            string jsonMessage = GenerateJsonMessageForSwitch(sensorName, deviceId);
-
-            if (!string.IsNullOrEmpty(jsonMessage))
-            {
-                // Log the command and deviceId for debugging
-                Log.Information($"Executing command for {sensorName} on device {deviceId}");
-
-                // Raise the event with the generated JSON message
-                CommandToTeams?.Invoke(jsonMessage);
-            }
-        }
-
-        private string GenerateJsonMessageForSwitch(string switchName, string deviceId)
-        {
-            // Generate JSON message based on switchName
-            switch (switchName.ToLower())
-            {
-                case "ismuted":
-                    return $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-mute\",\"action\":\"toggle-mute\",\"manufacturer\":\"Jimmy White\",\"device\":\"{deviceId}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-
-                case "isvideoon":
-                    return $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"{deviceId}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-
-                case "isbackgroundblurred":
-                    return $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"{deviceId}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-
-                case "ishandraised":
-                    return $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"{deviceId}\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-
-                // Add other cases as necessary
-
+                case "IsMuted":
+                case "IsVideoOn":
+                case "IsHandRaised":
+                case "IsBackgroundBlurred":
+                    return "switch"; // These are ON/OFF switches
+                case "IsInMeeting":
+                case "HasUnreadMessages":
+                case "IsRecordingOn":
+                case "IsSharing":
+                case "teamsRunning":
+                    return "binary_sensor"; // These are true/false sensors
                 default:
-                    Log.Warning($"Unrecognized switch command: {switchName}");
-                    return string.Empty; // Return an empty string for unrecognized switch names
+                    return "unknown"; // Or a default device class if appropriate
             }
         }
-
-        private void InitializeClient() //initializes the MQTT client
+        public async Task SetupMqttSensors()
         {
-            
-                var factory = new MqttFactory();
-                _mqttClient = (MqttClient?)factory.CreateMqttClient(); // This creates an IMqttClient, not a MqttClient.
-
-                InitializeClientOptions(); // Ensure options are initialized with current settings
-                if (_mqttClientsubscribed == false)
-                {
-                    _mqttClient.ApplicationMessageReceivedAsync -= OnMessageReceivedAsync;
-                    _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
-                    _mqttClientsubscribed = true;
-                }
-                _mqttClient.ConnectedAsync += async e =>
-                {
-                    Log.Information("Connected to MQTT broker.");
-                    // Handle post-connection setup, e.g., subscriptions.
-                    await SetupSubscriptionsAsync();
-                };
-
-            _mqttClient.DisconnectedAsync += async e =>
+            // Create a dummy MeetingUpdate with default values
+            var dummyMeetingUpdate = new MeetingUpdate
             {
-                if (!isShuttingDown)
+                MeetingState = new MeetingState
                 {
-                    Log.Information("Disconnected from MQTT broker, attempting to reconnect...");
-                    // Implement your reconnection logic here
-                    await ReconnectAsync();
-                }
-                else
-                {
-                    //Log.Information("MQTT client disconnected and shutdown in progress, skipping reconnection.");
+                    IsMuted = false,
+                    IsVideoOn = false,
+                    IsHandRaised = false,
+                    IsInMeeting = false,
+                    IsRecordingOn = false,
+                    IsBackgroundBlurred = false,
+                    IsSharing = false,
+                    HasUnreadMessages = false,
+                    teamsRunning = false
                 }
             };
 
+            // Call PublishConfigurations with the dummy MeetingUpdate
+            await PublishConfigurations(dummyMeetingUpdate, _settings);
+        }
+        public static List<string> GetEntityNames(string deviceId)
+        {
+            var entityNames = new List<string>
+                {
+                    $"switch.{deviceId}_ismuted",
+                    $"switch.{deviceId}_isvideoon",
+                    $"switch.{deviceId}_ishandraised",
+                    $"binary_sensor.{deviceId}_isrecordingon",
+                    $"binary_sensor.{deviceId}_isinmeeting",
+                    $"binary_sensor.{deviceId}_issharing",
+                    $"binary_sensor.{deviceId}_hasunreadmessages",
+                    $"switch.{deviceId}_isbackgroundblurred",
+                    $"binary_sensor.{deviceId}_teamsRunning"
+                };
 
+            return entityNames;
+        }
+        public event Action<string> StatusUpdated;
+        public async Task DisconnectAsync()
+        {
+            Log.Information("Disconnecting from MQTT broker...");
+            await _mqttClient.StopAsync();
         }
 
-        private void InitializeClientOptions() //initializes the MQTT client options
+        public async Task PublishAsync(MqttApplicationMessage message)
         {
             try
             {
-                var factory = new MqttFactory();
-                _mqttClient = (MqttClient?)factory.CreateMqttClient();
-
-                if (!int.TryParse(_settings.MqttPort, out int mqttportInt))
-                {
-                    mqttportInt = 1883; // Default MQTT port
-                    Log.Warning($"Invalid MQTT port provided, defaulting to {mqttportInt}");
-                }
-
-                var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
-                    .WithClientId($"Teams2HA_{_deviceId}")
-                    .WithCredentials(_settings.MqttUsername, _settings.MqttPassword)
-                    .WithCleanSession()
-                    .WithTimeout(TimeSpan.FromSeconds(5));
-
-                string protocol = _settings.UseWebsockets ? "ws" : "tcp";
-                string connectionType = _settings.UseTLS ? "with TLS" : "without TLS";
-
-                if (_settings.UseWebsockets)
-                {
-                    string websocketUri = _settings.UseTLS ? $"wss://{_settings.MqttAddress}:{mqttportInt}" : $"ws://{_settings.MqttAddress}:{mqttportInt}";
-                    mqttClientOptionsBuilder.WithWebSocketServer(websocketUri);
-                    Log.Information($"Configuring MQTT client for WebSocket {connectionType} connection to {websocketUri}");
-                }
-                else
-                {
-                    mqttClientOptionsBuilder.WithTcpServer(_settings.MqttAddress, mqttportInt);
-                    Log.Information($"Configuring MQTT client for TCP {connectionType} connection to {_settings.MqttAddress}:{mqttportInt}");
-                }
-
-                if (_settings.UseTLS)
-                {
-                    // Create TLS parameters
-                    var tlsParameters = new MqttClientOptionsBuilderTlsParameters
-                    {
-                        AllowUntrustedCertificates = _settings.IgnoreCertificateErrors,
-                        IgnoreCertificateChainErrors = _settings.IgnoreCertificateErrors,
-                        IgnoreCertificateRevocationErrors = _settings.IgnoreCertificateErrors,
-                        UseTls = true
-                    };
-
-                    // If you need to validate the server certificate, you can set the CertificateValidationHandler.
-                    // Note: Be cautious with bypassing certificate checks in production code!!
-                    if (!_settings.IgnoreCertificateErrors)
-                    {
-                        tlsParameters.CertificateValidationHandler = context =>
-                        {
-                            // Log the SSL policy errors
-                            Log.Debug($"SSL policy errors: {context.SslPolicyErrors}");
-
-                            // Return true if there are no SSL policy errors, or if ignoring
-                            // certificate errors is allowed
-                            return context.SslPolicyErrors == System.Net.Security.SslPolicyErrors.None;
-                        };
-                    }
-
-                    // Apply the TLS parameters to the options builder
-                    mqttClientOptionsBuilder.WithTls(tlsParameters);
-                }
-
-                _mqttOptions = mqttClientOptionsBuilder.Build();
-                if (_mqttClient != null)
-                {
-                    if (_mqttClientsubscribed == false)
-                    {
-                        _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
-                        _mqttClientsubscribed = true;
-                    }
-                }
+                await _mqttClient.EnqueueAsync(message); // Note: Add using System.Threading; if CancellationToken is undefined
+                Log.Information("Publish successful." + message.Topic);
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "Failed to initialize MqttClientWrapper");
-                throw; // Rethrowing the exception to handle it outside or log it as fatal depending on your error handling strategy.
+                Log.Information($"Error during MQTT publish: {ex.Message}");
             }
         }
-
-        private Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs e) //triggered when a message is received from MQTT
-        {
-            if(e.ApplicationMessage.Payload == null)
-            {
-                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}");
-            }
-            else
-            {
-                Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-            }
-            Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {e.ApplicationMessage.ConvertPayloadToString()}");
-            if(MessageReceived != null)
-            {
-                return MessageReceived(e);
-            }
-            string topic = e.ApplicationMessage.Topic;
-            string payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
-
-            if (topic.StartsWith($"homeassistant/button/{_deviceId}/") && payload == "press")
-            {
-                var parts = topic.Split('/');
-                if (parts.Length > 3)
-                {
-                    var reaction = parts[3]; // Extract the reaction type from the topic
-
-                    // Construct the JSON message for the reaction
-                    var reactionPayload = new
-                    {
-                        action = "send-reaction",
-                        parameters = new { type = reaction },
-                        requestId = 1
-                    };
-
-                    string reactionPayloadJson = JsonConvert.SerializeObject(reactionPayload);
-
-                    // Invoke the command to send the reaction to Teams
-                    CommandToTeams?.Invoke(reactionPayloadJson);
-                }
-            }
-
-            // Assuming the format is homeassistant/switch/{deviceId}/{switchName}/set Validate the
-            // topic format and extract the switchName
-            var topicParts = topic.Split(','); //not sure this is required
-            topicParts = topic.Split('/');
-            if (topicParts.Length == 5 && topicParts[0].Equals("homeassistant") && topicParts[1].Equals("switch") && topicParts[4].EndsWith("set"))
-            {
-                // Extract the action and switch name from the topic
-                string switchName = topicParts[3];
-                string command = payload; // command should be ON or OFF based on the payload
-
-                // Now call the handle method
-                HandleSwitchCommand(topic, command);
-            }
-
-            return Task.CompletedTask;
-        }
-
-        private void OnMqttPublishTimerElapsed(object sender, ElapsedEventArgs e) //sends keep alice message to MQTT
-        {
-            if (_mqttClient.IsConnected)
-            {
-                // Example: Publish a keep-alive message
-                string keepAliveTopic = "TEAMS2HA/keepalive";
-                string keepAliveMessage = "alive";
-                // we should publish the current meeting state
-
-
-
-                // Create the MQTT message
-                var message = new MqttApplicationMessageBuilder()
-                    .WithTopic(keepAliveTopic)
-                    .WithPayload(keepAliveMessage)
-                    .WithQualityOfServiceLevel(MQTTnet.Protocol.MqttQualityOfServiceLevel.AtLeastOnce) // Or another QoS level if required
-                    .Build();
-
-                // Publish the message asynchronously
-                _ = _mqttClient.PublishAsync(message);
-
-                Log.Debug("OnMqttPublishTimerElapsed: MQTT Keep Alive Message Published");
-            }else
-            {
-                Log.Debug("OnMqttPublishTimerElapsed: MQTT Client is not connected");
-                
-                UpdateClientOptionsAndReconnect();
-            }
-
-        }
-
-        #endregion Private Methods
-
     }
 }
