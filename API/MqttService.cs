@@ -38,7 +38,18 @@ namespace TEAMS2HA.API
             if (!_isInitialized)
             {
                 _settings = settings;
-                _deviceId = deviceId.ToLower();
+                //add some null checks incase its first run
+
+                if (string.IsNullOrEmpty(deviceId))
+                {
+                    //set it to the computer name
+                    deviceId = Environment.MachineName.ToLower();
+                    
+                }else
+                {
+                    deviceId = deviceId.ToLower();
+                }
+                
                 _sensorNames = sensorNames;
                 _isInitialized = true;
                 //_mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
@@ -247,7 +258,7 @@ namespace TEAMS2HA.API
             
             try
             {
-                
+                Log.Information($"Starting MQTT client...{options}");
                 await _mqttClient.StartAsync(options);
 
 
@@ -326,6 +337,7 @@ namespace TEAMS2HA.API
                 Log.Debug("MQTT Client Wrapper is not initialized.");
                 return;
             }
+            _deviceId = settings.SensorPrefix;
             // Define common device information for all entities.
             var deviceInfo = new
             {

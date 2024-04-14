@@ -277,7 +277,8 @@ namespace TEAMS2HA
             // Get the device ID
             if (string.IsNullOrEmpty(_settings.SensorPrefix))
             {
-                deviceid = System.Environment.MachineName;
+                deviceid = System.Environment.MachineName.ToLower();
+                _settings.SensorPrefix = deviceid;
             }
             else
             {
@@ -340,13 +341,20 @@ namespace TEAMS2HA
             _ = _mqttService.PublishConfigurations(null!, _settings);
             _mqttService.CommandToTeams += HandleCommandToTeams;
             InitializeWebSocket();
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
 
         }
         private async void InitializeWebSocket()
         {
             var uri = new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+            await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
+            {
+                // Update the UI with the new token
+                TeamsApiKeyBox.Text = newToken;
+            });
             await WebSocketManager.Instance.ConnectAsync(uri);
             WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
       
 
@@ -605,6 +613,7 @@ namespace TEAMS2HA
             }
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
             ShowOneTimeNoticeIfNeeded();
+            
         }
         // Event handler that enables the PairButton in WPF
         private void TeamsClient_RequirePairing(object sender, EventArgs e)
@@ -634,9 +643,10 @@ namespace TEAMS2HA
         private void MainPage_Unloaded(object sender, RoutedEventArgs e)
         {
             // Unsubscribe when the page is unloaded
-            _teamsClient.ConnectionStatusChanged -= TeamsConnectionStatusChanged;
-            Log.Debug("MainPage_Unloaded: Teams Client Connection Status unsubscribed");
+           
+            Log.Debug("MainPage_Unloaded: WebSocketManager TeamsUpdateReceived unsubscribed");
         }
+
 
         private void MyNotifyIcon_Click(object sender, EventArgs e)
         {
@@ -714,7 +724,7 @@ namespace TEAMS2HA
                 _mqttService.CommandToTeams -= HandleCommandToTeams;
                 await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid}/+/set");
                 await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state");
-                
+                Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
                 await MqttService.Instance.ConnectAsync(AppSettings.Instance);
                 // republish sensors
                 await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
@@ -773,21 +783,7 @@ namespace TEAMS2HA
 
         private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {
-            if (_teamsClient == null)
-            {
-                // Initialize and connect the WebSocket client
-                await _teamsClient.EnsureConnectedAsync();
-            }
-            else if (!_teamsClient.IsConnected)
-            {
-                // If the client exists but is not connected, try reconnecting
-                await _teamsClient.StartConnectionAsync(new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26"));
-            }
-            else if (_settings.PlainTeamsToken == null)
-            {
-                // If connected but not paired, attempt to pair
-                await _teamsClient.PairWithTeamsAsync();
-            }
+
         }
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
@@ -817,12 +813,14 @@ namespace TEAMS2HA
             {
                 // Update MQTT connection status text
                 MQTTConnectionStatus.Text = _mqttService != null && _mqttService.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
+                TeamsConnectionStatus.Text = WebSocketManager.Instance.IsConnected ? "Teams: Connected" : "Teams: Disconnected";
                 // Update menu items
                 _mqttStatusMenuItem.Header = MQTTConnectionStatus.Text; // Reuse the text set above
-                _teamsStatusMenuItem.Header = _teamsClient != null && _teamsClient.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
+                _teamsStatusMenuItem.Header = WebSocketManager.Instance.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
                 // Add other status updates here as necessary
             });
         }
+
 
         private void Websockets_Checked(object sender, RoutedEventArgs e)
         {

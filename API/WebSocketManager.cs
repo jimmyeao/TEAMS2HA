@@ -84,7 +84,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task PairWithTeamsAsync()
+        public async Task PairWithTeamsAsync(Action<string> updateTokenCallback)
         {
             if (_isConnected)
             {
@@ -102,8 +102,12 @@ namespace TEAMS2HA.API
                     AppSettings.Instance.PlainTeamsToken = newToken;
                     AppSettings.Instance.SaveSettingsToFile();
 
-                    _updateTokenAction?.Invoke(newToken); // Invoke the action to update UI
-                    //subscribe to meeting updates
+                    _updateTokenAction?.Invoke(newToken);
+                    Application.Current.Dispatcher.Invoke(() =>
+                    {
+                        // Assuming TeamsApiKeyBox is the TextBox control you want to update
+                        updateTokenCallback?.Invoke("Paired");
+                    });
                 }
                 else
                 {
@@ -193,6 +197,8 @@ namespace TEAMS2HA.API
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     _updateTokenAction?.Invoke(AppSettings.Instance.PlainTeamsToken);
+                    //we also need to update the ui to show the paired status
+
                 });
             }
             else if (message.Contains("meetingPermissions"))
@@ -209,8 +215,13 @@ namespace TEAMS2HA.API
                 {
                     // The 'canPair' permission is true, initiate pairing
                     Log.Debug("Pairing with Teams");
-                    _ = PairWithTeamsAsync();
+                    _= PairWithTeamsAsync(newToken =>
+                    {
+                        
+                       
+                    });
                 }
+
                 // need to add in sensors for permissions
                 if (meetingUpdate?.MeetingPermissions?.CanToggleMute == true)
                 {
