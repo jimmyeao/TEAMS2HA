@@ -281,7 +281,7 @@ namespace TEAMS2HA
             }
             else
             {
-                deviceid = _settings.SensorPrefix;
+                deviceid = _settings.SensorPrefix.ToLower();
             }
 
             // Log the settings file path
@@ -292,7 +292,7 @@ namespace TEAMS2HA
             SetWindowTitle();
             // Add event handler for when the main window is loaded
             this.Loaded += MainPage_Loaded;
-            SystemEvents.PowerModeChanged += OnPowerModeChanged; //subscribe to power events
+           
             // Set the icon for the notification tray
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
@@ -339,10 +339,16 @@ namespace TEAMS2HA
 
             _ = _mqttService.PublishConfigurations(null!, _settings);
             _mqttService.CommandToTeams += HandleCommandToTeams;
-            await initializeteamsconnection();
+            InitializeWebSocket();
 
         }
-
+        private async void InitializeWebSocket()
+        {
+            var uri = new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+            await WebSocketManager.Instance.ConnectAsync(uri);
+            WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+        }
+      
 
         #endregion Public Methods
 
@@ -397,11 +403,7 @@ namespace TEAMS2HA
             aboutWindow.Owner = this;
             aboutWindow.ShowDialog();
         }
-        private async void OnServiceDisconnected()
-        {
-            await ReestablishConnections();
-        }
-
+        
 
         private void ApplyTheme(string theme)
         {
@@ -511,69 +513,8 @@ namespace TEAMS2HA
                 await _teamsClient.SendMessageAsync(jsonMessage);
             }
         }
-        private async void CheckTeamsConnectionStatus()
-        {
-            if (!_teamsClient.IsConnected)
-            {
-                string teamsToken = _settings.PlainTeamsToken;
-                var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
-                Log.Debug("Teams appears to be disconnected. Attempting to reconnect...");
-                await _teamsClient.StartConnectionAsync(uri);
-            }
-        }
-        private async Task initializeteamsconnection()
-        {
-            string teamsToken = _settings.PlainTeamsToken;
-            var uri = new Uri($"ws://localhost:8124?token={teamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+      
 
-            // Initialize the WebSocketClient only if it's not already created
-            if (_teamsClient == null)
-            {
-                _teamsClient = new API.WebSocketClient(
-                    uri,
-                    new API.State(),
-                    _settingsFilePath,
-                    _updateTokenAction // Pass the action here
-                );
-                _teamsClient.RequirePairing += TeamsClient_RequirePairing;
-                if (isTeamsConnected == false)
-                {
-                    _teamsClient.ConnectionStatusChanged += TeamsConnectionStatusChanged;
-                    
-                    isTeamsConnected = true;
-                }
-
-                if (isTeamsSubscribed == false)
-                {
-                    _teamsClient.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
-                    isTeamsSubscribed = true;
-                }
-            }
-
-            // Connect if not already connected
-            if (!_teamsClient.IsConnected)
-            {
-                await _teamsClient.StartConnectionAsync(uri);
-            }
-            else
-            {
-                Log.Debug("initializeteamsconnection: WebSocketClient is already connected or in the process of connecting");
-            }
-            if (_teamsClient.IsConnected)
-            {
-                Dispatcher.Invoke(() => TeamsConnectionStatus.Text = "Teams Status: Connected");
-                // ADD in code to set the connected status as a sensor
-
-                State.Instance.teamsRunning = true;
-                Log.Debug("initializeteamsconnection: WebSocketClient Connected");
-            }
-            else
-            {
-                Dispatcher.Invoke(() => TeamsConnectionStatus.Text = "Teams Status: Disconnected");
-                State.Instance.teamsRunning = false;
-                Log.Debug("initializeteamsconnection: WebSocketClient Disconnected");
-            }
-        }
 
         private void LogsButton_Click(object sender, RoutedEventArgs e)
         {
@@ -690,25 +631,6 @@ namespace TEAMS2HA
             Log.Debug("MainPage_Unloaded: Teams Client Connection Status unsubscribed");
         }
 
-        private void MqttManager_ConnectionAttempting(string status)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                MQTTConnectionStatus.Text = status;
-                _mqttStatusMenuItem.Header = status; // Update the system tray menu item as well
-                                                     // No need to update other status menu items as
-                                                     // this is specifically for MQTT connection
-            });
-        }
-
-        private void MqttManager_ConnectionStatusChanged(string status)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                MQTTConnectionStatus.Text = status; // Ensure MQTTConnectionStatus is the correct UI element's name
-            });
-        }
-
         private void MyNotifyIcon_Click(object sender, EventArgs e)
         {
             if (this.WindowState == WindowState.Minimized)
@@ -723,53 +645,6 @@ namespace TEAMS2HA
                 this.WindowState = WindowState.Minimized;
             }
         }
-
-        private async void OnPowerModeChanged(object sender, PowerModeChangedEventArgs e)
-        {
-            if (e.Mode == PowerModes.Resume)
-            {
-                Log.Information("System is waking up from sleep. Re-establishing connections...");
-                // Add a delay to allow the network to come up
-                await Task.Delay(TimeSpan.FromSeconds(10)); // Adjust based on your needs
-
-                // Implement logic to re-establish connections
-                await ReestablishConnections();
-                // publish current meeting state
-                
-            }
-        }
-
-
-
-        private async Task ReestablishConnections() // reestablish connections after sleep or connectivity issues
-        {
-            try
-            {
-                // Use a more aggressive check to determine if reconnection is necessary
-               
-                var teamsHealth = await _teamsClient.CheckConnectionHealthAsync();
-
-                if (!teamsHealth)
-                {
-                    Log.Information("Re-establishing connections due to detected connectivity issues.");
-                }
-
-                if (!_teamsClient.IsConnected || !teamsHealth)
-                {
-                    await _teamsClient.StopAsync(); // Ensure a clean state
-                    await _teamsClient.StartConnectionAsync(new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26")); // Simplified connection logic
-                    Dispatcher.Invoke(() => UpdateStatusMenuItems());
-                }
-
-                // Re-publish configurations or perform other necessary setup after reconnection
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error re-establishing connections: {ex.Message}");
-            }
-        }
-
-
 
         private async void SaveSettings_Click(object sender, RoutedEventArgs e)
         {
@@ -882,22 +757,10 @@ namespace TEAMS2HA
 
         private void TeamsConnectionStatusChanged(bool isConnected)
         {
-            // The UI needs to be updated on the main thread.
             Dispatcher.Invoke(() =>
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
-                UpdateStatusMenuItems();
-                if (isConnected == true)
-                {
-                    State.Instance.teamsRunning = true;
-                }
-                else
-                {
-                    State.Instance.teamsRunning = false;
-                    _ = _mqttService.PublishConfigurations(null!, _settings);
-                }
-
-                Log.Debug("TeamsConnectionStatusChanged: Teams Connection Status Changed {status}", TeamsConnectionStatus.Text);
+                _teamsStatusMenuItem.Header = "Teams Status: " + (isConnected ? "Connected" : "Disconnected");
             });
         }
 
@@ -906,7 +769,7 @@ namespace TEAMS2HA
             if (_teamsClient == null)
             {
                 // Initialize and connect the WebSocket client
-                await initializeteamsconnection();
+                await _teamsClient.EnsureConnectedAsync();
             }
             else if (!_teamsClient.IsConnected)
             {

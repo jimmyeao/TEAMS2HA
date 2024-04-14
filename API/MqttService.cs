@@ -32,12 +32,13 @@ namespace TEAMS2HA.API
         public event Func<MqttApplicationMessageReceivedEventArgs, Task> MessageReceived;
         public delegate Task CommandToTeamsHandler(string jsonMessage);
         public event CommandToTeamsHandler CommandToTeams;
+
         public void Initialize(AppSettings settings, string deviceId, List<string> sensorNames)
         {
             if (!_isInitialized)
             {
                 _settings = settings;
-                _deviceId = deviceId;
+                _deviceId = deviceId.ToLower();
                 _sensorNames = sensorNames;
                 _isInitialized = true;
                 //_mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
@@ -49,7 +50,6 @@ namespace TEAMS2HA.API
             }
         }
         public bool IsConnected => _mqttClient?.IsConnected ?? false;
-
         private MqttService()
         {
             
@@ -293,9 +293,6 @@ namespace TEAMS2HA.API
                 Log.Error($"Error during MQTT subscribe for {topic}: {ex.Message}");
             }
         }
-
-
-
         public void Dispose()
         {
             _mqttClient?.Dispose();
@@ -332,10 +329,10 @@ namespace TEAMS2HA.API
             // Define common device information for all entities.
             var deviceInfo = new
             {
-                ids = new[] { "teams2ha_" + _deviceId }, // Unique device identifier
+                ids = new[] { "teams2ha_" + _deviceId.ToLower() }, // Unique device identifier
                 mf = "Jimmy White", // Manufacturer name
                 mdl = "Teams2HA Device", // Model
-                name = _deviceId, // Device name
+                name = _deviceId.ToLower(), // Device name
                 sw = "v1.0" // Software version
             };
             if (meetingUpdate == null)
@@ -358,7 +355,7 @@ namespace TEAMS2HA.API
             }
             foreach (var binary_sensor in _sensorNames)
             {
-                string sensorKey = $"{_deviceId}_{binary_sensor}";
+                string sensorKey = $"{_deviceId.ToLower()}_{binary_sensor}";
                 string sensorName = $"{binary_sensor}".ToLower().Replace(" ", "_");
                 string deviceClass = DetermineDeviceClass(binary_sensor);
                 string icon = DetermineIcon(binary_sensor, meetingUpdate.MeetingState);
@@ -377,15 +374,15 @@ namespace TEAMS2HA.API
                     }
                     if (deviceClass == "switch")
                     {
-                        configTopic = $"homeassistant/switch/{_deviceId}/{sensorName}/config";
+                        configTopic = $"homeassistant/switch/{_deviceId.ToLower()}/{sensorName}/config";
                         var switchConfig = new
                         {
                             name = sensorName,
                             unique_id = uniqueId,
                             device = deviceInfo,
                             icon = icon,
-                            command_topic = $"homeassistant/switch/{_deviceId}/{sensorName}/set",
-                            state_topic = $"homeassistant/switch/{_deviceId}/{sensorName}/state",
+                            command_topic = $"homeassistant/switch/{_deviceId.ToLower()}/{sensorName}/set",
+                            state_topic = $"homeassistant/switch/{_deviceId.ToLower()}/{sensorName}/state",
                             payload_on = "ON",
                             payload_off = "OFF"
                         };
@@ -409,14 +406,14 @@ namespace TEAMS2HA.API
                     }
                     else if (deviceClass == "binary_sensor")
                     {
-                        configTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/config";
+                        configTopic = $"homeassistant/binary_sensor/{_deviceId.ToLower()}/{sensorName}/config";
                         var binarySensorConfig = new
                         {
                             name = sensorName,
                             unique_id = uniqueId,
                             device = deviceInfo,
                             icon = icon,
-                            state_topic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state",
+                            state_topic = $"homeassistant/binary_sensor/{_deviceId.ToLower()}/{sensorName}/state",
                             payload_on = "true",  // Assuming "True" states map to "ON"
                             payload_off = "false" // Assuming "False" states map to "OFF"
                         };
@@ -564,15 +561,15 @@ namespace TEAMS2HA.API
         {
             var entityNames = new List<string>
                 {
-                    $"switch.{deviceId}_ismuted",
-                    $"switch.{deviceId}_isvideoon",
-                    $"switch.{deviceId}_ishandraised",
-                    $"binary_sensor.{deviceId}_isrecordingon",
-                    $"binary_sensor.{deviceId}_isinmeeting",
-                    $"binary_sensor.{deviceId}_issharing",
-                    $"binary_sensor.{deviceId}_hasunreadmessages",
-                    $"switch.{deviceId}_isbackgroundblurred",
-                    $"binary_sensor.{deviceId}_teamsRunning"
+                    $"switch.{deviceId.ToLower()}_ismuted",
+                    $"switch.{deviceId.ToLower()}_isvideoon",
+                    $"switch.{deviceId.ToLower()}_ishandraised",
+                    $"binary_sensor.{deviceId.ToLower()}_isrecordingon",
+                    $"binary_sensor.{deviceId.ToLower()}_isinmeeting",
+                    $"binary_sensor.{deviceId.ToLower()}_issharing",
+                    $"binary_sensor.{deviceId.ToLower()}_hasunreadmessages",
+                    $"switch.{deviceId.ToLower()}_isbackgroundblurred",
+                    $"binary_sensor.{deviceId.ToLower()}_teamsRunning"
                 };
 
             return entityNames;

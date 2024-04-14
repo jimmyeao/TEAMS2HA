@@ -3,8 +3,11 @@ using Newtonsoft.Json.Linq;
 using Serilog;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Net.WebSockets;
+using System.Security.Policy;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -21,8 +24,12 @@ namespace TEAMS2HA.API
         private readonly Action<string> _updateTokenAction;
         private ClientWebSocket _clientWebSocket;
         private Uri _currentUri;
+        private bool isAttemptingConnection;
         private bool _isConnected;
+        private bool _isMonitoringEnabled = false;
         private TaskCompletionSource<string> _pairingResponseTaskSource;
+        private System.Timers.Timer _processMonitorTimer;
+        private ProcessWatcher _processWatcher;
 
         private Dictionary<string, object> meetingState = new Dictionary<string, object>()
         {
@@ -34,6 +41,12 @@ namespace TEAMS2HA.API
             { "isBackgroundBlurred", false },
         };
 
+        public bool IsTeamsRunning()
+        {
+            // Check if there is any process with the name 'ms-teams'
+            return Process.GetProcessesByName("me-teams").Length > 0;
+        }
+
         #endregion Private Fields
 
         #region Public Constructors
@@ -43,12 +56,24 @@ namespace TEAMS2HA.API
             _clientWebSocket = new ClientWebSocket();
             _state = state;
             _settingsFilePath = settingsFilePath;
-
+            _currentUri = uri;
             // Task.Run(() => ConnectAsync(uri));
             Log.Debug("Websocket Client Started");
             // Subscribe to the MessageReceived event
             MessageReceived += OnMessageReceived;
             _updateTokenAction = updateTokenAction;
+            InitializeProcessMonitor();
+        }
+
+        
+
+
+        private void InitializeProcessMonitor()
+        {
+            _processMonitorTimer = new System.Timers.Timer(5000); // Check every 5 seconds
+            _processMonitorTimer.Elapsed += async (sender, e) => await CheckTeamsProcess();
+            _processMonitorTimer.AutoReset = true;
+            _processMonitorTimer.Enabled = true;
         }
 
         #endregion Public Constructors
@@ -57,11 +82,11 @@ namespace TEAMS2HA.API
 
         public event Action<bool> ConnectionStatusChanged;
 
+        public event Action Disconnected;
+
         public event EventHandler<string> MessageReceived;
 
         public event EventHandler<TeamsUpdateEventArgs> TeamsUpdateReceived;
-
-        public event Action Disconnected;
 
         #endregion Public Events
 
@@ -78,6 +103,7 @@ namespace TEAMS2HA.API
                 {
                     _isConnected = value;
                     ConnectionStatusChanged?.Invoke(_isConnected);
+                    
                     Log.Debug($"Teams Connection Status Changed: {_isConnected}");
                 }
             }
@@ -87,8 +113,40 @@ namespace TEAMS2HA.API
 
         #region Public Methods
 
+        public async Task<bool> CheckConnectionHealthAsync()
+        {
+            if (_clientWebSocket.State != WebSocketState.Open)
+            {
+                return false;
+            }
+
+            try
+            {
+                // Example of sending a simple message to check for response Adjust according to how
+                // your Teams WebSocket server expects communication
+                string healthCheckMessage = "{\"action\":\"healthCheck\"}";
+                await SendMessageAsync(healthCheckMessage);
+
+                // Awaiting a simple acknowledgment or using an existing mechanism to confirm the
+                // message was received and processed This part depends on how your server responds.
+                // You may need an additional mechanism to await the response.
+
+                return true; // Assuming sending succeeds and you somehow confirm receipt
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Error checking WebSocket connection health: {ex}");
+                return false;
+            }
+        }
+
         public async Task ConnectAsync(Uri uri)
         {
+            if (_clientWebSocket.State == WebSocketState.Open || _clientWebSocket.State == WebSocketState.Connecting)
+            {
+                return; // Avoid connecting again if already connected or connecting
+            }
+
             _currentUri = uri;
             var cancellationTokenSource = new CancellationTokenSource(TimeSpan.FromSeconds(5)); // 30 seconds timeout
             try
@@ -103,12 +161,12 @@ namespace TEAMS2HA.API
 
                 string token = AppSettings.Instance.PlainTeamsToken;
 
-                if (!string.IsNullOrEmpty(token))
-                {
-                    Log.Debug($"Token: {token}");
-                    var builder = new UriBuilder(uri) { Query = $"token={token}&{uri.Query.TrimStart('?')}" };
-                    uri = builder.Uri;
-                }
+                //if (!string.IsNullOrEmpty(token))
+                //{
+                //    Log.Debug($"Token: {token}");
+                //    var builder = new UriBuilder(uri) { Query = $"token={token}&{uri.Query.TrimStart('?')}" };
+                //    uri = builder.Uri;
+                //}
                 Log.Debug($"WebSocket State before connecting: {_clientWebSocket.State}");
 
                 Log.Debug($"Connecting to Teams on {uri}");
@@ -141,6 +199,66 @@ namespace TEAMS2HA.API
             await ReceiveLoopAsync();
         }
 
+        public async Task DisconnectAsync()
+        {
+            if (_clientWebSocket != null && _clientWebSocket.State == WebSocketState.Open)
+            {
+                await _clientWebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Disconnecting", CancellationToken.None);
+                _isConnected = false;
+                ConnectionStatusChanged?.Invoke(_isConnected);
+            }
+        }
+        public async Task CheckTeamsProcess()
+        {
+            try
+            {
+                bool isTeamsRunning = Process.GetProcessesByName("ms-teams").Any();
+                if (!isTeamsRunning && IsConnected)
+                {
+                    await DisconnectAsync();  // Use the existing DisconnectAsync method
+                }
+                else if (isTeamsRunning && !IsConnected)
+                {
+                    await EnsureConnectedAsync();  // Use the existing EnsureConnectedAsync method
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Error checking Teams process: " + ex.Message);
+            }
+        }
+
+
+        public void Dispose()
+        {
+            _processMonitorTimer?.Stop();
+            _processMonitorTimer?.Dispose();
+            _clientWebSocket?.Dispose();
+        }
+
+        public async Task EnsureConnectedAsync()
+        {
+            if (_clientWebSocket == null || _clientWebSocket.State != WebSocketState.Open)
+            {
+                if (isAttemptingConnection)
+                {
+                    Log.Debug("Connection attempt already in progress.");
+                    return;
+                }
+
+                isAttemptingConnection = true;
+                try
+                {
+                    _clientWebSocket = new ClientWebSocket(); // Reinitialize if null or closed
+                    await ConnectAsync(_currentUri); // Attempt to connect
+                }
+                finally
+                {
+                    isAttemptingConnection = false;
+                }
+            }
+        }
+
         public async Task PairWithTeamsAsync()
         {
             if (_isConnected)
@@ -169,32 +287,6 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task<bool> CheckConnectionHealthAsync()
-        {
-            if (_clientWebSocket.State != WebSocketState.Open)
-            {
-                return false;
-            }
-
-            try
-            {
-                // Example of sending a simple message to check for response
-                // Adjust according to how your Teams WebSocket server expects communication
-                string healthCheckMessage = "{\"action\":\"healthCheck\"}";
-                await SendMessageAsync(healthCheckMessage);
-
-                // Awaiting a simple acknowledgment or using an existing mechanism to confirm the message was received and processed
-                // This part depends on how your server responds. You may need an additional mechanism to await the response.
-
-                return true; // Assuming sending succeeds and you somehow confirm receipt
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error checking WebSocket connection health: {ex}");
-                return false;
-            }
-        }
-
         public async Task SendMessageAsync(string message, CancellationToken cancellationToken = default)
         {
             if (_clientWebSocket.State != WebSocketState.Open)
@@ -207,13 +299,28 @@ namespace TEAMS2HA.API
             Log.Debug($"Message Sent: {message}");
         }
 
+        public async Task SendReactionToTeamsAsync(string reactionType)
+        {
+            // Construct the JSON payload for the reaction message
+            var reactionPayload = new
+            {
+                action = "send-reaction",
+                parameters = new { type = reactionType },
+                requestId = new Random().Next(1, int.MaxValue) // Generate a random request ID
+            };
+
+            string message = JsonConvert.SerializeObject(reactionPayload);
+
+            // Use the SendMessageAsync method to send the reaction message
+            await SendMessageAsync(message);
+            Log.Information($"Reaction '{reactionType}' sent to Teams.");
+        }
+
         // Public method to initiate connection
         public async Task StartConnectionAsync(Uri uri)
         {
-            if (!_isConnected || _clientWebSocket.State != WebSocketState.Open)
-            {
-                await ConnectAsync(uri);
-            }
+            _currentUri = uri; // Ensure the URI is updated if needed
+            await EnsureConnectedAsync(); // Make sure the connection is active
         }
 
         public async Task StopAsync(CancellationToken cancellationToken = default)
@@ -240,23 +347,12 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task SendReactionToTeamsAsync(string reactionType)
+        public void StopMonitoringTeamsProcess()
         {
-            // Construct the JSON payload for the reaction message
-            var reactionPayload = new
-            {
-                action = "send-reaction",
-                parameters = new { type = reactionType },
-                requestId = new Random().Next(1, int.MaxValue) // Generate a random request ID
-            };
-
-            string message = JsonConvert.SerializeObject(reactionPayload);
-
-            // Use the SendMessageAsync method to send the reaction message
-            await SendMessageAsync(message);
-            Log.Information($"Reaction '{reactionType}' sent to Teams.");
+            _isMonitoringEnabled = false;
         }
 
+       
         #endregion Public Methods
 
         #region Private Methods
@@ -377,7 +473,7 @@ namespace TEAMS2HA.API
                     State.Instance.CanStopSharing = false;
                 }
 
-                //              update the meeting state dictionary
+                // update the meeting state dictionary
                 if (meetingUpdate.MeetingState != null)
                 {
                     meetingState["isMuted"] = meetingUpdate.MeetingState.IsMuted;
@@ -520,6 +616,11 @@ namespace TEAMS2HA.API
 
         private async Task ReconnectAsync()
         {
+            if (_clientWebSocket.State == WebSocketState.Open || _clientWebSocket.State == WebSocketState.Connecting)
+            {
+                Log.Debug("Connection attempt skipped: already connected or connecting.");
+                return;
+            }
             const int maxRetryCount = 5;
             int retryDelay = 2000; // milliseconds
             int retryCount = 0;
