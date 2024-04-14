@@ -331,7 +331,7 @@ namespace TEAMS2HA
             {
                 _mqttService = MqttService.Instance;
                 _mqttService.StatusUpdated += UpdateMqttStatus;
-               // _mqttService.CommandToTeams += HandleCommandToTeams;
+              
             }
             await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
             await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
@@ -508,15 +508,22 @@ namespace TEAMS2HA
 
         private async Task HandleCommandToTeams(string jsonMessage)
         {
-            if (_teamsClient != null)
+            if (WebSocketManager.Instance != null && WebSocketManager.Instance.IsConnected)
             {
-                await _teamsClient.SendMessageAsync(jsonMessage);
+                await WebSocketManager.Instance.SendMessageAsync(jsonMessage);
+            }
+            else
+            {
+                // Handle the case when WebSocketManager is not connected
+                Log.Warning("WebSocketManager is not connected. Message not sent.");
             }
         }
-      
+
+    
 
 
-        private void LogsButton_Click(object sender, RoutedEventArgs e)
+
+    private void LogsButton_Click(object sender, RoutedEventArgs e)
         {
             string folderPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Teams2HA");
 
