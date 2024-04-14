@@ -88,10 +88,11 @@ namespace TEAMS2HA.API
         }
         public async Task SubscribeToReactionButtonsAsync()
         {
+            _deviceId = AppSettings.Instance.SensorPrefix.ToLower();
             var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
             foreach (var reaction in reactions)
             {
-                string commandTopic = $"homeassistant/button/{_deviceId}/{reaction}/set";
+                string commandTopic = $"homeassistant/button/{_deviceId.ToLower()}/{reaction}/set";
                 try
                 {
                     await SubscribeAsync(commandTopic, MqttQualityOfServiceLevel.AtLeastOnce);
