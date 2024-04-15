@@ -13,6 +13,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using TEAMS2HA.API;
 using TEAMS2HA.Properties;
+using TEAMS2HA.Utils;
 
 namespace TEAMS2HA
 {
@@ -760,7 +761,7 @@ namespace TEAMS2HA
             }
         }
 
-        private async void TeamsClient_TeamsUpdateReceived(object sender, WebSocketClient.TeamsUpdateEventArgs e)
+        private async void TeamsClient_TeamsUpdateReceived(object sender, TeamsUpdateEventArgs e)
         {
             if (_mqttService != null && _mqttService.IsConnected)
             {

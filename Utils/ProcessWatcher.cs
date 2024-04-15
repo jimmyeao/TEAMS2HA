@@ -6,7 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace TEAMS2HA.API
+namespace TEAMS2HA.Utils
 {
     public class ProcessWatcher
     {

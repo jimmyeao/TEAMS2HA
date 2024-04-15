@@ -8,6 +8,7 @@ using System.Windows;
 using Newtonsoft.Json;
 using Serilog;
 using static TEAMS2HA.API.WebSocketClient;
+using TEAMS2HA.Utils;
 
 namespace TEAMS2HA.API
 {
