@@ -4,9 +4,9 @@ Sensores will also now be BINARY sensors
 
 ![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/b14a824e-b939-4ba5-9515-b06bf4150270)
 
-The Device will appear in the MQTT integration as the Prefix name
+The Device will appear in the MQTT integration as the Prefix name, in LOWER case - this aligns with MQTT best praactices.
 
-The sensor names will change, please check them and update your automations as required. This should be the last time we have to do this.
+As a result, the sensor names will change if your previous prefix was upper or mixed case - please check them and update your automations as required. This should be the last time we have to do this.
 
 As the old sensor names may still exist, you may need to remove them from MQTT - I use https://mqtt-explorer.com/ MQTT Explorer
 
