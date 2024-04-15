@@ -85,7 +85,7 @@
                 <TextBlock x:Name="TeamsConnectionStatus" Text="Teams: Disconnected" Margin="10,0,10,0" />
                 <TextBlock x:Name="MQTTConnectionStatus" Text="MQTT: Disconnected" />
             </StackPanel>
-            <tb:TaskbarIcon x:Name="MyNotifyIcon"  TrayMouseDoubleClick="MyNotifyIcon_Click" Visibility="Visible" />
+            <tb:TaskbarIcon x:Name="MyNotifyIcon"  TrayMouseDoubleClick="MyNotifyIcon_Click" ToolTipText="Teasm2HA" Visibility="Visible" />
         </Grid>
     </DockPanel>
 </Window>

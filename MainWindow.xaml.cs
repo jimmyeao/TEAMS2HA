@@ -14,6 +14,7 @@ using System.Windows;
 using TEAMS2HA.API;
 using TEAMS2HA.Properties;
 using TEAMS2HA.Utils;
+using Hardcodet.Wpf.TaskbarNotification;
 
 namespace TEAMS2HA
 {
@@ -259,7 +260,7 @@ namespace TEAMS2HA
         {
             // Get the local application data folder path
             var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-
+          
             // Configure logging
             LoggingConfig.Configure();
 
