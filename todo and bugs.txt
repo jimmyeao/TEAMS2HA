@@ -1,3 +1,3 @@
 ﻿Teamsrunning is set to no on launch, need to fix this
-Pairing - after pairing is successful, UI is not updated to show that pairing is successful
+Pairing - after pairing is successful, UI is not updated to show that pairing is successful - fixed
 Meeting permissions are not being updated to mqtt

@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using Newtonsoft.Json;
 using Serilog;
-using static TEAMS2HA.API.WebSocketClient;
+
 using TEAMS2HA.Utils;
 
 namespace TEAMS2HA.API
@@ -106,9 +106,13 @@ namespace TEAMS2HA.API
                     _updateTokenAction?.Invoke(newToken);
                     Application.Current.Dispatcher.Invoke(() =>
                     {
-                        // Assuming TeamsApiKeyBox is the TextBox control you want to update
-                        updateTokenCallback?.Invoke("Paired");
+                        var mainWindow = Application.Current.MainWindow as MainWindow;
+                        if (mainWindow != null)
+                        {
+                            mainWindow.UpdatePairingStatus(true);
+                        }
                     });
+
                 }
                 else
                 {

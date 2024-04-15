@@ -13,6 +13,7 @@ using System.Security.Authentication;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 using TEAMS2HA.Properties;
 
 namespace TEAMS2HA.API
@@ -72,7 +73,18 @@ namespace TEAMS2HA.API
             {
                 Log.Information("Connected to MQTT broker.");
                 _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    var mainWindow = Application.Current.MainWindow as MainWindow;
+                    if (mainWindow != null)
+                    {
+                        mainWindow.UpdateMqttStatus(true);
+                    }
+                });
+              
+
                 await Task.CompletedTask;
+
             };
 
             _mqttClient.DisconnectedAsync += async e =>

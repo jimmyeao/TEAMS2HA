@@ -231,7 +231,7 @@ namespace TEAMS2HA
         private AppSettings _settings;
         private string _settingsFilePath;
         private string _teamsApiKey;
-        private API.WebSocketClient _teamsClient;
+      
         private MenuItem _teamsStatusMenuItem;
         private Action<string> _updateTokenAction;
         private string deviceid;
@@ -307,7 +307,7 @@ namespace TEAMS2HA
             {
                 Dispatcher.Invoke(() =>
                 {
-                    TeamsApiKeyBox.Text = "Paired";
+                    TeamsApiKeyBox.Text = "Pairing Required";
                     PairButton.IsEnabled = false;
                 });
             };
@@ -351,7 +351,7 @@ namespace TEAMS2HA
             await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
             {
                 // Update the UI with the new token
-                TeamsApiKeyBox.Text = newToken;
+                TeamsApiKeyBox.Text = "Paired";
             });
             await WebSocketManager.Instance.ConnectAsync(uri);
             WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
@@ -616,6 +616,26 @@ namespace TEAMS2HA
             ShowOneTimeNoticeIfNeeded();
             
         }
+        public void UpdatePairingStatus(bool isPaired)
+        {
+           
+                Dispatcher.Invoke(() =>
+                {
+                    // Assuming you have a Label or some status indicator in your MainWindow
+                    TeamsApiKeyBox.Text = isPaired ? "Paired" : "Not Paired";
+                });
+        
+        }
+        public void UpdateMqttStatus(bool isPaired)
+        {
+
+            Dispatcher.Invoke(() =>
+            {
+                // Assuming you have a Label or some status indicator in your MainWindow
+                MQTTConnectionStatus.Text = isPaired ? "MQTT Status: Connected" : "MQTT Status: Not Connected";
+            });
+
+        }
         // Event handler that enables the PairButton in WPF
         private void TeamsClient_RequirePairing(object sender, EventArgs e)
         {
@@ -732,14 +752,9 @@ namespace TEAMS2HA
                 //re subscribe to topics
                 await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                 await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+                Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
                 _mqttService.CommandToTeams += HandleCommandToTeams;
             }
-
-
-            // Perform actions if MQTT settings have changed
-            Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
-                
-
         }
 
         private void SetWindowTitle()
