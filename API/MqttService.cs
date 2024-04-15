@@ -9,12 +9,14 @@ using Serilog;
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Diagnostics;
 using System.Security.Authentication;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using TEAMS2HA.Properties;
+using TEAMS2HA.Utils;
 
 namespace TEAMS2HA.API
 {
@@ -27,7 +29,9 @@ namespace TEAMS2HA.API
         private string _deviceId;
         private Dictionary<string, string> _previousSensorStates;
         private List<string> _sensorNames;
+        private ProcessWatcher processWatcher;
         private bool _isInitialized = false;
+        private dynamic _deviceInfo;
         public static MqttService Instance => _instance.Value;
         private HashSet<string> _subscribedTopics = new HashSet<string>();
         public event Func<MqttApplicationMessageReceivedEventArgs, Task> MessageReceived;
@@ -64,11 +68,18 @@ namespace TEAMS2HA.API
         public bool IsConnected => _mqttClient?.IsConnected ?? false;
         private MqttService()
         {
-            
+            ProcessWatcher processWatcher = new ProcessWatcher();
             _previousSensorStates = new Dictionary<string, string>();
             var factory = new MqttFactory();
             _mqttClient = factory.CreateManagedMqttClient();
-
+            _deviceInfo = new
+            {
+                ids = new[] { $"teams2ha_{_deviceId}" },
+                mf = "Jimmy White",
+                mdl = "Teams2HA Device",
+                name = _deviceId,
+                sw = "v1.0"
+            };
             _mqttClient.ConnectedAsync += async e =>
             {
                 Log.Information("Connected to MQTT broker.");
@@ -276,6 +287,7 @@ namespace TEAMS2HA.API
 
 
                 Log.Information($"MQTT client connected with new settings. {_mqttClient.IsStarted}");
+                await PublishPermissionSensorsAsync();
                 //if mqtt is connected, lets subsctribed to incominfg messages
                 await SetupSubscriptionsAsync();
                 Log.Information("Subscribed to incoming messages.");
@@ -284,6 +296,10 @@ namespace TEAMS2HA.API
             {
                 Log.Error($"Failed to start MQTT client: {ex.Message}");
             }
+        }
+        public bool IsTeamsRunning()
+        {
+            return Process.GetProcessesByName("ms-teams").Length > 0;
         }
         public async Task SetupSubscriptionsAsync()
         {
@@ -341,7 +357,60 @@ namespace TEAMS2HA.API
                 Log.Information($"Error during MQTT unsubscribe: {ex.Message}");
             }
         }
+        public async Task PublishPermissionSensorsAsync()
+        {
+            var permissions = new Dictionary<string, bool>
+            {
+                { "canToggleMute", State.Instance.CanToggleMute },
+                { "canToggleVideo", State.Instance.CanToggleVideo },
+                { "canToggleHand", State.Instance.CanToggleHand },
+                { "canToggleBlur", State.Instance.CanToggleBlur },
+                { "canLeave", State.Instance.CanLeave },
+                { "canReact", State.Instance.CanReact},
+                { "canToggleShareTray", State.Instance.CanToggleShareTray },
+                { "canToggleChat", State.Instance.CanToggleChat },
+                { "canStopSharing", State.Instance.CanStopSharing },
+                { "canPair", State.Instance.CanPair}
+                // Add other permissions here
+            };
 
+            foreach (var permission in permissions)
+            {
+                string sensorName = permission.Key.ToLower();
+                bool isAllowed = permission.Value;
+
+                string configTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/config";
+                var configPayload = new
+                {
+                    name = sensorName,
+                    unique_id = $"{_deviceId}_{sensorName}",
+                    device = _deviceInfo,
+                    icon = "mdi:eye", // You can customize the icon based on the sensor
+                    state_topic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state",
+                    payload_on = "true",
+                    payload_off = "false"
+                };
+
+                var configMessage = new MqttApplicationMessageBuilder()
+                    .WithTopic(configTopic)
+                    .WithPayload(JsonConvert.SerializeObject(configPayload))
+                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithRetainFlag(true)
+                    .Build();
+                await PublishAsync(configMessage);
+
+                // State topic and message
+                string stateTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state";
+                string statePayload = isAllowed ? "true" : "false"; // Adjust based on your true/false representation
+                var stateMessage = new MqttApplicationMessageBuilder()
+                    .WithTopic(stateTopic)
+                    .WithPayload(statePayload)
+                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithRetainFlag(true)
+                    .Build();
+                await PublishAsync(stateMessage);
+            }
+        }
         public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings, bool forcePublish = false)
         {
             _settings = settings;
@@ -360,6 +429,7 @@ namespace TEAMS2HA.API
                 name = _deviceId.ToLower(), // Device name
                 sw = "v1.0" // Software version
             };
+            
             if (meetingUpdate == null)
             {
                 meetingUpdate = new MeetingUpdate
@@ -374,10 +444,11 @@ namespace TEAMS2HA.API
                         IsBackgroundBlurred = false,
                         IsSharing = false,
                         HasUnreadMessages = false,
-                        teamsRunning = false
-                    }
+                        teamsRunning = IsTeamsRunning()
+            }
                 };
             }
+            
             foreach (var binary_sensor in _sensorNames)
             {
                 string sensorKey = $"{_deviceId.ToLower()}_{binary_sensor}";
@@ -459,6 +530,7 @@ namespace TEAMS2HA.API
                             .Build();
 
                         await PublishAsync(binarySensorStateMessage);
+                        await PublishPermissionSensorsAsync();
                     }
                 }
             }

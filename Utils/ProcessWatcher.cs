@@ -30,7 +30,7 @@ namespace TEAMS2HA.Utils
             }
         }
 
-        private bool IsTeamsRunning()
+        public bool IsTeamsRunning()
         {
             return Process.GetProcessesByName("ms-teams").Length > 0;
         }

@@ -202,8 +202,6 @@ namespace TEAMS2HA.API
                 Application.Current.Dispatcher.Invoke(() =>
                 {
                     _updateTokenAction?.Invoke(AppSettings.Instance.PlainTeamsToken);
-                    //we also need to update the ui to show the paired status
-
                 });
             }
             else if (message.Contains("meetingPermissions"))
@@ -220,13 +218,12 @@ namespace TEAMS2HA.API
                 {
                     // The 'canPair' permission is true, initiate pairing
                     Log.Debug("Pairing with Teams");
-                    _= PairWithTeamsAsync(newToken =>
+                    _ = PairWithTeamsAsync(newToken =>
                     {
-                        
-                       
+
+
                     });
                 }
-
                 // need to add in sensors for permissions
                 if (meetingUpdate?.MeetingPermissions?.CanToggleMute == true)
                 {
@@ -309,7 +306,8 @@ namespace TEAMS2HA.API
                     State.Instance.CanStopSharing = false;
                 }
 
-                // update the meeting state dictionary
+
+                //              update the meeting state dictionary
                 if (meetingUpdate.MeetingState != null)
                 {
                     meetingState["isMuted"] = meetingUpdate.MeetingState.IsMuted;
