@@ -72,6 +72,7 @@ namespace TEAMS2HA.API
             _previousSensorStates = new Dictionary<string, string>();
             var factory = new MqttFactory();
             _mqttClient = factory.CreateManagedMqttClient();
+            _deviceId = AppSettings.Instance.SensorPrefix.ToLower();
             _deviceInfo = new
             {
                 ids = new[] { $"teams2ha_{_deviceId}" },
@@ -144,7 +145,7 @@ namespace TEAMS2HA.API
             string topic = e.ApplicationMessage.Topic;
             string payload = Encoding.UTF8.GetString(e.ApplicationMessage.Payload);
 
-            if (topic.StartsWith($"homeassistant/button/{_deviceId}/") && payload == "press")
+            if (topic.StartsWith($"homeassistant/button/{_deviceId.ToLower()}/") && payload == "press")
             {
                 var parts = topic.Split('/');
                 if (parts.Length > 3)
@@ -288,6 +289,7 @@ namespace TEAMS2HA.API
 
                 Log.Information($"MQTT client connected with new settings. {_mqttClient.IsStarted}");
                 await PublishPermissionSensorsAsync();
+                await PublishReactionButtonsAsync();
                 //if mqtt is connected, lets subsctribed to incominfg messages
                 await SetupSubscriptionsAsync();
                 Log.Information("Subscribed to incoming messages.");
@@ -297,6 +299,57 @@ namespace TEAMS2HA.API
                 Log.Error($"Failed to start MQTT client: {ex.Message}");
             }
         }
+        public async Task PublishReactionButtonsAsync()
+        {
+            var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
+            var deviceInfo = new
+            {
+                ids = new[] { $"teams2ha_{_deviceId}" },
+                mf = "Jimmy White",
+                mdl = "Teams2HA Device",
+                name = _deviceId,
+                sw = "v1.0"
+            };
+            foreach (var reaction in reactions)
+            {
+                string configTopic = $"homeassistant/button/{_deviceId}/{reaction}/config";
+                var payload = new
+                {
+                    name = reaction,
+                    unique_id = $"{_deviceId}_{reaction}_reaction",
+                    icon = GetIconForReaction(reaction),
+                    device = deviceInfo, // Include the device information
+                    command_topic = $"homeassistant/button/{_deviceId}/{reaction}/set",
+                    payload_press = "press"
+                    // Notice there's no state_topic or payload_on/off as it's a button, not a switch
+                };
+
+                var message = new MqttApplicationMessageBuilder()
+                    .WithTopic(configTopic)
+                    .WithPayload(JsonConvert.SerializeObject(payload))
+                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                    .WithRetainFlag(true)
+                    .Build();
+                if (_mqttClient.IsConnected)
+                {
+                    await PublishAsync(message);
+                }
+
+            }
+        }
+        private string GetIconForReaction(string reaction)
+        {
+            return reaction switch
+            {
+                "like" => "mdi:thumb-up-outline",
+                "love" => "mdi:heart-outline",
+                "applause" => "mdi:hand-clap",
+                "wow" => "mdi:emoticon-excited-outline",
+                "laugh" => "mdi:emoticon-happy-outline",
+                _ => "mdi:hand-okay" // Default icon
+            };
+        }
+
         public bool IsTeamsRunning()
         {
             return Process.GetProcessesByName("ms-teams").Length > 0;
@@ -376,17 +429,18 @@ namespace TEAMS2HA.API
 
             foreach (var permission in permissions)
             {
-                string sensorName = permission.Key.ToLower();
+                
                 bool isAllowed = permission.Value;
-
-                string configTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/config";
+                _deviceId = _settings.SensorPrefix.ToLower();
+                string sensorName = permission.Key.ToLower();
+                string configTopic = $"homeassistant/binary_sensor/{_deviceId.ToLower()}/{sensorName}/config";
                 var configPayload = new
                 {
                     name = sensorName,
                     unique_id = $"{_deviceId}_{sensorName}",
                     device = _deviceInfo,
                     icon = "mdi:eye", // You can customize the icon based on the sensor
-                    state_topic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state",
+                    state_topic = $"homeassistant/binary_sensor/{_deviceId.ToLower()}/{sensorName}/state",
                     payload_on = "true",
                     payload_off = "false"
                 };
@@ -400,7 +454,7 @@ namespace TEAMS2HA.API
                 await PublishAsync(configMessage);
 
                 // State topic and message
-                string stateTopic = $"homeassistant/binary_sensor/{_deviceId}/{sensorName}/state";
+                string stateTopic = $"homeassistant/binary_sensor/{_deviceId.ToLower()}/{sensorName}/state";
                 string statePayload = isAllowed ? "true" : "false"; // Adjust based on your true/false representation
                 var stateMessage = new MqttApplicationMessageBuilder()
                     .WithTopic(stateTopic)
@@ -531,6 +585,7 @@ namespace TEAMS2HA.API
 
                         await PublishAsync(binarySensorStateMessage);
                         await PublishPermissionSensorsAsync();
+                        await PublishReactionButtonsAsync();
                     }
                 }
             }

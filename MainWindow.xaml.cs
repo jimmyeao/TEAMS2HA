@@ -59,7 +59,7 @@ namespace TEAMS2HA
         #endregion Private Constructors
 
         #region Public Properties
-        public bool HasShownOneTimeNotice { get; set; } = false;
+        public bool HasShownOneTimeNotice2 { get; set; } = false;
 
         // Public property to access the singleton instance
         public static AppSettings Instance
@@ -336,8 +336,8 @@ namespace TEAMS2HA
                 _mqttService.StatusUpdated += UpdateMqttStatus;
               
             }
-            await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-            await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+            await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+            await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
             // await _mqttService.SubscribeAsync("#", MqttQualityOfServiceLevel.AtLeastOnce); //line to test all topics
 
             _ = _mqttService.PublishConfigurations(null!, _settings);
@@ -650,13 +650,13 @@ namespace TEAMS2HA
         private void ShowOneTimeNoticeIfNeeded()
         {
             // Check if the one-time notice has already been shown
-            if (!_settings.HasShownOneTimeNotice)
+            if (!_settings.HasShownOneTimeNotice2)
             {
                 // Show the notice to the user
-                MessageBox.Show("Important: Due to recent updates, the functionality of TEAMS2HA has changed. Sensors are now Binarysensors - please make sure you update any automations etc that rely on the sensors.", "Notice", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("Important: Due to recent updates, the functionality of TEAMS2HA has changed. sensor prefixes are now all forced to lower case", "Notice", MessageBoxButton.OK, MessageBoxImage.Information);
 
                 // Update the setting so that the notice isn't shown again
-                _settings.HasShownOneTimeNotice = true;
+                _settings.HasShownOneTimeNotice2 = true;
 
                 // Save the updated settings to file
                 _settings.SaveSettingsToFile();
@@ -744,15 +744,15 @@ namespace TEAMS2HA
             if (mqttSettingsChanged)
             {
                 _mqttService.CommandToTeams -= HandleCommandToTeams;
-                await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid}/+/set");
-                await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state");
+                await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set");
+                await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state");
                 Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
                 await MqttService.Instance.ConnectAsync(AppSettings.Instance);
                 // republish sensors
                 await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
                 //re subscribe to topics
-                await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+                await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
                 Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
                 _mqttService.CommandToTeams += HandleCommandToTeams;
             }
