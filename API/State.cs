@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace TEAMS2HA.API
 {
@@ -27,6 +23,16 @@ namespace TEAMS2HA.API
         private string _status = "";
 
         private bool _teamsRunning = false;
+        private bool canToggleMute = false;
+        private bool canToggleVideo = false;
+        private bool canToggleHand = false;
+        private bool canToggleBlur = false;
+        private bool canLeave = false;
+        private bool canReact = false;
+        private bool canToggleShareTray = false;
+        private bool canToggleChat = false;
+        private bool canStopSharing = false;
+        private bool canPair = false;
 
         #endregion Private Fields
 
@@ -162,6 +168,16 @@ namespace TEAMS2HA.API
         }
 
         public bool teamsRunning { get; set; }
+        public bool CanToggleMute { get; set; }
+        public bool CanToggleVideo { get; set; }
+        public bool CanToggleHand { get; set; }
+        public bool CanToggleBlur { get; set; }
+        public bool CanLeave { get; set; }
+        public bool CanReact { get; set; }
+        public bool CanToggleShareTray { get; set; }
+        public bool CanToggleChat { get; set; }
+        public bool CanStopSharing { get; set; }
+        public bool CanPair { get; set; }
 
         #endregion Public Properties
 

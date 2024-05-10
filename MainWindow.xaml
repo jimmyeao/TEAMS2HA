@@ -3,93 +3,89 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:tb="http://www.hardcodet.net/taskbar"
         xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="TEAMS2HA.MainWindow"
-    
+
         Title="Teams2HA" Height="420" Width="809"
-    
+
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
         TextElement.Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"
         Background="{DynamicResource MaterialDesign.Brush.Background}"
         TextElement.FontWeight="Regular"
         TextElement.FontSize="12"
-        FontFamily="{materialDesign:MaterialDesignFont}"    
-    
+        FontFamily="{materialDesign:MaterialDesignFont}"
+
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto">
 
     <Window.Resources>
-       
     </Window.Resources>
     <DockPanel>
         <Menu DockPanel.Dock="Top">
             <MenuItem Header="File">
-                <MenuItem Header="Exit" Click="ExitMenuItem_Click"/>
+                <MenuItem Header="Exit" Click="ExitMenuItem_Click" />
             </MenuItem>
             <MenuItem Header="Help">
-                <MenuItem Header="About" Click="AboutMenuItem_Click"/>
+                <MenuItem Header="About" Click="AboutMenuItem_Click" />
             </MenuItem>
         </Menu>
-        <Grid >
+        <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="Configuration:" FontWeight="Bold" Margin="10,0,0,0"/>
+            <TextBlock Grid.Row="0" Text="Configuration:" FontWeight="Bold" Margin="10,0,0,0" />
 
-
-            <StackPanel Grid.Row="1" Margin="0,10,0,0" Orientation="Horizontal" >
-                <TextBlock Text="Microsoft Teams Pairing:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <TextBox x:Name="TeamsApiKeyBox" Width="300" Margin="10,0,0,0" IsReadOnly="True" Style="{DynamicResource MaterialDesignTextBox}"/>
-                <Button x:Name="PairButton" Content="Pair with Teams" Margin="10,0,0,0" Click="TestTeamsConnection_Click" materialDesign:ButtonAssist.CornerRadius="10" Width="232" Style="{DynamicResource MaterialDesignRaisedButton}"/>
+            <StackPanel Grid.Row="1" Margin="0,10,0,0" Orientation="Horizontal">
+                <TextBlock Text="Microsoft Teams Pairing:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
+                <TextBox x:Name="TeamsApiKeyBox" Width="300" Margin="10,0,0,0" IsReadOnly="True" Style="{DynamicResource MaterialDesignTextBox}" />
+                <Button x:Name="PairButton" Content="Pair with Teams" Margin="10,0,0,0" Click="TestTeamsConnection_Click" materialDesign:ButtonAssist.CornerRadius="10" Width="232" Style="{DynamicResource MaterialDesignRaisedButton}" />
             </StackPanel>
 
             <StackPanel Grid.Row="2" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="MQTT host address:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <TextBox x:Name="MqttAddress" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}"/>
+                <TextBlock Text="MQTT host address:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
+                <TextBox x:Name="MqttAddress" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" />
                 <TextBlock Text="MQTT port:" Width="100" VerticalAlignment="Center" Margin="10,0,0,0" />
-                <TextBox x:Name="MqttPort" Width="80" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" Text="1883"/>
+                <TextBox x:Name="MqttPort" Width="80" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" Text="1883" />
             </StackPanel>
 
             <StackPanel Grid.Row="3" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="MQTT Username:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <TextBox x:Name="MqttUserNameBox" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}"/>
-                <CheckBox x:Name="UseTLS" Content="TLS?" RenderTransformOrigin="0.832,0.636" Margin="10,0,0,0"/>
-                <CheckBox x:Name="IgnoreCert" Content="Ignore Cert Errors?" Margin="10,0,0,0"/>
-
+                <TextBlock Text="MQTT Username:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
+                <TextBox x:Name="MqttUserNameBox" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" />
+                <CheckBox x:Name="UseTLS" Content="TLS?" RenderTransformOrigin="0.832,0.636" Margin="10,0,0,0" />
+                <CheckBox x:Name="IgnoreCert" Content="Ignore Cert Errors?" Margin="10,0,0,0" />
             </StackPanel>
             <StackPanel Grid.Row="4" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="MQTT Password:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <PasswordBox x:Name="MQTTPasswordBox" PasswordChar="•" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignFloatingHintRevealPasswordBox}"/>
-                <CheckBox x:Name="Websockets" Content="Use Websockets?" Margin="10,0,0,0" Checked="Websockets_Checked" Unchecked="Websockets_Unchecked"/>
+                <TextBlock Text="MQTT Password:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
+                <PasswordBox x:Name="MQTTPasswordBox" PasswordChar="•" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignFloatingHintRevealPasswordBox}" />
+                <CheckBox x:Name="Websockets" Content="Use Websockets?" Margin="10,0,0,0" Checked="Websockets_Checked" Unchecked="Websockets_Unchecked" />
             </StackPanel>
             <StackPanel Grid.Row="5" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="Sensor Prefix:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0"/>
-                <TextBox x:Name="SensorPrefixBox" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}"/>
+                <TextBlock Text="Sensor Prefix:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
+                <TextBox x:Name="SensorPrefixBox" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" />
             </StackPanel>
             <StackPanel Grid.Row="6" Margin="0,22,0,12" Orientation="Horizontal" Grid.RowSpan="3">
-                <CheckBox x:Name="RunAtWindowsBootCheckBox" Content="Run at Windows Boot" Margin="10,0,10,0"/>
-                <CheckBox x:Name="RunMinimisedCheckBox" Content="Run Minimised"/>
-                <Button Content="Save Settings" Margin="10,0,0,0" Click="SaveSettings_Click" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Width="120"/>
-                <Button Grid.Column="1" Grid.Row="5" Content="Toggle Theme" Click="ToggleThemeButton_Click" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Margin="10,0,0,0"/>
-                <Button Content="Logs" Click="LogsButton_Click" Margin="10,0,0,0" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Width="125"/>
-                <Button Content="Entities" Click="AboutMenuItem_Click" Style="{DynamicResource MaterialDesignRaisedButton}" materialDesign:ButtonAssist.CornerRadius="10" Margin="10" Grid.RowSpan="2" Grid.Row="5" Width="105"/>
+                <CheckBox x:Name="RunAtWindowsBootCheckBox" Content="Run at Windows Boot" Margin="10,0,10,0" />
+                <CheckBox x:Name="RunMinimisedCheckBox" Content="Run Minimised" />
+                <Button Content="Save Settings" Margin="10,0,0,0" Click="SaveSettings_Click" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Width="120" />
+                <Button Grid.Column="1" Grid.Row="5" Content="Toggle Theme" Click="ToggleThemeButton_Click" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Margin="10,0,0,0" />
+                <Button Content="Logs" Click="LogsButton_Click" Margin="10,0,0,0" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Width="125" />
+                <Button Content="Entities" Click="AboutMenuItem_Click" Style="{DynamicResource MaterialDesignRaisedButton}" materialDesign:ButtonAssist.CornerRadius="10" Margin="10" Grid.RowSpan="2" Grid.Row="5" Width="105" />
             </StackPanel>
 
             <TextBlock Grid.Row="8" FontWeight="Bold" Margin="10,34,0,-26"  Text="Connection Status:" />
 
             <StackPanel Grid.Row="8" Margin="0,54,0,-45" Orientation="Horizontal">
-                <TextBlock x:Name="TeamsConnectionStatus" Text="Teams: Disconnected" Margin="10,0,10,0"/>
-                <TextBlock x:Name="MQTTConnectionStatus" Text="MQTT: Disconnected"/>
+                <TextBlock x:Name="TeamsConnectionStatus" Text="Teams: Disconnected" Margin="10,0,10,0" />
+                <TextBlock x:Name="MQTTConnectionStatus" Text="MQTT: Disconnected" />
             </StackPanel>
-            <tb:TaskbarIcon x:Name="MyNotifyIcon"  TrayMouseDoubleClick="MyNotifyIcon_Click" Visibility="Visible"/>
-
+            <tb:TaskbarIcon x:Name="MyNotifyIcon"  TrayMouseDoubleClick="MyNotifyIcon_Click" ToolTipText="Teasm2HA" Visibility="Visible" />
         </Grid>
     </DockPanel>
 </Window>
