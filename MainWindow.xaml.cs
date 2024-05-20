@@ -295,7 +295,8 @@ namespace TEAMS2HA
             SetWindowTitle();
             // Add event handler for when the main window is loaded
             this.Loaded += MainPage_Loaded;
-           
+            this.Closing += MainWindow_Closing;
+            this.StateChanged += MainWindow_StateChanged;
             // Set the icon for the notification tray
             string iconPath = System.IO.Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Square150x150Logo.scale-200.ico");
             MyNotifyIcon.Icon = new System.Drawing.Icon(iconPath);
@@ -358,30 +359,30 @@ namespace TEAMS2HA
             WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
-      
+        private void MainWindow_StateChanged(object sender, EventArgs e)
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                // Hide the window and show the NotifyIcon when minimized
+                this.Hide();
+                MyNotifyIcon.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                // Ensure the NotifyIcon is hidden when the window is not minimized
+                MyNotifyIcon.Visibility = Visibility.Collapsed;
+            }
+        }
 
         #endregion Public Methods
 
         #region Protected Methods
 
-        protected override void OnClosing(CancelEventArgs e)
+        private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
-            if(_mqttService != null)
-            {
-                _mqttService.StatusUpdated -= UpdateMqttStatus;
-                _mqttService.CommandToTeams -= HandleCommandToTeams;
-
-                // Disconnect asynchronously without waiting
-                _ = _mqttService.DisconnectAsync();
-
-                // Dispose of the MQTT service
-                _mqttService.Dispose();
-                Log.Debug("MQTT Client Disposed");
-            }   
-           
-
-            // Ensure to call the base class method to properly close the application
-            base.OnClosing(e);
+            // Minimize to system tray instead of closing
+            e.Cancel = true;
+            this.WindowState = WindowState.Minimized;
         }
 
 
@@ -401,6 +402,8 @@ namespace TEAMS2HA
 
             base.OnStateChanged(e);
         }
+
+
 
         #endregion Protected Methods
 
@@ -513,6 +516,22 @@ namespace TEAMS2HA
         private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
             // Handle the click event for the exit menu item (Close the application)
+            if (_mqttService != null)
+            {
+                _mqttService.StatusUpdated -= UpdateMqttStatus;
+                _mqttService.CommandToTeams -= HandleCommandToTeams;
+
+                // Disconnect asynchronously without waiting
+                _ = _mqttService.DisconnectAsync();
+
+                // Dispose of the MQTT service
+                _mqttService.Dispose();
+                Log.Debug("MQTT Client Disposed");
+            }
+
+
+            // Ensure to call the base class method to properly close the application
+           
             Application.Current.Shutdown();
         }
 
@@ -786,6 +805,7 @@ namespace TEAMS2HA
                 Log.Debug("TeamsClient_TeamsUpdateReceived: Teams Update Received {update}", _latestMeetingUpdate);
                 // Update sensor configurations
                 await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                UpdateStatusMenuItems();
             }
         }
 
