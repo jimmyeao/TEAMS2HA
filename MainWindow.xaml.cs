@@ -347,6 +347,29 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
 
         }
+        public bool IsTeamsConnected
+        {
+            get { return isTeamsConnected; }
+            set
+            {
+                if (isTeamsConnected != value)
+                {
+                    isTeamsConnected = value;
+
+                 
+                    if (isTeamsConnected)
+                    {
+                        TeamsConnectionStatusChanged(isTeamsConnected);
+                        Console.WriteLine("Teams is now connected");
+                    }
+                    else
+                    {
+                        TeamsConnectionStatusChanged(isTeamsConnected);
+                        Console.WriteLine("Teams is now disconnected");
+                    }
+                }
+            }
+        }
         private async void InitializeWebSocket()
         {
             var uri = new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
@@ -357,6 +380,17 @@ namespace TEAMS2HA
             });
             await WebSocketManager.Instance.ConnectAsync(uri);
             WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+
+           
+            WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+            {
+                // Because this event handler might be called from a non-UI thread,
+                // use Dispatcher.Invoke to ensure that the UI update runs on the UI thread:
+                Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
+            };
+
+
+
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
         private void MainWindow_StateChanged(object sender, EventArgs e)
@@ -817,6 +851,7 @@ namespace TEAMS2HA
                 _teamsStatusMenuItem.Header = "Teams Status: " + (isConnected ? "Connected" : "Disconnected");
             });
         }
+       
 
         private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {

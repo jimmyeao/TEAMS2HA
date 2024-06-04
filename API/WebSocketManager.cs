@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Data;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -24,6 +25,7 @@ namespace TEAMS2HA.API
         private readonly Action<string> _updateTokenAction;
         public event EventHandler<TeamsUpdateEventArgs> TeamsUpdateReceived;
         public event EventHandler<string> MessageReceived;
+        public event Action<bool> ConnectionStatusChanged;
         private TaskCompletionSource<string> _pairingResponseTaskSource;
          private Dictionary<string, object> meetingState = new Dictionary<string, object>()
         {
@@ -35,6 +37,7 @@ namespace TEAMS2HA.API
             { "isBackgroundBlurred", false },
         };
         public static WebSocketManager Instance => _instance.Value;
+      
 
 
         private WebSocketManager()
@@ -71,17 +74,27 @@ namespace TEAMS2HA.API
 
                 _currentUri = uri;
                 await _clientWebSocket.ConnectAsync(uri, CancellationToken.None);
-                _isConnected = true;
+                SetIsConnected(true);
                 StartReceiving();
             }
             catch (Exception ex)
             {
                 Log.Error("Failed to connect: " + ex.Message);
-                _isConnected = false;
+                SetIsConnected(false);
             }
             finally
             {
                 _isConnecting = false;
+            }
+        }
+        private void SetIsConnected(bool value)
+        {
+            if (_isConnected != value)
+            {
+                _isConnected = value;
+                State.Instance.teamsRunning = value; //update the MQTT state
+
+                ConnectionStatusChanged?.Invoke(IsConnected); //update the UI
             }
         }
 
@@ -131,7 +144,8 @@ namespace TEAMS2HA.API
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         await _clientWebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
-                        _isConnected = false;
+                        SetIsConnected(false);
+                    
                         Log.Information("WebSocket closed.");
                     }
                     else
@@ -148,7 +162,9 @@ namespace TEAMS2HA.API
             catch (Exception ex)
             {
                 Log.Error("Error in receiving loop: " + ex.Message);
-                _isConnected = false;
+                SetIsConnected(false);
+                
+                
             }
         }
         public async Task SendMessageAsync(string message, CancellationToken cancellationToken = default)
@@ -403,7 +419,7 @@ namespace TEAMS2HA.API
             if (_clientWebSocket.State == WebSocketState.Open)
             {
                 await _clientWebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnect", CancellationToken.None);
-                _isConnected = false;
+                SetIsConnected(false);
                 Log.Information("Disconnected from server.");
             }
         }
