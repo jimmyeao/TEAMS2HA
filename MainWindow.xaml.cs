@@ -360,11 +360,13 @@ namespace TEAMS2HA
                     if (isTeamsConnected)
                     {
                         TeamsConnectionStatusChanged(isTeamsConnected);
+                        _ = _mqttService.PublishConfigurations(null!, _settings);
                         Console.WriteLine("Teams is now connected");
                     }
                     else
                     {
                         TeamsConnectionStatusChanged(isTeamsConnected);
+                        _= _mqttService.PublishConfigurations(null!, _settings);
                         Console.WriteLine("Teams is now disconnected");
                     }
                 }
@@ -849,6 +851,11 @@ namespace TEAMS2HA
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
                 _teamsStatusMenuItem.Header = "Teams Status: " + (isConnected ? "Connected" : "Disconnected");
+                if (_latestMeetingUpdate != null && _latestMeetingUpdate.MeetingState != null)
+                {
+                    _latestMeetingUpdate.MeetingState.teamsRunning = isConnected;
+                }
+                 _ = _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
             });
         }
        
