@@ -1,8 +1,4 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace TEAMS2HA.API
 {
@@ -12,26 +8,31 @@ namespace TEAMS2HA.API
 
         private static readonly State _instance = new State();
 
-        #endregion Private Fields
-
-
-
-        #region Private Fields
-
         private string _activity = "";
 
         private string _blurred = "";
         private string _camera = "";
+        private string? _handup;
         private string _issharing = "";
-
-        private string _handup;
         private string _message = "";
 
         private string _microphone = "";
-        private string _recording;
+        private string? _recording;
 
         // Define properties for the different components of the state
         private string _status = "";
+
+        private bool _teamsRunning = false;
+        private bool canToggleMute = false;
+        private bool canToggleVideo = false;
+        private bool canToggleHand = false;
+        private bool canToggleBlur = false;
+        private bool canLeave = false;
+        private bool canReact = false;
+        private bool canToggleShareTray = false;
+        private bool canToggleChat = false;
+        private bool canStopSharing = false;
+        private bool canPair = false;
 
         #endregion Private Fields
 
@@ -47,14 +48,14 @@ namespace TEAMS2HA.API
         // Define the event that will be triggered when the state changes
         public event StateChangedEventHandler StateChanged;
 
+        #endregion Public Events
+
+        #region Public Properties
+
         public static State Instance
         {
             get { return _instance; }
         }
-
-        #endregion Public Events
-
-        #region Public Properties
 
         public string Activity
         {
@@ -81,18 +82,6 @@ namespace TEAMS2HA.API
                 }
             }
         }
-        public string issharing
-        {
-            get => _issharing;
-            set
-            {
-                if (_issharing != value)
-                {
-                    _issharing = value;
-                    StateChanged?.Invoke(this, EventArgs.Empty);
-                }
-            }
-        }
 
         public string Camera
         {
@@ -115,6 +104,19 @@ namespace TEAMS2HA.API
                 if (_handup != value)
                 {
                     _handup = value;
+                    StateChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+        }
+
+        public string issharing
+        {
+            get => _issharing;
+            set
+            {
+                if (_issharing != value)
+                {
+                    _issharing = value;
                     StateChanged?.Invoke(this, EventArgs.Empty);
                 }
             }
@@ -165,11 +167,27 @@ namespace TEAMS2HA.API
             }
         }
 
+        public bool teamsRunning { get; set; }
+        public bool CanToggleMute { get; set; }
+        public bool CanToggleVideo { get; set; }
+        public bool CanToggleHand { get; set; }
+        public bool CanToggleBlur { get; set; }
+        public bool CanLeave { get; set; }
+        public bool CanReact { get; set; }
+        public bool CanToggleShareTray { get; set; }
+        public bool CanToggleChat { get; set; }
+        public bool CanStopSharing { get; set; }
+        public bool CanPair { get; set; }
+
+        #endregion Public Properties
+
+        #region Public Methods
+
         public override string ToString()
         {
             return $"Status: {_status}, Activity: {_activity}";
         }
 
-        #endregion Public Properties
+        #endregion Public Methods
     }
 }
