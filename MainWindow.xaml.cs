@@ -68,10 +68,7 @@ namespace TEAMS2HA
             {
                 lock (_lock)
                 {
-                    if (_instance == null)
-                    {
-                        _instance = new AppSettings();
-                    }
+                    _instance ??= new AppSettings();
                     return _instance;
                 }
             }
@@ -174,7 +171,14 @@ namespace TEAMS2HA
             Log.Debug("SetStartupAsync: Startup options set");
             // Serialize and save
             string json = JsonConvert.SerializeObject(this, Formatting.Indented);
-            File.WriteAllText(_settingsFilePath, json);
+            try
+            {
+                File.WriteAllText(_settingsFilePath, json);
+            }
+            catch (Exception ex)
+            {
+                Log.Error("SaveSettingsToFile: Error saving settings to file: {message}", ex.Message);
+            }
         }
 
         #endregion Public Methods
@@ -186,21 +190,28 @@ namespace TEAMS2HA
         {
             if (File.Exists(_settingsFilePath))
             {
-                string json = File.ReadAllText(_settingsFilePath);
-                JsonConvert.PopulateObject(json, this);
+                try
+                {
+                    string json = File.ReadAllText(_settingsFilePath);
+                    JsonConvert.PopulateObject(json, this);
 
-                // Decrypt sensitive data
-                if (!String.IsNullOrEmpty(this.EncryptedMqttPassword))
-                {
-                    this.MqttPassword = CryptoHelper.DecryptString(this.EncryptedMqttPassword);
+                    // Decrypt sensitive data
+                    if (!String.IsNullOrEmpty(this.EncryptedMqttPassword))
+                    {
+                        this.MqttPassword = CryptoHelper.DecryptString(this.EncryptedMqttPassword);
+                    }
+                    if (!String.IsNullOrEmpty(this.TeamsToken))
+                    {
+                        this.PlainTeamsToken = CryptoHelper.DecryptString(this.TeamsToken);
+                    }
+                    if (string.IsNullOrEmpty(this.MqttPort))
+                    {
+                        this.MqttPort = "1883"; // Default MQTT port
+                    }
                 }
-                if (!String.IsNullOrEmpty(this.TeamsToken))
+                catch (Exception ex)
                 {
-                    this.PlainTeamsToken = CryptoHelper.DecryptString(this.TeamsToken);
-                }
-                if (string.IsNullOrEmpty(this.MqttPort))
-                {
-                    this.MqttPort = "1883"; // Default MQTT port
+                    Log.Error("LoadSettingsFromFile: Error loading settings from file: {message}", ex.Message);
                 }
             }
             else
@@ -246,7 +257,7 @@ namespace TEAMS2HA
 
         private List<string> sensorNames = new List<string>
         {
-            "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages", "teamsRunning"
+            "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages", "TeamsRunning"
         };
 
         private bool teamspaired = false;
@@ -263,12 +274,18 @@ namespace TEAMS2HA
 
             // Configure logging
             LoggingConfig.Configure();
-
+            Log.Information("Starting TEAMS2HA");
             // Create the TEAMS2HA folder in the local application data folder
             var appDataFolder = Path.Combine(localAppData, "TEAMS2HA");
             Log.Debug("Set Folder Path to {path}", appDataFolder);
-            Directory.CreateDirectory(appDataFolder); // Ensure the directory exists
-
+            try
+            {
+                Directory.CreateDirectory(appDataFolder); // Ensure the directory exists
+            }
+            catch
+            {
+                Log.Error("Error creating Log Directory at {path}", appDataFolder);
+            }
             // Set the settings file path
             _settingsFilePath = Path.Combine(appDataFolder, "settings.json");
 
@@ -329,24 +346,32 @@ namespace TEAMS2HA
         #region Public Methods
         public async Task InitializeConnections()
         {
-            MqttService.Instance.Initialize(_settings, _settings.SensorPrefix, sensorNames);
-            await MqttService.Instance.ConnectAsync(AppSettings.Instance);
-            if (_mqttService == null)
+            try
             {
-                _mqttService = MqttService.Instance;
-                _mqttService.StatusUpdated += UpdateMqttStatus;
+                MqttService.Instance.Initialize(_settings, _settings.SensorPrefix, sensorNames);
+                await MqttService.Instance.ConnectAsync(AppSettings.Instance);
+                if (_mqttService == null)
+                {
+                    _mqttService = MqttService.Instance;
+                    _mqttService.StatusUpdated += UpdateMqttStatus;
+                }
 
+                await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+                // Uncomment to subscribe to all topics for debugging
+                // await _mqttService.SubscribeAsync("#", MqttQualityOfServiceLevel.AtLeastOnce);
+
+                _ = _mqttService.PublishConfigurations(null!, _settings);
+                _mqttService.CommandToTeams += HandleCommandToTeams;
+                InitializeWebSocket();
+                Dispatcher.Invoke(() => UpdateStatusMenuItems());
             }
-            await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-            await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
-            // await _mqttService.SubscribeAsync("#", MqttQualityOfServiceLevel.AtLeastOnce); //line to test all topics
-
-            _ = _mqttService.PublishConfigurations(null!, _settings);
-            _mqttService.CommandToTeams += HandleCommandToTeams;
-            InitializeWebSocket();
-            Dispatcher.Invoke(() => UpdateStatusMenuItems());
-
+            catch (Exception ex)
+            {
+                Log.Error($"Failed to initialize connections: {ex.Message}");
+            }
         }
+
         public bool IsTeamsConnected
         {
             get { return isTeamsConnected; }
@@ -374,27 +399,37 @@ namespace TEAMS2HA
         }
         private async void InitializeWebSocket()
         {
-            var uri = new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
-            await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
+            try
             {
-                // Update the UI with the new token
-                TeamsApiKeyBox.Text = "Paired";
-            });
-            await WebSocketManager.Instance.ConnectAsync(uri);
-            WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+                var uri = new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
 
+                await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
+                {
+                    // Update the UI with the new token
+                    Dispatcher.Invoke(() => TeamsApiKeyBox.Text = "Paired");
+                });
 
-            WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+                await WebSocketManager.Instance.ConnectAsync(uri);
+                WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+
+                WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+                {
+                    // Because this event handler might be called from a non-UI thread,
+                    // use Dispatcher.Invoke to ensure that the UI update runs on the UI thread:
+                    Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
+                };
+
+                Dispatcher.Invoke(() => UpdateStatusMenuItems());
+            }
+            catch (Exception ex)
             {
-                // Because this event handler might be called from a non-UI thread,
-                // use Dispatcher.Invoke to ensure that the UI update runs on the UI thread:
-                Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
-            };
-
-
-
-            Dispatcher.Invoke(() => UpdateStatusMenuItems());
+                Log.Error($"Error initializing WebSocket connection: {ex.Message}");
+                Dispatcher.Invoke(() =>
+                    MessageBox.Show("Failed to connect to Teams service. Please check your network settings and try again.", "WebSocket Connection Failed", MessageBoxButton.OK, MessageBoxImage.Error)
+                );
+            }
         }
+
         private void MainWindow_StateChanged(object sender, EventArgs e)
         {
             if (WindowState == WindowState.Minimized)
@@ -417,6 +452,7 @@ namespace TEAMS2HA
         private void MainWindow_Closing(object sender, CancelEventArgs e)
         {
             // Minimize to system tray instead of closing
+            Log.Information("MainWindow_Closing: Minimizing to system tray");
             e.Cancel = true;
             this.WindowState = WindowState.Minimized;
         }
@@ -448,8 +484,10 @@ namespace TEAMS2HA
         private void AboutMenuItem_Click(object sender, RoutedEventArgs e)
         {
             string currentTheme = _settings.Theme; // Assuming this is where the theme is stored
-            var aboutWindow = new AboutWindow(deviceid, MyNotifyIcon);
-            aboutWindow.Owner = this;
+            var aboutWindow = new AboutWindow(deviceid, MyNotifyIcon)
+            {
+                Owner = this
+            };
             aboutWindow.ShowDialog();
         }
 
@@ -512,57 +550,67 @@ namespace TEAMS2HA
 
         private void CreateNotifyIconContextMenu()
         {
-            ContextMenu contextMenu = new ContextMenu();
+            Log.Information("CreateNotifyIconContextMenu: Creating NotifyIcon Context Menu");
+            try
+            {
+                ContextMenu contextMenu = new ContextMenu();
 
-            // Show/Hide Window
-            MenuItem showHideMenuItem = new MenuItem();
-            showHideMenuItem.Header = "Show/Hide";
-            showHideMenuItem.Click += ShowHideMenuItem_Click;
+                // Show/Hide Window
+                MenuItem showHideMenuItem = new MenuItem();
+                showHideMenuItem.Header = "Show/Hide";
+                showHideMenuItem.Click += ShowHideMenuItem_Click;
 
-            // MQTT Status
-            _mqttStatusMenuItem = new MenuItem { Header = "MQTT Status: Unknown", IsEnabled = false };
+                // MQTT Status
+                _mqttStatusMenuItem = new MenuItem { Header = "MQTT Status: Unknown", IsEnabled = false };
 
-            // Teams Status
-            _teamsStatusMenuItem = new MenuItem { Header = "Teams Status: Unknown", IsEnabled = false };
+                // Teams Status
+                _teamsStatusMenuItem = new MenuItem { Header = "Teams Status: Unknown", IsEnabled = false };
 
-            // Logs
-            _logMenuItem = new MenuItem { Header = "View Logs" };
-            _logMenuItem.Click += LogsButton_Click; // Reuse existing event handler
+                // Logs
+                _logMenuItem = new MenuItem { Header = "View Logs" };
+                _logMenuItem.Click += LogsButton_Click; // Reuse existing event handler
 
-            // About
-            _aboutMenuItem = new MenuItem { Header = "About" };
-            _aboutMenuItem.Click += AboutMenuItem_Click;
+                // About
+                _aboutMenuItem = new MenuItem { Header = "About" };
+                _aboutMenuItem.Click += AboutMenuItem_Click;
 
-            // Exit
-            MenuItem exitMenuItem = new MenuItem();
-            exitMenuItem.Header = "Exit";
-            exitMenuItem.Click += ExitMenuItem_Click;
+                // Exit
+                MenuItem exitMenuItem = new MenuItem();
+                exitMenuItem.Header = "Exit";
+                exitMenuItem.Click += ExitMenuItem_Click;
 
-            contextMenu.Items.Add(showHideMenuItem);
-            contextMenu.Items.Add(_mqttStatusMenuItem);
-            contextMenu.Items.Add(_teamsStatusMenuItem);
-            contextMenu.Items.Add(_logMenuItem);
-            contextMenu.Items.Add(_aboutMenuItem);
-            contextMenu.Items.Add(new Separator()); // Separator before exit
-            contextMenu.Items.Add(exitMenuItem);
+                contextMenu.Items.Add(showHideMenuItem);
+                contextMenu.Items.Add(_mqttStatusMenuItem);
+                contextMenu.Items.Add(_teamsStatusMenuItem);
+                contextMenu.Items.Add(_logMenuItem);
+                contextMenu.Items.Add(_aboutMenuItem);
+                contextMenu.Items.Add(new Separator()); // Separator before exit
+                contextMenu.Items.Add(exitMenuItem);
 
-            MyNotifyIcon.ContextMenu = contextMenu;
+                MyNotifyIcon.ContextMenu = contextMenu;
+            }
+            catch (Exception ex)
+            {
+                Log.Error("CreateNotifyIconContextMenu: Error creating NotifyIcon Context Menu: {message}", ex.Message);
+            }
         }
 
-        private void ExitMenuItem_Click(object sender, RoutedEventArgs e)
+        private async void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
             // Handle the click event for the exit menu item (Close the application)
             if (_mqttService != null)
             {
+                Log.Information("ExitMenuItem_Click: Disconnecting MQTT client...");
                 _mqttService.StatusUpdated -= UpdateMqttStatus;
                 _mqttService.CommandToTeams -= HandleCommandToTeams;
 
-                // Disconnect asynchronously without waiting
-                _ = _mqttService.DisconnectAsync();
+                if (_mqttService.IsConnected)
+                {
+                    await _mqttService.DisconnectAsync();
+                    Log.Debug("MQTT Client Disposed");
+                }
 
-                // Dispose of the MQTT service
-                _mqttService.Dispose();
-                Log.Debug("MQTT Client Disposed");
+
             }
 
 
@@ -575,7 +623,14 @@ namespace TEAMS2HA
         {
             if (WebSocketManager.Instance != null && WebSocketManager.Instance.IsConnected)
             {
-                await WebSocketManager.Instance.SendMessageAsync(jsonMessage);
+                try
+                {
+                    await WebSocketManager.Instance.SendMessageAsync(jsonMessage);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("HandleCommandToTeams: Error sending message to Teams: {message}", ex.Message);
+                }
             }
             else
             {
@@ -583,7 +638,6 @@ namespace TEAMS2HA
                 Log.Warning("WebSocketManager is not connected. Message not sent.");
             }
         }
-
 
 
 
@@ -708,7 +762,7 @@ namespace TEAMS2HA
             if (!_settings.HasShownOneTimeNotice2)
             {
                 // Show the notice to the user
-                MessageBox.Show("Important: Due to recent updates, the functionality of TEAMS2HA has changed. sensor prefixes are now all forced to lower case", "Notice", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("Important: New for this version, improved logging and error checking.", "Notice", MessageBoxButton.OK, MessageBoxImage.Information);
 
                 // Update the setting so that the notice isn't shown again
                 _settings.HasShownOneTimeNotice2 = true;
@@ -744,11 +798,7 @@ namespace TEAMS2HA
         {
             Log.Debug("SaveSettings_Click: Save Settings Clicked" + _settings.ToString());
 
-            // uncomment below for testing ** insecure as tokens exposed in logs! **
-            //foreach(var setting in _settings.GetType().GetProperties())
-            //{
-            //    Log.Debug(setting.Name + " " + setting.GetValue(_settings));
-            //}
+
             await SaveSettingsAsync();
         }
 
@@ -840,7 +890,14 @@ namespace TEAMS2HA
                 _latestMeetingUpdate = e.MeetingUpdate;
                 Log.Debug("TeamsClient_TeamsUpdateReceived: Teams Update Received {update}", _latestMeetingUpdate);
                 // Update sensor configurations
-                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                try
+                {
+                    await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("TeamsClient_TeamsUpdateReceived: Error publishing configurations: {message}", ex.Message);
+                }
                 UpdateStatusMenuItems();
             }
         }
@@ -853,7 +910,7 @@ namespace TEAMS2HA
                 _teamsStatusMenuItem.Header = "Teams Status: " + (isConnected ? "Connected" : "Disconnected");
                 if (_latestMeetingUpdate != null && _latestMeetingUpdate.MeetingState != null)
                 {
-                    _latestMeetingUpdate.MeetingState.teamsRunning = isConnected;
+                    _latestMeetingUpdate.MeetingState.TeamsRunning = isConnected;
                 }
                 _ = _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
             });

@@ -5,8 +5,8 @@
     <TargetFramework>net7.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <UseWPF>true</UseWPF>
-    <AssemblyVersion>1.1.0.751</AssemblyVersion>
-    <FileVersion>1.1.0.751</FileVersion>
+    <AssemblyVersion>1.1.0.769</AssemblyVersion>
+    <FileVersion>1.1.0.769</FileVersion>
     <ApplicationIcon>Assets\Square150x150Logo.scale-200.ico</ApplicationIcon>
     <Title>Teams2HA</Title>
     <PackageIcon>Square150x150Logo.scale-200.png</PackageIcon>
@@ -28,15 +28,15 @@
 
   <ItemGroup>
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="1.1.0" />
-    <PackageReference Include="MaterialDesignColors" Version="3.0.0" />
-    <PackageReference Include="MaterialDesignThemes" Version="5.0.0" />
+    <PackageReference Include="MaterialDesignColors" Version="3.1.0" />
+    <PackageReference Include="MaterialDesignThemes" Version="5.1.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
     <PackageReference Include="MQTTnet" Version="4.3.6.1152" />
     <PackageReference Include="MQTTnet.Extensions.ManagedClient" Version="4.3.6.1152" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="Serilog" Version="4.0.0" />
-    <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
-    <PackageReference Include="Serilog.Sinks.File" Version="5.0.0" />
+    <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup>

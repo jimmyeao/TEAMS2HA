@@ -1,17 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Configuration;
-using System.Data;
-using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
+using Serilog; // Ensure Serilog is configured properly in the project
 
 namespace TEAMS2HA
 {
-    /// <summary>
-    /// Interaction logic for App.xaml
-    /// </summary>
     public partial class App : Application
     {
         private static Mutex mutex = null;
@@ -31,7 +24,36 @@ namespace TEAMS2HA
                 return;
             }
 
+            // Configure logging here if not already configured
+            Log.Logger = new LoggerConfiguration()
+                .MinimumLevel.Debug()
+                .WriteTo.File("logs\\TEAMS2HA_.txt", rollingInterval: RollingInterval.Day)
+                .CreateLogger();
+
+            // Handle unhandled exceptions
+            this.DispatcherUnhandledException += App_DispatcherUnhandledException;
+            AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
+
             base.OnStartup(e);
+        }
+
+        private void App_DispatcherUnhandledException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
+        {
+            Log.Error($"Unhandled exception caught on dispatcher thread: {e.Exception}");
+            // Optionally, prevent application exit
+            e.Handled = true;
+        }
+
+        private void CurrentDomain_UnhandledException(object sender, UnhandledExceptionEventArgs e)
+        {
+            Log.Error($"Unhandled exception caught on current domain: {e.ExceptionObject}");
+        }
+
+        protected override void OnExit(ExitEventArgs e)
+        {
+            Log.CloseAndFlush(); // Ensure all logs are flushed properly
+            mutex?.ReleaseMutex(); // Release the mutex when application is exiting
+            base.OnExit(e);
         }
     }
 }

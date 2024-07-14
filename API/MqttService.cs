@@ -58,8 +58,7 @@ namespace TEAMS2HA.API
 
                 _sensorNames = sensorNames;
                 _isInitialized = true;
-                //_mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
-
+       
             }
             else
             {
@@ -108,7 +107,7 @@ namespace TEAMS2HA.API
                 await Task.CompletedTask;
             };
             Log.Information("MQTT client created.");
-            // _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+       
 
         }
         public async Task SubscribeToReactionButtonsAsync()
@@ -164,7 +163,14 @@ namespace TEAMS2HA.API
                     string reactionPayloadJson = JsonConvert.SerializeObject(reactionPayload);
 
                     // Invoke the command to send the reaction to Teams
-                    CommandToTeams?.Invoke(reactionPayloadJson);
+                    try
+                    {
+                        CommandToTeams?.Invoke(reactionPayloadJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error($"Error sending reaction to Teams: {ex.Message}");
+                    }
                 }
             }
 
@@ -218,7 +224,14 @@ namespace TEAMS2HA.API
             if (!string.IsNullOrEmpty(jsonMessage))
             {
                 // Raise the event
-                CommandToTeams?.Invoke(jsonMessage);
+                try
+                {
+                    CommandToTeams?.Invoke(jsonMessage);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Error sending command to Teams: {ex.Message}");
+                }
             }
         }
         public async Task ConnectAsync(AppSettings settings)
@@ -333,7 +346,14 @@ namespace TEAMS2HA.API
                     .Build();
                 if (_mqttClient.IsConnected)
                 {
-                    await PublishAsync(message);
+                    try
+                    {
+                        await PublishAsync(message);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error($"Error publishing reaction button configuration: {ex.Message}");
+                    }
                 }
 
             }
@@ -499,7 +519,7 @@ namespace TEAMS2HA.API
                         IsBackgroundBlurred = false,
                         IsSharing = false,
                         HasUnreadMessages = false,
-                        teamsRunning = IsTeamsRunning()
+                        TeamsRunning = IsTeamsRunning()
                     }
                 };
             }
@@ -662,7 +682,7 @@ namespace TEAMS2HA.API
                     // Similar casting for these properties
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
 
-                case "teamsRunning":
+                case "TeamsRunning":
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
 
                 default:
@@ -682,7 +702,7 @@ namespace TEAMS2HA.API
                 case "HasUnreadMessages":
                 case "IsRecordingOn":
                 case "IsSharing":
-                case "teamsRunning":
+                case "TeamsRunning":
                     return "binary_sensor"; // These are true/false sensors
                 default:
                     return "unknown"; // Or a default device class if appropriate
@@ -703,7 +723,7 @@ namespace TEAMS2HA.API
                     IsBackgroundBlurred = false,
                     IsSharing = false,
                     HasUnreadMessages = false,
-                    teamsRunning = false
+                    TeamsRunning = false
                 }
             };
 

@@ -167,7 +167,7 @@ namespace TEAMS2HA.API
             }
         }
 
-        public bool teamsRunning { get; set; }
+        public bool TeamsRunning { get; set; }
         public bool CanToggleMute { get; set; }
         public bool CanToggleVideo { get; set; }
         public bool CanToggleHand { get; set; }

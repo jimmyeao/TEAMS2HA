@@ -79,7 +79,7 @@ namespace TEAMS2HA.API
             }
             catch (Exception ex)
             {
-                Log.Error("Failed to connect: " + ex.Message);
+                Log.Error("Failed to connect to Teams: " + ex.Message);
                 SetIsConnected(false);
             }
             finally
@@ -92,7 +92,7 @@ namespace TEAMS2HA.API
             if (_isConnected != value)
             {
                 _isConnected = value;
-                State.Instance.teamsRunning = value; //update the MQTT state
+                State.Instance.TeamsRunning = value; //update the MQTT state
 
                 ConnectionStatusChanged?.Invoke(IsConnected); //update the UI
             }
@@ -105,8 +105,12 @@ namespace TEAMS2HA.API
                 _pairingResponseTaskSource = new TaskCompletionSource<string>();
 
                 string pairingCommand = "{\"action\":\"pair\",\"parameters\":{},\"requestId\":1}";
-                await SendMessageAsync(pairingCommand);
-
+                try
+                {
+                    await SendMessageAsync(pairingCommand);
+                } catch (Exception ex) {
+                    Log.Error("Error sending pairing command: " + ex.Message);
+                }
                 var responseTask = await Task.WhenAny(_pairingResponseTaskSource.Task, Task.Delay(TimeSpan.FromSeconds(30)));
 
                 if (responseTask == _pairingResponseTaskSource.Task)
@@ -174,16 +178,29 @@ namespace TEAMS2HA.API
                 Log.Warning("WebSocket is not connected. Message not sent.");
                 return;
             }
-
-            byte[] messageBytes = Encoding.UTF8.GetBytes(message);
-            await _clientWebSocket.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, cancellationToken);
-            Log.Debug($"Message Sent: {message}");
+            try
+            {
+                byte[] messageBytes = Encoding.UTF8.GetBytes(message);
+                await _clientWebSocket.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, cancellationToken);
+                Log.Debug($"Message Sent: {message}");
+            }
+            catch (Exception ex)
+            {
+                Log.Error("Error sending message from websocket manager: " + ex.Message);
+            }
         }
         public async Task EnsureConnectedAsync()
         {
             if (_clientWebSocket.State != WebSocketState.Open)
             {
-                await ConnectAsync(_currentUri);
+                Log.Information("Reconnecting to Teams...");
+                try
+                {
+                    await ConnectAsync(_currentUri);
+                } catch (Exception ex)
+                {
+                    Log.Error("Error reconnecting to Teams: " + ex.Message);
+                }
             }
         }
         public async Task SendReactionToTeamsAsync(string reactionType)
@@ -333,7 +350,7 @@ namespace TEAMS2HA.API
                     meetingState["isRecordingOn"] = meetingUpdate.MeetingState.IsRecordingOn;
                     meetingState["isBackgroundBlurred"] = meetingUpdate.MeetingState.IsBackgroundBlurred;
                     meetingState["isSharing"] = meetingUpdate.MeetingState.IsSharing;
-                    meetingUpdate.MeetingState.teamsRunning = IsConnected;
+                    meetingUpdate.MeetingState.TeamsRunning = IsConnected;
                     if (meetingUpdate.MeetingState.IsVideoOn)
                     {
                         State.Instance.Camera = "On";
@@ -342,13 +359,13 @@ namespace TEAMS2HA.API
                     {
                         State.Instance.Camera = "Off";
                     }
-                    if (meetingUpdate.MeetingState.teamsRunning)
+                    if (meetingUpdate.MeetingState.TeamsRunning)
                     {
-                        State.Instance.teamsRunning = true;
+                        State.Instance.TeamsRunning = true;
                     }
                     else
                     {
-                        State.Instance.teamsRunning = false;
+                        State.Instance.TeamsRunning = false;
                     }
                     if (meetingUpdate.MeetingState.IsInMeeting)
                     {
@@ -404,13 +421,14 @@ namespace TEAMS2HA.API
                     }
                     try
                     {
+                        Log.Information("Meeting State Updated: {meetingState}", meetingState);
                         TeamsUpdateReceived?.Invoke(this, new TeamsUpdateEventArgs { MeetingUpdate = meetingUpdate });
                     }
                     catch (Exception ex)
                     {
                         Log.Error(ex, "Error in TeamsUpdateReceived");
                     }
-                    Log.Debug($"Meeting State Updated: {meetingState}");
+                    
                 }
             }
         }
@@ -418,9 +436,16 @@ namespace TEAMS2HA.API
         {
             if (_clientWebSocket.State == WebSocketState.Open)
             {
-                await _clientWebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnect", CancellationToken.None);
-                SetIsConnected(false);
-                Log.Information("Disconnected from server.");
+                try
+                {
+                    await _clientWebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Client disconnect", CancellationToken.None);
+                    SetIsConnected(false);
+                    Log.Information("Disconnected from server.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("Error disconnecting from server: " + ex.Message);
+                }
             }
         }
     }
