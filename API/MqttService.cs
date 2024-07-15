@@ -249,6 +249,8 @@ namespace TEAMS2HA.API
 
             var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
                 .WithClientId("TEAMS2HA")
+                .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
+                .WithCleanSession(true)
                 .WithCredentials(settings.MqttUsername, settings.MqttPassword);
             if (settings.UseWebsockets && !settings.UseTLS)
             {
@@ -291,7 +293,7 @@ namespace TEAMS2HA.API
 
             var options = new ManagedMqttClientOptionsBuilder()
                 .WithAutoReconnectDelay(TimeSpan.FromSeconds(5))
-
+                
                 .WithClientOptions(mqttClientOptionsBuilder.Build())
                 .Build();
 
