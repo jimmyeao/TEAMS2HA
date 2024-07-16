@@ -101,7 +101,11 @@ namespace TEAMS2HA.API
 
             _mqttClient.DisconnectedAsync += async e =>
             {
-                Log.Information("Disconnected from MQTT broker.");
+                Log.Information($"Disconnected from MQTT broker. Reason: {e.Reason} | Exception: {e.Exception?.Message}");
+                if (e.Exception != null)
+                {
+                    Log.Error($"Exception during disconnect: {e.Exception}");
+                }
                 _mqttClient.ApplicationMessageReceivedAsync -= OnMessageReceivedAsync;
 
                 await Task.CompletedTask;
@@ -246,10 +250,10 @@ namespace TEAMS2HA.API
                 await _mqttClient.StopAsync();
                 Log.Information("Existing MQTT client stopped successfully.");
             }
-
+            string uniqueClientId = $"TEAMS2HA_{Environment.MachineName}";
             var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
-                .WithClientId("TEAMS2HA")
-                .WithKeepAlivePeriod(TimeSpan.FromSeconds(30))
+                .WithClientId(uniqueClientId)
+                .WithKeepAlivePeriod(TimeSpan.FromSeconds(60))
                 .WithCleanSession(true)
                 .WithCredentials(settings.MqttUsername, settings.MqttPassword);
             if (settings.UseWebsockets && !settings.UseTLS)
