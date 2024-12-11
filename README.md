@@ -4,11 +4,8 @@
 
 <H1>Teams2HA</H1>
 
-<h3>IMPORTANT!!</h3>
-
-Please review Breaking changes ahead of the next version (723) which will be released this weekend (28th Mar 2024) https://github.com/jimmyeao/TEAMS2HA/blob/master/breaking.md
-<br>
-
+DONT FORGET TO ENABLE THE API IN TEAMS!
+Settings, Privacy, scroll to bottom and under 3rd party api click Manage Api then enable it
 
 
 This is an agent that runs on windows and uses the Local teams API (https://support.microsoft.com/en-gb/office/connect-to-third-party-devices-in-microsoft-teams-aabca9f2-47bb-407f-9f9b-81a104a883d6?wt.mc_id=SEC-MVP-5004985) to retrieve the status of the user (In a meeting, Video On, Mute, blur etc) and push these into homeassistant sensors using MQTT.
