@@ -848,18 +848,30 @@ namespace TEAMS2HA
             // only reconnect if the mqtt settings have changed
             if (mqttSettingsChanged)
             {
-                _mqttService.CommandToTeams -= HandleCommandToTeams;
-                await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set");
-                await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state");
-                Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
-                await MqttService.Instance.ConnectAsync(AppSettings.Instance);
-                // republish sensors
-                await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
-                //re subscribe to topics
-                await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
-                Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
-                _mqttService.CommandToTeams += HandleCommandToTeams;
+                // need to catch bject reference not set to an instance of an object
+                try
+                {
+                    _mqttService.CommandToTeams -= HandleCommandToTeams;
+                    await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set");
+                    await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state");
+                    Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
+                    await MqttService.Instance.ConnectAsync(AppSettings.Instance);
+                    // republish sensors
+                    await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                    //re subscribe to topics
+                    await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                    await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+                    Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
+                    _mqttService.CommandToTeams += HandleCommandToTeams;
+                }
+                catch
+                {
+                    //ruh-roh shaggy...
+                    // lets log the error and move on
+                        Log.Error("SaveSettingsAsync: Error reconnecting MQTT client");
+
+
+                }
             }
         }
 
