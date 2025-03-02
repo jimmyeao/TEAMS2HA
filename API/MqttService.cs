@@ -258,13 +258,13 @@ namespace TEAMS2HA.API
                 .WithCredentials(settings.MqttUsername, settings.MqttPassword);
             if (settings.UseWebsockets && !settings.UseTLS)
             {
-                mqttClientOptionsBuilder.WithWebSocketServer($"ws://{settings.MqttAddress}:{settings.MqttPort}");
-                Log.Information($"WebSocket server set to ws://{settings.MqttAddress}:{settings.MqttPort}");
+                mqttClientOptionsBuilder.WithWebSocketServer(o => o.WithUri($"{settings.MqttAddress}:{settings.MqttPort}/mqtt"));
+                Log.Information($"WebSocket server set to ws://{settings.MqttAddress}:{settings.MqttPort}/mqtt");
             }
             else if (settings.UseWebsockets && settings.UseTLS)
             {
-                mqttClientOptionsBuilder.WithWebSocketServer($"wss://{settings.MqttAddress}:{settings.MqttPort}");
-                Log.Information($"WebSocket server set to wss://{settings.MqttAddress}:{settings.MqttPort}");
+                mqttClientOptionsBuilder.WithWebSocketServer(o => o.WithUri($"{settings.MqttAddress}:{settings.MqttPort}/mqtt"));
+                Log.Information($"WebSocket server set to wss://{settings.MqttAddress}:{settings.MqttPort}/mqtt");
             }
             else
             {
