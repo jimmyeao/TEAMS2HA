@@ -15,6 +15,7 @@ using TEAMS2HA.API;
 using TEAMS2HA.Properties;
 using TEAMS2HA.Utils;
 using Hardcodet.Wpf.TaskbarNotification;
+using Teams2HA.API;
 
 namespace TEAMS2HA
 {
@@ -363,6 +364,7 @@ namespace TEAMS2HA
 
                 _ = _mqttService.PublishConfigurations(null!, _settings);
                 _mqttService.CommandToTeams += HandleCommandToTeams;
+                OnAirWarningLight.Init();
                 InitializeWebSocket();
                 Dispatcher.Invoke(() => UpdateStatusMenuItems());
             }
@@ -909,6 +911,26 @@ namespace TEAMS2HA
                 try
                 {
                     await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                    if (_latestMeetingUpdate.MeetingState.IsVideoOn)
+                        OnAirWarningLight.SetCameraColor(255, 0, 0);
+                    else
+                        OnAirWarningLight.SetCameraColor(0, 0, 0);
+
+                    if (!_latestMeetingUpdate.MeetingState.IsMuted)
+                        OnAirWarningLight.SetMicrophoneColor(255, 0, 0);
+                    else
+                        OnAirWarningLight.SetMicrophoneColor(0, 0, 0);
+
+                    if (_latestMeetingUpdate.MeetingState.IsInMeeting)
+                        OnAirWarningLight.SetCenterColor(255, 0, 0);
+                    else if (_latestMeetingUpdate.MeetingState.IsSharing)
+                        OnAirWarningLight.SetCenterColor(109, 50, 168); //Purple
+                    else
+                    {
+                        OnAirWarningLight.SetCenterColor(0, 0, 0);
+                        OnAirWarningLight.SetMicrophoneColor(0, 0, 0);
+                        OnAirWarningLight.SetCameraColor(0, 0, 0);
+                    }
                 }
                 catch (Exception ex)
                 {
