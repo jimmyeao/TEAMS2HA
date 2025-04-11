@@ -914,12 +914,12 @@ namespace TEAMS2HA
                     if (_latestMeetingUpdate.MeetingState.IsVideoOn)
                         OnAirWarningLight.SetCameraColor(255, 0, 0);
                     else
-                        OnAirWarningLight.SetCameraColor(0, 0, 0);
+                        OnAirWarningLight.SetCameraColor(0, 255, 0);
 
                     if (!_latestMeetingUpdate.MeetingState.IsMuted)
                         OnAirWarningLight.SetMicrophoneColor(255, 0, 0);
                     else
-                        OnAirWarningLight.SetMicrophoneColor(0, 0, 0);
+                        OnAirWarningLight.SetMicrophoneColor(0, 255, 0);
 
                     if (_latestMeetingUpdate.MeetingState.IsInMeeting)
                         OnAirWarningLight.SetCenterColor(255, 0, 0);
@@ -927,9 +927,9 @@ namespace TEAMS2HA
                         OnAirWarningLight.SetCenterColor(109, 50, 168); //Purple
                     else
                     {
-                        OnAirWarningLight.SetCenterColor(0, 0, 0);
-                        OnAirWarningLight.SetMicrophoneColor(0, 0, 0);
-                        OnAirWarningLight.SetCameraColor(0, 0, 0);
+                        OnAirWarningLight.SetCenterColor(0, 255, 0);
+                        OnAirWarningLight.SetMicrophoneColor(0, 255, 0);
+                        OnAirWarningLight.SetCameraColor(0, 255, 0);
                     }
                 }
                 catch (Exception ex)
