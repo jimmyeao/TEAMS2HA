@@ -49,16 +49,16 @@ namespace TEAMS2HA.API
                 {
                     //set it to the computer name
                     deviceId = Environment.MachineName.ToLower();
-                    
-                }else
+
+                }
+                else
                 {
                     deviceId = deviceId.ToLower();
                 }
-                
+
                 _sensorNames = sensorNames;
                 _isInitialized = true;
-                //_mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
-
+       
             }
             else
             {
@@ -93,7 +93,7 @@ namespace TEAMS2HA.API
                         mainWindow.UpdateMqttStatus(true);
                     }
                 });
-              
+
 
                 await Task.CompletedTask;
 
@@ -101,13 +101,17 @@ namespace TEAMS2HA.API
 
             _mqttClient.DisconnectedAsync += async e =>
             {
-                Log.Information("Disconnected from MQTT broker.");
+                Log.Information($"Disconnected from MQTT broker. Reason: {e.Reason} | Exception: {e.Exception?.Message}");
+                if (e.Exception != null)
+                {
+                    Log.Error($"Exception during disconnect: {e.Exception}");
+                }
                 _mqttClient.ApplicationMessageReceivedAsync -= OnMessageReceivedAsync;
-                
+
                 await Task.CompletedTask;
             };
             Log.Information("MQTT client created.");
-           // _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
+       
 
         }
         public async Task SubscribeToReactionButtonsAsync()
@@ -163,7 +167,14 @@ namespace TEAMS2HA.API
                     string reactionPayloadJson = JsonConvert.SerializeObject(reactionPayload);
 
                     // Invoke the command to send the reaction to Teams
-                    CommandToTeams?.Invoke(reactionPayloadJson);
+                    try
+                    {
+                        CommandToTeams?.Invoke(reactionPayloadJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error($"Error sending reaction to Teams: {ex.Message}");
+                    }
                 }
             }
 
@@ -217,7 +228,14 @@ namespace TEAMS2HA.API
             if (!string.IsNullOrEmpty(jsonMessage))
             {
                 // Raise the event
-                CommandToTeams?.Invoke(jsonMessage);
+                try
+                {
+                    CommandToTeams?.Invoke(jsonMessage);
+                }
+                catch (Exception ex)
+                {
+                    Log.Error($"Error sending command to Teams: {ex.Message}");
+                }
             }
         }
         public async Task ConnectAsync(AppSettings settings)
@@ -232,19 +250,21 @@ namespace TEAMS2HA.API
                 await _mqttClient.StopAsync();
                 Log.Information("Existing MQTT client stopped successfully.");
             }
-
+            string uniqueClientId = $"TEAMS2HA_{Environment.MachineName}";
             var mqttClientOptionsBuilder = new MqttClientOptionsBuilder()
-                .WithClientId("TEAMS2HA")
+                .WithClientId(uniqueClientId)
+                .WithKeepAlivePeriod(TimeSpan.FromSeconds(60))
+                .WithCleanSession(true)
                 .WithCredentials(settings.MqttUsername, settings.MqttPassword);
             if (settings.UseWebsockets && !settings.UseTLS)
             {
-                mqttClientOptionsBuilder.WithWebSocketServer($"ws://{settings.MqttAddress}:{settings.MqttPort}");
-                Log.Information($"WebSocket server set to ws://{settings.MqttAddress}:{settings.MqttPort}");
+                mqttClientOptionsBuilder.WithWebSocketServer(o => o.WithUri($"{settings.MqttAddress}:{settings.MqttPort}/mqtt"));
+                Log.Information($"WebSocket server set to ws://{settings.MqttAddress}:{settings.MqttPort}/mqtt");
             }
             else if (settings.UseWebsockets && settings.UseTLS)
             {
-                mqttClientOptionsBuilder.WithWebSocketServer($"wss://{settings.MqttAddress}:{settings.MqttPort}");
-                Log.Information($"WebSocket server set to wss://{settings.MqttAddress}:{settings.MqttPort}");
+                mqttClientOptionsBuilder.WithWebSocketServer(o => o.WithUri($"{settings.MqttAddress}:{settings.MqttPort}/mqtt"));
+                Log.Information($"WebSocket server set to wss://{settings.MqttAddress}:{settings.MqttPort}/mqtt");
             }
             else
             {
@@ -277,10 +297,10 @@ namespace TEAMS2HA.API
 
             var options = new ManagedMqttClientOptionsBuilder()
                 .WithAutoReconnectDelay(TimeSpan.FromSeconds(5))
-               
+                
                 .WithClientOptions(mqttClientOptionsBuilder.Build())
                 .Build();
-            
+
             try
             {
                 Log.Information($"Starting MQTT client...{options}");
@@ -332,7 +352,14 @@ namespace TEAMS2HA.API
                     .Build();
                 if (_mqttClient.IsConnected)
                 {
-                    await PublishAsync(message);
+                    try
+                    {
+                        await PublishAsync(message);
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error($"Error publishing reaction button configuration: {ex.Message}");
+                    }
                 }
 
             }
@@ -357,7 +384,7 @@ namespace TEAMS2HA.API
         public async Task SetupSubscriptionsAsync()
         {
             // Subscribe to necessary topics
-           // await SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
+            // await SubscribeAsync($"homeassistant/switch/{_settings.SensorPrefix}/+/set", MqttQualityOfServiceLevel.AtLeastOnce, true);
             await SubscribeToReactionButtonsAsync();
             // Add any other necessary subscriptions here
         }
@@ -429,7 +456,7 @@ namespace TEAMS2HA.API
 
             foreach (var permission in permissions)
             {
-                
+
                 bool isAllowed = permission.Value;
                 _deviceId = _settings.SensorPrefix.ToLower();
                 string sensorName = permission.Key.ToLower();
@@ -483,7 +510,7 @@ namespace TEAMS2HA.API
                 name = _deviceId.ToLower(), // Device name
                 sw = "v1.0" // Software version
             };
-            
+
             if (meetingUpdate == null)
             {
                 meetingUpdate = new MeetingUpdate
@@ -498,11 +525,11 @@ namespace TEAMS2HA.API
                         IsBackgroundBlurred = false,
                         IsSharing = false,
                         HasUnreadMessages = false,
-                        teamsRunning = IsTeamsRunning()
-            }
+                        TeamsRunning = IsTeamsRunning()
+                    }
                 };
             }
-            
+
             foreach (var binary_sensor in _sensorNames)
             {
                 string sensorKey = $"{_deviceId.ToLower()}_{binary_sensor}";
@@ -661,7 +688,7 @@ namespace TEAMS2HA.API
                     // Similar casting for these properties
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
 
-                case "teamsRunning":
+                case "TeamsRunning":
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
 
                 default:
@@ -681,7 +708,7 @@ namespace TEAMS2HA.API
                 case "HasUnreadMessages":
                 case "IsRecordingOn":
                 case "IsSharing":
-                case "teamsRunning":
+                case "TeamsRunning":
                     return "binary_sensor"; // These are true/false sensors
                 default:
                     return "unknown"; // Or a default device class if appropriate
@@ -702,7 +729,7 @@ namespace TEAMS2HA.API
                     IsBackgroundBlurred = false,
                     IsSharing = false,
                     HasUnreadMessages = false,
-                    teamsRunning = false
+                    TeamsRunning = false
                 }
             };
 

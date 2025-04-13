@@ -36,7 +36,7 @@ namespace TEAMS2HA.API
         public bool IsRecordingOn { get; set; }
         public bool IsSharing { get; set; }
         public bool IsVideoOn { get; set; }
-        public bool teamsRunning { get; set; }
+        public bool TeamsRunning { get; set; }
 
         #endregion Public Properties
     }
@@ -45,8 +45,8 @@ namespace TEAMS2HA.API
     {
         #region Public Properties
 
-        public MeetingPermissions MeetingPermissions { get; set; }
-        public MeetingState MeetingState { get; set; }
+        public MeetingPermissions? MeetingPermissions { get; set; }
+        public MeetingState? MeetingState { get; set; }
 
         #endregion Public Properties
     }

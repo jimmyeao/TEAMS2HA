@@ -1,21 +1,18 @@
 [![CodeQL](https://github.com/jimmyeao/TEAMS2HA/actions/workflows/codeql.yml/badge.svg)](https://github.com/jimmyeao/TEAMS2HA/actions/workflows/codeql.yml)[![GitHub tag](https://img.shields.io/github/tag/jimmyeao/TEAMS2HA?include_prereleases=&sort=semver&color=blue)](https://github.com/jimmyeao/TEAMS2HA/releases/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](#license)
-[![issues - HA-Game-SPy](https://img.shields.io/github/issues/jimmyeao/TEAMS2HA)](https://github.com/jimmyeao/TEAMS2HA/issues)
+[![issues - Teams2HA](https://img.shields.io/github/issues/jimmyeao/TEAMS2HA)](https://github.com/jimmyeao/TEAMS2HA/issues)
 
 <H1>Teams2HA</H1>
 
-<h3>IMPORTANT!!</h3>
-
-Please review Breaking changes ahead of the next version which will be released this weekend (9th Mar 2024) https://github.com/jimmyeao/TEAMS2HA/blob/master/breaking.md
-<br>
-
+DONT FORGET TO ENABLE THE API IN TEAMS!
+Settings, Privacy, scroll to bottom and under 3rd party api click Manage Api then enable it
 
 
 This is an agent that runs on windows and uses the Local teams API (https://support.microsoft.com/en-gb/office/connect-to-third-party-devices-in-microsoft-teams-aabca9f2-47bb-407f-9f9b-81a104a883d6?wt.mc_id=SEC-MVP-5004985) to retrieve the status of the user (In a meeting, Video On, Mute, blur etc) and push these into homeassistant sensors using MQTT.
 
 Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/fe12bf8a-6bf5-4998-a286-c2acc5d79117)
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/c79d09a4-0770-470f-a941-d21f85e1cf37)
 
 
 <h2>Pairing</h2>
@@ -32,7 +29,8 @@ We support plain MQTT, MQTT over TLS, MQTT over Websockets and MQTT over Websock
 <h2>Entities</h2>
 Click the Entities button to see a list of entities this program will create:
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/a39632e7-f61c-4c0c-a953-555da53b3e0d)
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/5c87da53-e66a-4bc8-af4b-34af0ddc6d47)
+
 
 You can either right click and copy or double click to copy the entity name to the clipboard.
 
@@ -41,6 +39,9 @@ You can right click the system tray icon for a selection of functions:
 
 ![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/a8878f2e-38f6-4fce-a823-32f2008a0763)
 
+This is how it should look in MQTT in Homeassistant
+
+![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/ce524451-a96a-4eac-bb94-67e36f449527)
 
 
 
