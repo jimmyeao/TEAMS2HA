@@ -597,24 +597,20 @@ namespace TEAMS2HA
 
         private async void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            // Handle the click event for the exit menu item (Close the application)
             if (_mqttService != null)
             {
                 Log.Information("ExitMenuItem_Click: Disconnecting MQTT client...");
-                _mqttService.StatusUpdated -= UpdateMqttStatus;
                 _mqttService.CommandToTeams -= HandleCommandToTeams;
 
                 if (_mqttService.IsConnected)
                 {
                     await _mqttService.DisconnectAsync();
-                    Log.Debug("MQTT Client Disposed");
+                    Log.Debug("MQTT Client Disconnected");
                 }
 
-
+                // Dispose the service
+                _mqttService.Dispose();
             }
-
-
-            // Ensure to call the base class method to properly close the application
 
             Application.Current.Shutdown();
         }
@@ -736,15 +732,12 @@ namespace TEAMS2HA
             });
 
         }
-        public void UpdateMqttStatus(bool isPaired)
+        public void UpdateMqttStatus(bool isConnected)
         {
-
             Dispatcher.Invoke(() =>
             {
-                // Assuming you have a Label or some status indicator in your MainWindow
-                MQTTConnectionStatus.Text = isPaired ? "MQTT Status: Connected" : "MQTT Status: Not Connected";
+                MQTTConnectionStatus.Text = isConnected ? "MQTT Status: Connected" : "MQTT Status: Not Connected";
             });
-
         }
         // Event handler that enables the PairButton in WPF
         private void TeamsClient_RequirePairing(object sender, EventArgs e)
@@ -848,32 +841,26 @@ namespace TEAMS2HA
             // only reconnect if the mqtt settings have changed
             if (mqttSettingsChanged)
             {
-                // need to catch object reference not set to an instance of an object
                 if (_mqttService != null)
                 {
-
                     try
                     {
                         _mqttService.CommandToTeams -= HandleCommandToTeams;
-                        await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set");
-                        await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state");
+                        await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set");
+                        await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state");
                         Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
                         await MqttService.Instance.ConnectAsync(AppSettings.Instance);
                         // republish sensors
                         await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
                         //re subscribe to topics
-                        await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                        await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+                        await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                        await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
                         Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
                         _mqttService.CommandToTeams += HandleCommandToTeams;
                     }
-                    catch
+                    catch (Exception ex)
                     {
-                        //ruh-roh shaggy...
-                        // lets log the error and move on
-                        Log.Error("SaveSettingsAsync: Error reconnecting MQTT client");
-
-
+                        Log.Error("SaveSettingsAsync: Error reconnecting MQTT client: " + ex.Message);
                     }
                 }
             }
