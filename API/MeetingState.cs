@@ -37,6 +37,7 @@ namespace TEAMS2HA.API
         public bool IsSharing { get; set; }
         public bool IsVideoOn { get; set; }
         public bool TeamsRunning { get; set; }
+        public string TeamsStatus { get; set; } = "Unknown";
 
         #endregion Public Properties
     }

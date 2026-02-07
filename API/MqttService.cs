@@ -536,6 +536,43 @@ namespace TEAMS2HA.API
                     .Build();
                 await PublishAsync(stateMessage);
             }
+
+            // Publish TeamsStatus as a text sensor alongside the permission sensors
+            await PublishTeamsStatusSensorAsync();
+        }
+
+        public async Task PublishTeamsStatusSensorAsync()
+        {
+            _deviceId = _settings.SensorPrefix.ToLower();
+            string sensorName = "teamsstatus";
+            string statusValue = string.IsNullOrEmpty(State.Instance.Status) ? "Unknown" : State.Instance.Status;
+
+            string configTopic = $"homeassistant/sensor/{_deviceId}/{sensorName}/config";
+            var configPayload = new
+            {
+                name = sensorName,
+                unique_id = $"{_deviceId}_{sensorName}",
+                device = _deviceInfo,
+                icon = "mdi:account-circle",
+                state_topic = $"homeassistant/sensor/{_deviceId}/{sensorName}/state",
+            };
+
+            var configMessage = new MqttApplicationMessageBuilder()
+                .WithTopic(configTopic)
+                .WithPayload(JsonConvert.SerializeObject(configPayload))
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithRetainFlag(true)
+                .Build();
+            await PublishAsync(configMessage);
+
+            string stateTopic = $"homeassistant/sensor/{_deviceId}/{sensorName}/state";
+            var stateMessage = new MqttApplicationMessageBuilder()
+                .WithTopic(stateTopic)
+                .WithPayload(statusValue)
+                .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
+                .WithRetainFlag(true)
+                .Build();
+            await PublishAsync(stateMessage);
         }
 
         public async Task PublishConfigurations(MeetingUpdate meetingUpdate, AppSettings settings, bool forcePublish = false)
@@ -744,7 +781,8 @@ namespace TEAMS2HA.API
                     IsBackgroundBlurred = false,
                     IsSharing = false,
                     HasUnreadMessages = false,
-                    TeamsRunning = false
+                    TeamsRunning = false,
+                    TeamsStatus = "Unknown"
                 }
             };
 
@@ -763,7 +801,8 @@ namespace TEAMS2HA.API
                 $"binary_sensor.{deviceId.ToLower()}_issharing",
                 $"binary_sensor.{deviceId.ToLower()}_hasunreadmessages",
                 $"switch.{deviceId.ToLower()}_isbackgroundblurred",
-                $"binary_sensor.{deviceId.ToLower()}_teamsRunning"
+                $"binary_sensor.{deviceId.ToLower()}_teamsRunning",
+                $"sensor.{deviceId.ToLower()}_teamsstatus"
             };
 
             return entityNames;

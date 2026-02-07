@@ -261,6 +261,7 @@ namespace TEAMS2HA
         };
 
         private bool teamspaired = false;
+        private TeamsLogWatcher _teamsLogWatcher;
 
         #endregion Private Fields
 
@@ -334,6 +335,17 @@ namespace TEAMS2HA
             // Initialize connections
             InitializeConnections();
 
+            // Start monitoring Teams log files for user status
+            _teamsLogWatcher = new TeamsLogWatcher();
+            _teamsLogWatcher.StatusChanged += (sender, status) =>
+            {
+                State.Instance.Status = status;
+                if (_mqttService != null && _mqttService.IsConnected)
+                {
+                    _ = _mqttService.PublishTeamsStatusSensorAsync();
+                }
+            };
+            _teamsLogWatcher.Start();
 
             foreach (var sensor in sensorNames)
             {
@@ -591,6 +603,8 @@ namespace TEAMS2HA
 
         private async void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
+            _teamsLogWatcher?.Dispose();
+
             if (_mqttService != null)
             {
                 Log.Information("ExitMenuItem_Click: Disconnecting MQTT client...");
