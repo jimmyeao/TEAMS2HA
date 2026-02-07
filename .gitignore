@@ -9,6 +9,8 @@
 *.user
 *.userosscache
 *.sln.docstates
+.Claude
+Claude.md
 
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs

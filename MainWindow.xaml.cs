@@ -346,30 +346,31 @@ namespace TEAMS2HA
         #region Public Methods
         public async Task InitializeConnections()
         {
-            try
+            // Always assign the MQTT service singleton so SaveSettingsAsync can use it
+            if (_mqttService == null)
             {
                 MqttService.Instance.Initialize(_settings, _settings.SensorPrefix, sensorNames);
-                await MqttService.Instance.ConnectAsync(AppSettings.Instance);
-                if (_mqttService == null)
-                {
-                    _mqttService = MqttService.Instance;
-                    _mqttService.StatusUpdated += UpdateMqttStatus;
-                }
+                _mqttService = MqttService.Instance;
+                _mqttService.StatusUpdated += UpdateMqttStatus;
+                _mqttService.CommandToTeams += HandleCommandToTeams;
+            }
 
+            // Attempt MQTT connection (may fail on first run with empty settings)
+            try
+            {
+                await _mqttService.ConnectAsync(AppSettings.Instance);
                 await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                 await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
-                // Uncomment to subscribe to all topics for debugging
-                // await _mqttService.SubscribeAsync("#", MqttQualityOfServiceLevel.AtLeastOnce);
-
                 _ = _mqttService.PublishConfigurations(null!, _settings);
-                _mqttService.CommandToTeams += HandleCommandToTeams;
-                InitializeWebSocket();
-                Dispatcher.Invoke(() => UpdateStatusMenuItems());
             }
             catch (Exception ex)
             {
-                Log.Error($"Failed to initialize connections: {ex.Message}");
+                Log.Error($"Failed to connect to MQTT: {ex.Message}");
             }
+
+            // Always initialize WebSocket regardless of MQTT status
+            InitializeWebSocket();
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
 
         public bool IsTeamsConnected
@@ -403,30 +404,23 @@ namespace TEAMS2HA
             {
                 var uri = new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
 
-                await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
-                {
-                    // Update the UI with the new token
-                    Dispatcher.Invoke(() => TeamsApiKeyBox.Text = "Paired");
-                });
-
                 await WebSocketManager.Instance.ConnectAsync(uri);
-                WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
 
-                WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+                if (!isTeamsSubscribed)
                 {
-                    // Because this event handler might be called from a non-UI thread,
-                    // use Dispatcher.Invoke to ensure that the UI update runs on the UI thread:
-                    Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
-                };
+                    WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+                    WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+                    {
+                        Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
+                    };
+                    isTeamsSubscribed = true;
+                }
 
                 Dispatcher.Invoke(() => UpdateStatusMenuItems());
             }
             catch (Exception ex)
             {
                 Log.Error($"Error initializing WebSocket connection: {ex.Message}");
-                Dispatcher.Invoke(() =>
-                    MessageBox.Show("Failed to connect to Teams service. Please check your network settings and try again.", "WebSocket Connection Failed", MessageBoxButton.OK, MessageBoxImage.Error)
-                );
             }
         }
 
@@ -839,31 +833,27 @@ namespace TEAMS2HA
             // Save the updated settings to file
             settings.SaveSettingsToFile();
             // only reconnect if the mqtt settings have changed
-            if (mqttSettingsChanged)
+            if (mqttSettingsChanged && _mqttService != null)
             {
-                if (_mqttService != null)
+                try
                 {
-                    try
-                    {
-                        _mqttService.CommandToTeams -= HandleCommandToTeams;
-                        await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set");
-                        await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state");
-                        Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
-                        await MqttService.Instance.ConnectAsync(AppSettings.Instance);
-                        // republish sensors
-                        await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
-                        //re subscribe to topics
-                        await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                        await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
-                        Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
-                        _mqttService.CommandToTeams += HandleCommandToTeams;
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error("SaveSettingsAsync: Error reconnecting MQTT client: " + ex.Message);
-                    }
+                    await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set");
+                    await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state");
+                    Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
+                    await MqttService.Instance.ConnectAsync(AppSettings.Instance);
+                    // republish sensors
+                    await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                    //re subscribe to topics
+                    await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                    await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+                    Log.Debug("SaveSettingsAsync: MQTT client reconnected successfully.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("SaveSettingsAsync: Error reconnecting MQTT client: " + ex.Message);
                 }
             }
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
 
         private void SetWindowTitle()
@@ -922,7 +912,33 @@ namespace TEAMS2HA
 
         private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {
+            if (!WebSocketManager.Instance.IsConnected)
+            {
+                var uri = new Uri($"ws://localhost:8124?token=&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+                await WebSocketManager.Instance.ConnectAsync(uri);
 
+                // Register event handlers if this is the first successful connection
+                if (!isTeamsSubscribed && WebSocketManager.Instance.IsConnected)
+                {
+                    WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+                    WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+                    {
+                        Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
+                    };
+                    isTeamsSubscribed = true;
+                }
+            }
+
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
+
+            await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    TeamsApiKeyBox.Text = "Paired";
+                    UpdateStatusMenuItems();
+                });
+            });
         }
 
         private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
