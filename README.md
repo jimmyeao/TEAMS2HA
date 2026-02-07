@@ -7,12 +7,14 @@
 DONT FORGET TO ENABLE THE API IN TEAMS!
 Settings, Privacy, scroll to bottom and under 3rd party api click Manage Api then enable it
 
+NEW! We now track presence status from the local teams logs!
 
 This is an agent that runs on windows and uses the Local teams API (https://support.microsoft.com/en-gb/office/connect-to-third-party-devices-in-microsoft-teams-aabca9f2-47bb-407f-9f9b-81a104a883d6?wt.mc_id=SEC-MVP-5004985) to retrieve the status of the user (In a meeting, Video On, Mute, blur etc) and push these into homeassistant sensors using MQTT.
 
 Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/c79d09a4-0770-470f-a941-d21f85e1cf37)
+<img width="806" height="847" alt="image" src="https://github.com/user-attachments/assets/920579a0-f8f1-42fe-bff3-4c19839f80e9" />
+
 
 
 <h2>Pairing</h2>
@@ -41,7 +43,8 @@ You can right click the system tray icon for a selection of functions:
 
 This is how it should look in MQTT in Homeassistant
 
-![image](https://github.com/jimmyeao/TEAMS2HA/assets/5197831/ce524451-a96a-4eac-bb94-67e36f449527)
+<img width="843" height="1290" alt="image" src="https://github.com/user-attachments/assets/8d5ea8f8-9063-4711-86fd-e5c9e103af9b" />
+
 
 
 

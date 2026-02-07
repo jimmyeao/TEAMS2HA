@@ -1,65 +1,74 @@
-﻿<Window x:Class="TEAMS2HA.AboutWindow"
+<Window x:Class="TEAMS2HA.AboutWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-        mc:Ignorable="d"
-        Title="About" Height="531" Width="400"
-        WindowStartupLocation="CenterScreen" ResizeMode="NoResize"
-        
+        Title="About" Height="560" Width="440"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize"
         TextElement.Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"
         Background="{DynamicResource MaterialDesign.Brush.Background}"
         TextElement.FontWeight="Regular"
-        TextElement.FontSize="12"
-        FontFamily="{materialDesign:MaterialDesignFont}"    
-    
+        TextElement.FontSize="13"
+        FontFamily="{materialDesign:MaterialDesignFont}"
         TextOptions.TextFormattingMode="Ideal"
         TextOptions.TextRenderingMode="Auto">
 
-    <Window.Resources>
-        <!--<ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <materialDesign:BundledTheme BaseTheme="Light" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Primary/MaterialDesignColor.DeepPurple.xaml"/>
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignColors;component/Themes/Recommended/Accent/MaterialDesignColor.Lime.xaml"/>
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Defaults.xaml" />
-                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.DataGrid.xaml" />
-            </ResourceDictionary.MergedDictionaries>-->
-        <!--</ResourceDictionary>-->
-    </Window.Resources>
-    <Grid Margin="0,0,0,1">
-        <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="3*"/>
-            <ColumnDefinition Width="77*"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left" Height="494" Grid.Column="1" Margin="10,0,0,0">
-            <TextBlock Text="TEAMS2HA" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-            <TextBlock x:Name="VersionTextBlock" FontSize="16" HorizontalAlignment="Center"/>
-            <TextBlock Text="Developed by Jimmy White" FontSize="16" HorizontalAlignment="Center"/>
-            <TextBlock FontSize="16" HorizontalAlignment="Center" TextWrapping="Wrap">
-        <Run Text="GitHub Repository: "/>
-        <Hyperlink NavigateUri="https://github.com/jimmyeao/TEAMS2HA" RequestNavigate="Hyperlink_RequestNavigate">
-            <Run Text="TEAMS2HA"/>
-        </Hyperlink>
-            </TextBlock>
-            <ListBox x:Name="EntitiesListBox" Width="350" Height="331" MouseDoubleClick="EntitiesListBox_MouseDoubleClick" >
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <TextBlock Text="{Binding}" Tag="{Binding}">
-                            <TextBlock.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Copy" Click="CopyMenuItem_Click" 
-                              CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}"/>
-                                </ContextMenu>
-                            </TextBlock.ContextMenu>
-                        </TextBlock>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
+    <StackPanel Margin="16">
 
-            </ListBox>
-            <Button Content="Close" Width="100" materialDesign:ButtonAssist.CornerRadius="25" Click="CloseButton_Click" Style="{DynamicResource MaterialDesignRaisedButton}"/>
-        </StackPanel>
+        <!-- App Info Card -->
+        <materialDesign:Card Padding="20" Margin="0,0,0,12"
+                              materialDesign:ElevationAssist.Elevation="Dp2">
+            <StackPanel HorizontalAlignment="Center">
+                <materialDesign:PackIcon Kind="MicrosoftTeams" Width="48" Height="48"
+                                          HorizontalAlignment="Center" Margin="0,0,0,8"
+                                          Foreground="{DynamicResource PrimaryHueMidBrush}"/>
+                <TextBlock Text="TEAMS2HA" FontSize="22" FontWeight="Bold"
+                           HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                <TextBlock x:Name="VersionTextBlock" FontSize="14"
+                           HorizontalAlignment="Center" Margin="0,0,0,4"
+                           Foreground="{DynamicResource MaterialDesign.Brush.Foreground.Light}"/>
+                <TextBlock Text="Developed by Jimmy White" FontSize="13"
+                           HorizontalAlignment="Center" Margin="0,0,0,8"/>
+                <TextBlock FontSize="13" HorizontalAlignment="Center">
+                    <Run Text="GitHub: "/>
+                    <Hyperlink NavigateUri="https://github.com/jimmyeao/TEAMS2HA"
+                               RequestNavigate="Hyperlink_RequestNavigate">
+                        <Run Text="TEAMS2HA"/>
+                    </Hyperlink>
+                </TextBlock>
+            </StackPanel>
+        </materialDesign:Card>
 
-    </Grid>
+        <!-- Entities Card -->
+        <materialDesign:Card Padding="20" Margin="0,0,0,12"
+                              materialDesign:ElevationAssist.Elevation="Dp2">
+            <StackPanel>
+                <TextBlock Text="Discovered Entities"
+                           Style="{StaticResource MaterialDesignHeadline6TextBlock}"
+                           Margin="0,0,0,4"/>
+                <TextBlock Text="Double-click or right-click to copy an entity name."
+                           FontSize="11" Margin="0,0,0,8"
+                           Foreground="{DynamicResource MaterialDesign.Brush.Foreground.Light}"/>
+                <ListBox x:Name="EntitiesListBox" Height="260"
+                         MouseDoubleClick="EntitiesListBox_MouseDoubleClick">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Tag="{Binding}">
+                                <TextBlock.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Copy" Click="CopyMenuItem_Click"
+                                                  CommandParameter="{Binding PlacementTarget.Tag, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}"/>
+                                    </ContextMenu>
+                                </TextBlock.ContextMenu>
+                            </TextBlock>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+        </materialDesign:Card>
+
+        <!-- Close Button -->
+        <Button Content="Close" HorizontalAlignment="Right"
+                Style="{StaticResource MaterialDesignRaisedButton}"
+                Click="CloseButton_Click" Width="100"/>
+    </StackPanel>
 </Window>

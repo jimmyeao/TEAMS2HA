@@ -15,6 +15,9 @@ using TEAMS2HA.API;
 using TEAMS2HA.Properties;
 using TEAMS2HA.Utils;
 using Hardcodet.Wpf.TaskbarNotification;
+using MaterialDesignColors;
+using MaterialDesignThemes.Wpf;
+using System.Windows.Media;
 
 namespace TEAMS2HA
 {
@@ -116,6 +119,7 @@ namespace TEAMS2HA
         }
 
         public string Theme { get; set; }
+        public string ColorScheme { get; set; } = "DeepPurple / Lime";
         public bool UseTLS { get; set; }
         public bool UseWebsockets { get; set; }
 
@@ -223,6 +227,33 @@ namespace TEAMS2HA
         #endregion Private Methods
     }
 
+    public class ColorThemePreset
+    {
+        public string DisplayName { get; }
+        public MaterialDesignColor PrimaryColor { get; }
+        public MaterialDesignColor SecondaryColor { get; }
+        public SolidColorBrush PrimaryBrush => new SolidColorBrush(SwatchHelper.Lookup[PrimaryColor]);
+        public SolidColorBrush SecondaryBrush => new SolidColorBrush(SwatchHelper.Lookup[SecondaryColor]);
+
+        public ColorThemePreset(string displayName, MaterialDesignColor primary, MaterialDesignColor secondary)
+        {
+            DisplayName = displayName;
+            PrimaryColor = primary;
+            SecondaryColor = secondary;
+        }
+
+        public override string ToString() => DisplayName;
+
+        public static List<ColorThemePreset> Presets { get; } = new List<ColorThemePreset>
+        {
+            new ColorThemePreset("DeepPurple / Lime", MaterialDesignColor.DeepPurple, MaterialDesignColor.Lime),
+            new ColorThemePreset("Indigo / Pink", MaterialDesignColor.Indigo, MaterialDesignColor.Pink),
+            new ColorThemePreset("Teal / Amber", MaterialDesignColor.Teal, MaterialDesignColor.Amber),
+            new ColorThemePreset("BlueGrey / Cyan", MaterialDesignColor.BlueGrey, MaterialDesignColor.Cyan),
+            new ColorThemePreset("Blue / Orange", MaterialDesignColor.Blue, MaterialDesignColor.Orange),
+        };
+    }
+
     public partial class MainWindow : Window
     {
         #region Private Fields
@@ -247,7 +278,7 @@ namespace TEAMS2HA
         private MenuItem _teamsStatusMenuItem;
         private Action<string> _updateTokenAction;
         private string deviceid;
-        private bool isDarkTheme = false;
+        private bool _isInitializing = false;
         private bool isTeamsConnected = false;
         private bool isTeamsSubscribed = false;
         private bool mqttCommandToTeams = false;
@@ -261,6 +292,7 @@ namespace TEAMS2HA
         };
 
         private bool teamspaired = false;
+        private TeamsLogWatcher _teamsLogWatcher;
 
         #endregion Private Fields
 
@@ -334,6 +366,17 @@ namespace TEAMS2HA
             // Initialize connections
             InitializeConnections();
 
+            // Start monitoring Teams log files for user status
+            _teamsLogWatcher = new TeamsLogWatcher();
+            _teamsLogWatcher.StatusChanged += (sender, status) =>
+            {
+                State.Instance.Status = status;
+                if (_mqttService != null && _mqttService.IsConnected)
+                {
+                    _ = _mqttService.PublishTeamsStatusSensorAsync();
+                }
+            };
+            _teamsLogWatcher.Start();
 
             foreach (var sensor in sensorNames)
             {
@@ -346,30 +389,31 @@ namespace TEAMS2HA
         #region Public Methods
         public async Task InitializeConnections()
         {
-            try
+            // Always assign the MQTT service singleton so SaveSettingsAsync can use it
+            if (_mqttService == null)
             {
                 MqttService.Instance.Initialize(_settings, _settings.SensorPrefix, sensorNames);
-                await MqttService.Instance.ConnectAsync(AppSettings.Instance);
-                if (_mqttService == null)
-                {
-                    _mqttService = MqttService.Instance;
-                    _mqttService.StatusUpdated += UpdateMqttStatus;
-                }
+                _mqttService = MqttService.Instance;
+                _mqttService.StatusUpdated += UpdateMqttStatus;
+                _mqttService.CommandToTeams += HandleCommandToTeams;
+            }
 
+            // Attempt MQTT connection (may fail on first run with empty settings)
+            try
+            {
+                await _mqttService.ConnectAsync(AppSettings.Instance);
                 await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
                 await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
-                // Uncomment to subscribe to all topics for debugging
-                // await _mqttService.SubscribeAsync("#", MqttQualityOfServiceLevel.AtLeastOnce);
-
                 _ = _mqttService.PublishConfigurations(null!, _settings);
-                _mqttService.CommandToTeams += HandleCommandToTeams;
-                InitializeWebSocket();
-                Dispatcher.Invoke(() => UpdateStatusMenuItems());
             }
             catch (Exception ex)
             {
-                Log.Error($"Failed to initialize connections: {ex.Message}");
+                Log.Error($"Failed to connect to MQTT: {ex.Message}");
             }
+
+            // Always initialize WebSocket regardless of MQTT status
+            InitializeWebSocket();
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
 
         public bool IsTeamsConnected
@@ -403,30 +447,23 @@ namespace TEAMS2HA
             {
                 var uri = new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
 
-                await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
-                {
-                    // Update the UI with the new token
-                    Dispatcher.Invoke(() => TeamsApiKeyBox.Text = "Paired");
-                });
-
                 await WebSocketManager.Instance.ConnectAsync(uri);
-                WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
 
-                WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+                if (!isTeamsSubscribed)
                 {
-                    // Because this event handler might be called from a non-UI thread,
-                    // use Dispatcher.Invoke to ensure that the UI update runs on the UI thread:
-                    Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
-                };
+                    WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+                    WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+                    {
+                        Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
+                    };
+                    isTeamsSubscribed = true;
+                }
 
                 Dispatcher.Invoke(() => UpdateStatusMenuItems());
             }
             catch (Exception ex)
             {
                 Log.Error($"Error initializing WebSocket connection: {ex.Message}");
-                Dispatcher.Invoke(() =>
-                    MessageBox.Show("Failed to connect to Teams service. Please check your network settings and try again.", "WebSocket Connection Failed", MessageBoxButton.OK, MessageBoxImage.Error)
-                );
             }
         }
 
@@ -492,38 +529,33 @@ namespace TEAMS2HA
         }
 
 
-        private void ApplyTheme(string theme)
+        private void ApplyTheme(string baseTheme, string colorSchemeName)
         {
-            isDarkTheme = theme == "Dark";
-            Uri themeUri;
-            if (theme == "Dark")
-            {
-                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
-                isDarkTheme = true;
-            }
-            else
-            {
-                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml");
-                isDarkTheme = false;
-            }
+            var paletteHelper = new PaletteHelper();
+            var theme = paletteHelper.GetTheme();
 
-            // Update the theme
-            var existingTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == themeUri);
-            if (existingTheme == null)
-            {
-                existingTheme = new ResourceDictionary() { Source = themeUri };
-                Application.Current.Resources.MergedDictionaries.Add(existingTheme);
-            }
+            theme.SetBaseTheme(baseTheme == "Dark" ? BaseTheme.Dark : BaseTheme.Light);
 
-            // Remove the other theme
-            var otherThemeUri = isDarkTheme
-                ? new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml")
-                : new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
+            var preset = ColorThemePreset.Presets.FirstOrDefault(p => p.DisplayName == colorSchemeName)
+                         ?? ColorThemePreset.Presets[0];
 
-            var currentTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == otherThemeUri);
-            if (currentTheme != null)
+            var secondaryColor = SwatchHelper.Lookup[preset.SecondaryColor];
+            theme.SetPrimaryColor(SwatchHelper.Lookup[preset.PrimaryColor]);
+            theme.SetSecondaryColor(secondaryColor);
+
+            paletteHelper.SetTheme(theme);
+
+            // Set custom resources for focused text field outlines and the Save button,
+            // since PaletteHelper's built-in resource keys don't reliably propagate in MD3.
+            var secondaryBrush = new SolidColorBrush(secondaryColor);
+            secondaryBrush.Freeze();
+            Application.Current.Resources["ActiveFieldBrush"] = secondaryBrush;
+
+            if (SaveSettingsButton != null)
             {
-                Application.Current.Resources.MergedDictionaries.Remove(currentTheme);
+                SaveSettingsButton.Background = secondaryBrush;
+                double luminance = 0.299 * secondaryColor.R + 0.587 * secondaryColor.G + 0.114 * secondaryColor.B;
+                SaveSettingsButton.Foreground = new SolidColorBrush(luminance > 128 ? Colors.Black : Colors.White);
             }
         }
 
@@ -597,24 +629,22 @@ namespace TEAMS2HA
 
         private async void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
-            // Handle the click event for the exit menu item (Close the application)
+            _teamsLogWatcher?.Dispose();
+
             if (_mqttService != null)
             {
                 Log.Information("ExitMenuItem_Click: Disconnecting MQTT client...");
-                _mqttService.StatusUpdated -= UpdateMqttStatus;
                 _mqttService.CommandToTeams -= HandleCommandToTeams;
 
                 if (_mqttService.IsConnected)
                 {
                     await _mqttService.DisconnectAsync();
-                    Log.Debug("MQTT Client Disposed");
+                    Log.Debug("MQTT Client Disconnected");
                 }
 
-
+                // Dispose the service
+                _mqttService.Dispose();
             }
-
-
-            // Ensure to call the base class method to properly close the application
 
             Application.Current.Shutdown();
         }
@@ -683,7 +713,7 @@ namespace TEAMS2HA
 
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
-            //LoadSettings();
+            _isInitializing = true;
 
             RunAtWindowsBootCheckBox.IsChecked = _settings.RunAtWindowsBoot;
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
@@ -693,7 +723,6 @@ namespace TEAMS2HA
             IgnoreCert.IsChecked = _settings.IgnoreCertificateErrors;
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
-            // Added to set the sensor prefix
             if (string.IsNullOrEmpty(_settings.SensorPrefix))
             {
                 SensorPrefixBox.Text = System.Environment.MachineName;
@@ -702,7 +731,6 @@ namespace TEAMS2HA
             {
                 SensorPrefixBox.Text = _settings.SensorPrefix;
             }
-            SensorPrefixBox.Text = _settings.SensorPrefix;
             MqttPort.Text = _settings.MqttPort;
             if (_settings.PlainTeamsToken == null)
             {
@@ -715,16 +743,24 @@ namespace TEAMS2HA
                 PairButton.IsEnabled = false;
             }
 
-            ApplyTheme(_settings.Theme);
+            // Initialize theme controls
+            DarkModeToggle.IsChecked = _settings.Theme == "Dark";
+            ColorSchemeComboBox.ItemsSource = ColorThemePreset.Presets;
+            var selectedIndex = ColorThemePreset.Presets.FindIndex(p => p.DisplayName == _settings.ColorScheme);
+            ColorSchemeComboBox.SelectedIndex = selectedIndex >= 0 ? selectedIndex : 0;
+
+            _isInitializing = false;
+
+            ApplyTheme(_settings.Theme ?? "Light", _settings.ColorScheme ?? "DeepPurple / Lime");
+
             if (RunMinimisedCheckBox.IsChecked == true)
-            {// Start the window minimized and hide it
+            {
                 this.WindowState = WindowState.Minimized;
                 this.Hide();
-                MyNotifyIcon.Visibility = Visibility.Visible; // Show the NotifyIcon in the system tray
+                MyNotifyIcon.Visibility = Visibility.Visible;
             }
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
-            ShowOneTimeNoticeIfNeeded();
-
+            await ShowOneTimeNoticeIfNeeded();
         }
         public void UpdatePairingStatus(bool isPaired)
         {
@@ -736,15 +772,12 @@ namespace TEAMS2HA
             });
 
         }
-        public void UpdateMqttStatus(bool isPaired)
+        public void UpdateMqttStatus(bool isConnected)
         {
-
             Dispatcher.Invoke(() =>
             {
-                // Assuming you have a Label or some status indicator in your MainWindow
-                MQTTConnectionStatus.Text = isPaired ? "MQTT Status: Connected" : "MQTT Status: Not Connected";
+                MQTTConnectionStatus.Text = isConnected ? "MQTT Status: Connected" : "MQTT Status: Not Connected";
             });
-
         }
         // Event handler that enables the PairButton in WPF
         private void TeamsClient_RequirePairing(object sender, EventArgs e)
@@ -756,18 +789,53 @@ namespace TEAMS2HA
             });
         }
 
-        private void ShowOneTimeNoticeIfNeeded()
+        private async Task ShowOneTimeNoticeIfNeeded()
         {
-            // Check if the one-time notice has already been shown
             if (!_settings.HasShownOneTimeNotice2)
             {
-                // Show the notice to the user
-                MessageBox.Show("Important: New for this version, improved logging and error checking.", "Notice", MessageBoxButton.OK, MessageBoxImage.Information);
+                var content = new StackPanel
+                {
+                    Margin = new Thickness(24),
+                    MaxWidth = 360,
+                    Children =
+                    {
+                        new PackIcon
+                        {
+                            Kind = PackIconKind.InformationOutline,
+                            Width = 40,
+                            Height = 40,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 0, 0, 12)
+                        },
+                        new TextBlock
+                        {
+                            Text = "What's New",
+                            FontSize = 18,
+                            FontWeight = FontWeights.SemiBold,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 0, 0, 8)
+                        },
+                        new TextBlock
+                        {
+                            Text = "Important: New for this version, improved logging and error checking.",
+                            TextWrapping = TextWrapping.Wrap,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 0, 0, 16)
+                        },
+                        new Button
+                        {
+                            Content = "OK",
+                            Style = (Style)FindResource("MaterialDesignRaisedButton"),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Width = 80,
+                            Command = DialogHost.CloseDialogCommand
+                        }
+                    }
+                };
 
-                // Update the setting so that the notice isn't shown again
+                await DialogHost.Show(content, "RootDialogHost");
+
                 _settings.HasShownOneTimeNotice2 = true;
-
-                // Save the updated settings to file
                 _settings.SaveSettingsToFile();
             }
         }
@@ -830,6 +898,9 @@ namespace TEAMS2HA
                 settings.UseWebsockets = Websockets.IsChecked ?? false;
                 settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
                 settings.SensorPrefix = string.IsNullOrEmpty(SensorPrefixBox.Text) ? System.Environment.MachineName : SensorPrefixBox.Text;
+                settings.Theme = DarkModeToggle.IsChecked == true ? "Dark" : "Light";
+                if (ColorSchemeComboBox.SelectedItem is ColorThemePreset selectedPreset)
+                    settings.ColorScheme = selectedPreset.DisplayName;
             });
 
             // Now check if MQTT settings have changed
@@ -846,37 +917,27 @@ namespace TEAMS2HA
             // Save the updated settings to file
             settings.SaveSettingsToFile();
             // only reconnect if the mqtt settings have changed
-            if (mqttSettingsChanged)
+            if (mqttSettingsChanged && _mqttService != null)
             {
-                // need to catch object reference not set to an instance of an object
-                if (_mqttService != null)
+                try
                 {
-
-                    try
-                    {
-                        _mqttService.CommandToTeams -= HandleCommandToTeams;
-                        await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set");
-                        await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state");
-                        Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
-                        await MqttService.Instance.ConnectAsync(AppSettings.Instance);
-                        // republish sensors
-                        await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
-                        //re subscribe to topics
-                        await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}.ToLower()/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
-                        await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}.ToLower()/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
-                        Log.Debug("SaveSettingsAsync: Reconnecting MQTT client...");
-                        _mqttService.CommandToTeams += HandleCommandToTeams;
-                    }
-                    catch
-                    {
-                        //ruh-roh shaggy...
-                        // lets log the error and move on
-                        Log.Error("SaveSettingsAsync: Error reconnecting MQTT client");
-
-
-                    }
+                    await MqttService.Instance.UnsubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set");
+                    await MqttService.Instance.UnsubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state");
+                    Log.Information("SaveSettingsAsync: MQTT settings have changed. Reconnecting MQTT client...");
+                    await MqttService.Instance.ConnectAsync(AppSettings.Instance);
+                    // republish sensors
+                    await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                    //re subscribe to topics
+                    await _mqttService.SubscribeAsync($"homeassistant/switch/{deviceid.ToLower()}/+/set", MqttQualityOfServiceLevel.AtLeastOnce);
+                    await _mqttService.SubscribeAsync($"homeassistant/binary_sensor/{deviceid.ToLower()}/+/state", MqttQualityOfServiceLevel.AtLeastOnce);
+                    Log.Debug("SaveSettingsAsync: MQTT client reconnected successfully.");
+                }
+                catch (Exception ex)
+                {
+                    Log.Error("SaveSettingsAsync: Error reconnecting MQTT client: " + ex.Message);
                 }
             }
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
         }
 
         private void SetWindowTitle()
@@ -923,6 +984,10 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() =>
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
+                TeamsStatusIcon.Foreground = isConnected
+                    ? new SolidColorBrush(Colors.LightGreen)
+                    : new SolidColorBrush(Colors.Gray);
+                TeamsStatusIcon.ToolTip = TeamsConnectionStatus.Text;
                 _teamsStatusMenuItem.Header = "Teams Status: " + (isConnected ? "Connected" : "Disconnected");
                 if (_latestMeetingUpdate != null && _latestMeetingUpdate.MeetingState != null)
                 {
@@ -935,18 +1000,52 @@ namespace TEAMS2HA
 
         private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
         {
+            if (!WebSocketManager.Instance.IsConnected)
+            {
+                var uri = new Uri($"ws://localhost:8124?token=&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
+                await WebSocketManager.Instance.ConnectAsync(uri);
 
+                // Register event handlers if this is the first successful connection
+                if (!isTeamsSubscribed && WebSocketManager.Instance.IsConnected)
+                {
+                    WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
+                    WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
+                    {
+                        Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
+                    };
+                    isTeamsSubscribed = true;
+                }
+            }
+
+            Dispatcher.Invoke(() => UpdateStatusMenuItems());
+
+            await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    TeamsApiKeyBox.Text = "Paired";
+                    UpdateStatusMenuItems();
+                });
+            });
         }
 
-        private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
+        private void DarkModeToggle_Changed(object sender, RoutedEventArgs e)
         {
-            // Toggle the theme
-            isDarkTheme = !isDarkTheme;
-            _settings.Theme = isDarkTheme ? "Dark" : "Light";
-            ApplyTheme(_settings.Theme);
+            if (_isInitializing)
+                return;
+            _settings.Theme = DarkModeToggle.IsChecked == true ? "Dark" : "Light";
+            ApplyTheme(_settings.Theme, _settings.ColorScheme);
+        }
 
-            // Save settings after changing the theme
-            _ = SaveSettingsAsync();
+        private void ColorSchemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isInitializing)
+                return;
+            if (ColorSchemeComboBox.SelectedItem is ColorThemePreset preset)
+            {
+                _settings.ColorScheme = preset.DisplayName;
+                ApplyTheme(_settings.Theme, _settings.ColorScheme);
+            }
         }
 
         private void UpdateMqttStatus(string status)
@@ -963,13 +1062,24 @@ namespace TEAMS2HA
         {
             Dispatcher.Invoke(() =>
             {
-                // Update MQTT connection status text
-                MQTTConnectionStatus.Text = _mqttService != null && _mqttService.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
-                TeamsConnectionStatus.Text = WebSocketManager.Instance.IsConnected ? "Teams: Connected" : "Teams: Disconnected";
-                // Update menu items
-                _mqttStatusMenuItem.Header = MQTTConnectionStatus.Text; // Reuse the text set above
-                _teamsStatusMenuItem.Header = WebSocketManager.Instance.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
-                // Add other status updates here as necessary
+                bool mqttConnected = _mqttService != null && _mqttService.IsConnected;
+                bool teamsConnected = WebSocketManager.Instance.IsConnected;
+
+                MQTTConnectionStatus.Text = mqttConnected ? "MQTT: Connected" : "MQTT: Disconnected";
+                TeamsConnectionStatus.Text = teamsConnected ? "Teams: Connected" : "Teams: Disconnected";
+
+                MqttStatusIcon.Foreground = mqttConnected
+                    ? new SolidColorBrush(Colors.LightGreen)
+                    : new SolidColorBrush(Colors.Gray);
+                MqttStatusIcon.ToolTip = MQTTConnectionStatus.Text;
+
+                TeamsStatusIcon.Foreground = teamsConnected
+                    ? new SolidColorBrush(Colors.LightGreen)
+                    : new SolidColorBrush(Colors.Gray);
+                TeamsStatusIcon.ToolTip = TeamsConnectionStatus.Text;
+
+                _mqttStatusMenuItem.Header = MQTTConnectionStatus.Text;
+                _teamsStatusMenuItem.Header = teamsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
             });
         }
 
