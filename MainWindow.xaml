@@ -1,91 +1,218 @@
-﻿<Window
-      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:tb="http://www.hardcodet.net/taskbar"
-        xmlns:av="http://schemas.microsoft.com/expression/blend/2008" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" mc:Ignorable="av" x:Class="TEAMS2HA.MainWindow"
+<Window
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:tb="http://www.hardcodet.net/taskbar"
+    xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
+    x:Class="TEAMS2HA.MainWindow"
+    Title="Teams2HA" Height="854" Width="820"
+    TextElement.Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"
+    Background="{DynamicResource MaterialDesign.Brush.Background}"
+    TextElement.FontWeight="Regular"
+    TextElement.FontSize="13"
+    FontFamily="{materialDesign:MaterialDesignFont}"
+    TextOptions.TextFormattingMode="Ideal"
+    TextOptions.TextRenderingMode="Auto">
 
-        Title="Teams2HA" Height="420" Width="809"
+    <materialDesign:DialogHost Identifier="RootDialogHost">
+        <DockPanel>
+            <!-- Top Bar -->
+            <materialDesign:ColorZone Mode="PrimaryMid" Padding="12" DockPanel.Dock="Top"
+                                       materialDesign:ElevationAssist.Elevation="Dp4">
+                <DockPanel>
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left" VerticalAlignment="Center">
+                        <materialDesign:PackIcon Kind="MicrosoftTeams" Width="28" Height="28"
+                                                  VerticalAlignment="Center" Margin="0,0,12,0"/>
+                        <TextBlock Text="Teams2HA" Style="{StaticResource MaterialDesignHeadline6TextBlock}"
+                                   VerticalAlignment="Center"/>
+                    </StackPanel>
 
-        xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
-        TextElement.Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"
-        Background="{DynamicResource MaterialDesign.Brush.Background}"
-        TextElement.FontWeight="Regular"
-        TextElement.FontSize="12"
-        FontFamily="{materialDesign:MaterialDesignFont}"
+                    <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right"
+                                VerticalAlignment="Center">
+                        <materialDesign:PackIcon x:Name="TeamsStatusIcon" Kind="MicrosoftTeams"
+                                                  Width="20" Height="20" Margin="0,0,4,0"
+                                                  Foreground="Gray" VerticalAlignment="Center"
+                                                  ToolTip="Teams: Disconnected"/>
+                        <TextBlock x:Name="TeamsConnectionStatus" Text="Teams" FontSize="11"
+                                   VerticalAlignment="Center" Margin="0,0,16,0"/>
+                        <materialDesign:PackIcon x:Name="MqttStatusIcon" Kind="AccessPoint"
+                                                  Width="20" Height="20" Margin="0,0,4,0"
+                                                  Foreground="Gray" VerticalAlignment="Center"
+                                                  ToolTip="MQTT: Disconnected"/>
+                        <TextBlock x:Name="MQTTConnectionStatus" Text="MQTT" FontSize="11"
+                                   VerticalAlignment="Center" Margin="0,0,16,0"/>
+                        <Button Style="{StaticResource MaterialDesignIconButton}"
+                                Foreground="{Binding RelativeSource={RelativeSource AncestorType={x:Type FrameworkElement}}, Path=(TextElement.Foreground)}"
+                                Click="AboutMenuItem_Click" ToolTip="About / Entities">
+                            <materialDesign:PackIcon Kind="InformationOutline" Width="22" Height="22"/>
+                        </Button>
+                    </StackPanel>
+                </DockPanel>
+            </materialDesign:ColorZone>
 
-        TextOptions.TextFormattingMode="Ideal"
-        TextOptions.TextRenderingMode="Auto">
+            <!-- System Tray Icon (docked before ScrollViewer so ScrollViewer is last child and fills space) -->
+            <tb:TaskbarIcon x:Name="MyNotifyIcon" TrayMouseDoubleClick="MyNotifyIcon_Click"
+                            ToolTipText="Teams2HA" Visibility="Visible" DockPanel.Dock="Bottom"/>
 
-    <Window.Resources>
-    </Window.Resources>
-    <DockPanel>
-        <Menu DockPanel.Dock="Top">
-            <MenuItem Header="File">
-                <MenuItem Header="Exit" Click="ExitMenuItem_Click" />
-            </MenuItem>
-            <MenuItem Header="Help">
-                <MenuItem Header="About" Click="AboutMenuItem_Click" />
-            </MenuItem>
-        </Menu>
-        <Grid>
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-            </Grid.RowDefinitions>
+            <!-- Main Content (last child — fills all remaining space) -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                <StackPanel Margin="16">
 
-            <TextBlock Grid.Row="0" Text="Configuration:" FontWeight="Bold" Margin="10,0,0,0" />
+                    <!-- Teams Connection Card -->
+                    <materialDesign:Card Padding="16" Margin="0,0,0,10"
+                                          materialDesign:ElevationAssist.Elevation="Dp2">
+                        <StackPanel>
+                            <TextBlock Text="Teams Connection"
+                                       Style="{StaticResource MaterialDesignHeadline6TextBlock}"
+                                       Margin="0,0,0,10"/>
+                            <DockPanel>
+                                <Button x:Name="PairButton" Content="Pair with Teams"
+                                        DockPanel.Dock="Right" Margin="12,0,0,0"
+                                        Style="{StaticResource MaterialDesignRaisedButton}"
+                                        Click="TestTeamsConnection_Click"/>
+                                <TextBox x:Name="TeamsApiKeyBox" IsReadOnly="True"
+                                         Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                         materialDesign:HintAssist.Hint="Pairing Status"
+                                         materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource ActiveFieldBrush}"
+                                         materialDesign:HintAssist.Foreground="{DynamicResource ActiveFieldBrush}"/>
+                            </DockPanel>
+                        </StackPanel>
+                    </materialDesign:Card>
 
-            <StackPanel Grid.Row="1" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="Microsoft Teams Pairing:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
-                <TextBox x:Name="TeamsApiKeyBox" Width="300" Margin="10,0,0,0" IsReadOnly="True" Style="{DynamicResource MaterialDesignTextBox}" />
-                <Button x:Name="PairButton" Content="Pair with Teams" Margin="10,0,0,0" Click="TestTeamsConnection_Click" materialDesign:ButtonAssist.CornerRadius="10" Width="232" Style="{DynamicResource MaterialDesignRaisedButton}" />
-            </StackPanel>
+                    <!-- MQTT Configuration Card -->
+                    <materialDesign:Card Padding="16" Margin="0,0,0,10"
+                                          materialDesign:ElevationAssist.Elevation="Dp2">
+                        <StackPanel>
+                            <TextBlock Text="MQTT Configuration"
+                                       Style="{StaticResource MaterialDesignHeadline6TextBlock}"
+                                       Margin="0,0,0,10"/>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="120"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="2" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="MQTT host address:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
-                <TextBox x:Name="MqttAddress" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" />
-                <TextBlock Text="MQTT port:" Width="100" VerticalAlignment="Center" Margin="10,0,0,0" />
-                <TextBox x:Name="MqttPort" Width="80" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" Text="1883" />
-            </StackPanel>
+                                <TextBox x:Name="MqttAddress" Grid.Row="0" Grid.Column="0" Margin="0,0,12,10"
+                                         Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                         materialDesign:HintAssist.Hint="Host Address"
+                                         materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource ActiveFieldBrush}"
+                                         materialDesign:HintAssist.Foreground="{DynamicResource ActiveFieldBrush}"/>
+                                <TextBox x:Name="MqttPort" Grid.Row="0" Grid.Column="1" Margin="0,0,0,10"
+                                         Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                         materialDesign:HintAssist.Hint="Port" Text="1883"
+                                         materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource ActiveFieldBrush}"
+                                         materialDesign:HintAssist.Foreground="{DynamicResource ActiveFieldBrush}"/>
 
-            <StackPanel Grid.Row="3" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="MQTT Username:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
-                <TextBox x:Name="MqttUserNameBox" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" />
-                <CheckBox x:Name="UseTLS" Content="TLS?" RenderTransformOrigin="0.832,0.636" Margin="10,0,0,0" />
-                <CheckBox x:Name="IgnoreCert" Content="Ignore Cert Errors?" Margin="10,0,0,0" />
-            </StackPanel>
-            <StackPanel Grid.Row="4" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="MQTT Password:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
-                <PasswordBox x:Name="MQTTPasswordBox" PasswordChar="•" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignFloatingHintRevealPasswordBox}" />
-                <CheckBox x:Name="Websockets" Content="Use Websockets?" Margin="10,0,0,0" Checked="Websockets_Checked" Unchecked="Websockets_Unchecked" />
-            </StackPanel>
-            <StackPanel Grid.Row="5" Margin="0,10,0,0" Orientation="Horizontal">
-                <TextBlock Text="Sensor Prefix:" Width="200" VerticalAlignment="Center" Margin="10,0,0,0" />
-                <TextBox x:Name="SensorPrefixBox" Width="300" Margin="10,0,0,0" Style="{DynamicResource MaterialDesignTextBox}" />
-            </StackPanel>
-            <StackPanel Grid.Row="6" Margin="0,22,0,12" Orientation="Horizontal" Grid.RowSpan="3">
-                <CheckBox x:Name="RunAtWindowsBootCheckBox" Content="Run at Windows Boot" Margin="10,0,10,0" />
-                <CheckBox x:Name="RunMinimisedCheckBox" Content="Run Minimised" />
-                <Button Content="Save Settings" Margin="10,0,0,0" Click="SaveSettings_Click" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Width="120" />
-                <Button Grid.Column="1" Grid.Row="5" Content="Toggle Theme" Click="ToggleThemeButton_Click" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Margin="10,0,0,0" />
-                <Button Content="Logs" Click="LogsButton_Click" Margin="10,0,0,0" materialDesign:ButtonAssist.CornerRadius="10" Style="{DynamicResource MaterialDesignRaisedButton}" Width="125" />
-                <Button Content="Entities" Click="AboutMenuItem_Click" Style="{DynamicResource MaterialDesignRaisedButton}" materialDesign:ButtonAssist.CornerRadius="10" Margin="10" Grid.RowSpan="2" Grid.Row="5" Width="105" />
-            </StackPanel>
+                                <TextBox x:Name="MqttUserNameBox" Grid.Row="1" Grid.Column="0"
+                                         Grid.ColumnSpan="2" Margin="0,0,0,10"
+                                         Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                         materialDesign:HintAssist.Hint="Username"
+                                         materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource ActiveFieldBrush}"
+                                         materialDesign:HintAssist.Foreground="{DynamicResource ActiveFieldBrush}"/>
 
-            <TextBlock Grid.Row="8" FontWeight="Bold" Margin="10,34,0,-26"  Text="Connection Status:" />
+                                <PasswordBox x:Name="MQTTPasswordBox" Grid.Row="2" Grid.Column="0"
+                                             Grid.ColumnSpan="2" Margin="0,0,0,10" PasswordChar="*"
+                                             Style="{StaticResource MaterialDesignOutlinedRevealPasswordBox}"
+                                             materialDesign:HintAssist.Hint="Password"
+                                             materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource ActiveFieldBrush}"
+                                             materialDesign:HintAssist.Foreground="{DynamicResource ActiveFieldBrush}"/>
 
-            <StackPanel Grid.Row="8" Margin="0,54,0,-45" Orientation="Horizontal">
-                <TextBlock x:Name="TeamsConnectionStatus" Text="Teams: Disconnected" Margin="10,0,10,0" />
-                <TextBlock x:Name="MQTTConnectionStatus" Text="MQTT: Disconnected" />
-            </StackPanel>
-            <tb:TaskbarIcon x:Name="MyNotifyIcon"  TrayMouseDoubleClick="MyNotifyIcon_Click" ToolTipText="Teasm2HA" Visibility="Visible" />
-        </Grid>
-    </DockPanel>
+                                <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2"
+                                            Orientation="Horizontal">
+                                    <CheckBox x:Name="UseTLS" Content="TLS"
+                                              Style="{StaticResource MaterialDesignFilterChipCheckBox}"
+                                              Margin="0,0,8,0"/>
+                                    <CheckBox x:Name="IgnoreCert" Content="Ignore Cert Errors"
+                                              Style="{StaticResource MaterialDesignFilterChipCheckBox}"
+                                              Margin="0,0,8,0"/>
+                                    <CheckBox x:Name="Websockets" Content="WebSockets"
+                                              Style="{StaticResource MaterialDesignFilterChipCheckBox}"
+                                              Checked="Websockets_Checked" Unchecked="Websockets_Unchecked"/>
+                                </StackPanel>
+                            </Grid>
+                        </StackPanel>
+                    </materialDesign:Card>
+
+                    <!-- Options Card -->
+                    <materialDesign:Card Padding="16" Margin="0,0,0,12"
+                                          materialDesign:ElevationAssist.Elevation="Dp2">
+                        <StackPanel>
+                            <TextBlock Text="Options"
+                                       Style="{StaticResource MaterialDesignHeadline6TextBlock}"
+                                       Margin="0,0,0,10"/>
+
+                            <TextBox x:Name="SensorPrefixBox" Margin="0,0,0,10"
+                                     Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                     materialDesign:HintAssist.Hint="Sensor Prefix"
+                                     materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource ActiveFieldBrush}"
+                                     materialDesign:HintAssist.Foreground="{DynamicResource ActiveFieldBrush}"/>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <CheckBox x:Name="RunAtWindowsBootCheckBox" Content="Run at Boot"
+                                          Style="{StaticResource MaterialDesignFilterChipCheckBox}"
+                                          Margin="0,0,8,0"/>
+                                <CheckBox x:Name="RunMinimisedCheckBox" Content="Start Minimised"
+                                          Style="{StaticResource MaterialDesignFilterChipCheckBox}"/>
+                            </StackPanel>
+
+                            <Separator Margin="0,0,0,10"/>
+
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+
+                                <StackPanel Orientation="Horizontal" Grid.Column="0" VerticalAlignment="Center">
+                                    <materialDesign:PackIcon Kind="WhiteBalanceSunny" Width="18" Height="18"
+                                                              VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                    <ToggleButton x:Name="DarkModeToggle"
+                                                  Style="{StaticResource MaterialDesignSwitchToggleButton}"
+                                                  ToolTip="Toggle Dark Mode"
+                                                  Checked="DarkModeToggle_Changed"
+                                                  Unchecked="DarkModeToggle_Changed"/>
+                                    <materialDesign:PackIcon Kind="MoonWaningCrescent" Width="18" Height="18"
+                                                              VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                </StackPanel>
+
+                                <ComboBox x:Name="ColorSchemeComboBox" Grid.Column="1"
+                                          Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                                          materialDesign:HintAssist.Hint="Color Scheme"
+                                          materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource ActiveFieldBrush}"
+                                          materialDesign:HintAssist.Foreground="{DynamicResource ActiveFieldBrush}"
+                                          HorizontalAlignment="Right" Width="250"
+                                          SelectionChanged="ColorSchemeComboBox_SelectionChanged">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Ellipse Width="14" Height="14" Fill="{Binding PrimaryBrush}" Margin="0,0,6,0"/>
+                                                <Ellipse Width="14" Height="14" Fill="{Binding SecondaryBrush}" Margin="0,0,8,0"/>
+                                                <TextBlock Text="{Binding DisplayName}" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
+                        </StackPanel>
+                    </materialDesign:Card>
+
+                    <!-- Action Buttons -->
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,0,0,8">
+                        <Button Content="View Logs" Click="LogsButton_Click" Margin="0,0,8,0"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"/>
+                        <Button Content="Entities" Click="AboutMenuItem_Click" Margin="0,0,8,0"
+                                Style="{StaticResource MaterialDesignOutlinedButton}"/>
+                        <Button x:Name="SaveSettingsButton" Content="Save Settings" Click="SaveSettings_Click"
+                                Style="{StaticResource MaterialDesignRaisedButton}"/>
+                    </StackPanel>
+
+                </StackPanel>
+            </ScrollViewer>
+        </DockPanel>
+    </materialDesign:DialogHost>
 </Window>

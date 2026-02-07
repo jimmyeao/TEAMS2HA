@@ -11,7 +11,7 @@
 *.sln.docstates
 .Claude
 Claude.md
-
+nul
 # User-specific files (MonoDevelop/Xamarin Studio)
 *.userprefs
 

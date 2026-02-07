@@ -15,6 +15,9 @@ using TEAMS2HA.API;
 using TEAMS2HA.Properties;
 using TEAMS2HA.Utils;
 using Hardcodet.Wpf.TaskbarNotification;
+using MaterialDesignColors;
+using MaterialDesignThemes.Wpf;
+using System.Windows.Media;
 
 namespace TEAMS2HA
 {
@@ -116,6 +119,7 @@ namespace TEAMS2HA
         }
 
         public string Theme { get; set; }
+        public string ColorScheme { get; set; } = "DeepPurple / Lime";
         public bool UseTLS { get; set; }
         public bool UseWebsockets { get; set; }
 
@@ -223,6 +227,33 @@ namespace TEAMS2HA
         #endregion Private Methods
     }
 
+    public class ColorThemePreset
+    {
+        public string DisplayName { get; }
+        public MaterialDesignColor PrimaryColor { get; }
+        public MaterialDesignColor SecondaryColor { get; }
+        public SolidColorBrush PrimaryBrush => new SolidColorBrush(SwatchHelper.Lookup[PrimaryColor]);
+        public SolidColorBrush SecondaryBrush => new SolidColorBrush(SwatchHelper.Lookup[SecondaryColor]);
+
+        public ColorThemePreset(string displayName, MaterialDesignColor primary, MaterialDesignColor secondary)
+        {
+            DisplayName = displayName;
+            PrimaryColor = primary;
+            SecondaryColor = secondary;
+        }
+
+        public override string ToString() => DisplayName;
+
+        public static List<ColorThemePreset> Presets { get; } = new List<ColorThemePreset>
+        {
+            new ColorThemePreset("DeepPurple / Lime", MaterialDesignColor.DeepPurple, MaterialDesignColor.Lime),
+            new ColorThemePreset("Indigo / Pink", MaterialDesignColor.Indigo, MaterialDesignColor.Pink),
+            new ColorThemePreset("Teal / Amber", MaterialDesignColor.Teal, MaterialDesignColor.Amber),
+            new ColorThemePreset("BlueGrey / Cyan", MaterialDesignColor.BlueGrey, MaterialDesignColor.Cyan),
+            new ColorThemePreset("Blue / Orange", MaterialDesignColor.Blue, MaterialDesignColor.Orange),
+        };
+    }
+
     public partial class MainWindow : Window
     {
         #region Private Fields
@@ -247,7 +278,7 @@ namespace TEAMS2HA
         private MenuItem _teamsStatusMenuItem;
         private Action<string> _updateTokenAction;
         private string deviceid;
-        private bool isDarkTheme = false;
+        private bool _isInitializing = false;
         private bool isTeamsConnected = false;
         private bool isTeamsSubscribed = false;
         private bool mqttCommandToTeams = false;
@@ -498,38 +529,33 @@ namespace TEAMS2HA
         }
 
 
-        private void ApplyTheme(string theme)
+        private void ApplyTheme(string baseTheme, string colorSchemeName)
         {
-            isDarkTheme = theme == "Dark";
-            Uri themeUri;
-            if (theme == "Dark")
-            {
-                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
-                isDarkTheme = true;
-            }
-            else
-            {
-                themeUri = new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml");
-                isDarkTheme = false;
-            }
+            var paletteHelper = new PaletteHelper();
+            var theme = paletteHelper.GetTheme();
 
-            // Update the theme
-            var existingTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == themeUri);
-            if (existingTheme == null)
-            {
-                existingTheme = new ResourceDictionary() { Source = themeUri };
-                Application.Current.Resources.MergedDictionaries.Add(existingTheme);
-            }
+            theme.SetBaseTheme(baseTheme == "Dark" ? BaseTheme.Dark : BaseTheme.Light);
 
-            // Remove the other theme
-            var otherThemeUri = isDarkTheme
-                ? new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Light.xaml")
-                : new Uri("pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesignTheme.Dark.xaml");
+            var preset = ColorThemePreset.Presets.FirstOrDefault(p => p.DisplayName == colorSchemeName)
+                         ?? ColorThemePreset.Presets[0];
 
-            var currentTheme = Application.Current.Resources.MergedDictionaries.FirstOrDefault(d => d.Source == otherThemeUri);
-            if (currentTheme != null)
+            var secondaryColor = SwatchHelper.Lookup[preset.SecondaryColor];
+            theme.SetPrimaryColor(SwatchHelper.Lookup[preset.PrimaryColor]);
+            theme.SetSecondaryColor(secondaryColor);
+
+            paletteHelper.SetTheme(theme);
+
+            // Set custom resources for focused text field outlines and the Save button,
+            // since PaletteHelper's built-in resource keys don't reliably propagate in MD3.
+            var secondaryBrush = new SolidColorBrush(secondaryColor);
+            secondaryBrush.Freeze();
+            Application.Current.Resources["ActiveFieldBrush"] = secondaryBrush;
+
+            if (SaveSettingsButton != null)
             {
-                Application.Current.Resources.MergedDictionaries.Remove(currentTheme);
+                SaveSettingsButton.Background = secondaryBrush;
+                double luminance = 0.299 * secondaryColor.R + 0.587 * secondaryColor.G + 0.114 * secondaryColor.B;
+                SaveSettingsButton.Foreground = new SolidColorBrush(luminance > 128 ? Colors.Black : Colors.White);
             }
         }
 
@@ -687,7 +713,7 @@ namespace TEAMS2HA
 
         private async void MainPage_Loaded(object sender, RoutedEventArgs e)
         {
-            //LoadSettings();
+            _isInitializing = true;
 
             RunAtWindowsBootCheckBox.IsChecked = _settings.RunAtWindowsBoot;
             RunMinimisedCheckBox.IsChecked = _settings.RunMinimized;
@@ -697,7 +723,6 @@ namespace TEAMS2HA
             IgnoreCert.IsChecked = _settings.IgnoreCertificateErrors;
             MQTTPasswordBox.Password = _settings.MqttPassword;
             MqttAddress.Text = _settings.MqttAddress;
-            // Added to set the sensor prefix
             if (string.IsNullOrEmpty(_settings.SensorPrefix))
             {
                 SensorPrefixBox.Text = System.Environment.MachineName;
@@ -706,7 +731,6 @@ namespace TEAMS2HA
             {
                 SensorPrefixBox.Text = _settings.SensorPrefix;
             }
-            SensorPrefixBox.Text = _settings.SensorPrefix;
             MqttPort.Text = _settings.MqttPort;
             if (_settings.PlainTeamsToken == null)
             {
@@ -719,16 +743,24 @@ namespace TEAMS2HA
                 PairButton.IsEnabled = false;
             }
 
-            ApplyTheme(_settings.Theme);
+            // Initialize theme controls
+            DarkModeToggle.IsChecked = _settings.Theme == "Dark";
+            ColorSchemeComboBox.ItemsSource = ColorThemePreset.Presets;
+            var selectedIndex = ColorThemePreset.Presets.FindIndex(p => p.DisplayName == _settings.ColorScheme);
+            ColorSchemeComboBox.SelectedIndex = selectedIndex >= 0 ? selectedIndex : 0;
+
+            _isInitializing = false;
+
+            ApplyTheme(_settings.Theme ?? "Light", _settings.ColorScheme ?? "DeepPurple / Lime");
+
             if (RunMinimisedCheckBox.IsChecked == true)
-            {// Start the window minimized and hide it
+            {
                 this.WindowState = WindowState.Minimized;
                 this.Hide();
-                MyNotifyIcon.Visibility = Visibility.Visible; // Show the NotifyIcon in the system tray
+                MyNotifyIcon.Visibility = Visibility.Visible;
             }
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
-            ShowOneTimeNoticeIfNeeded();
-
+            await ShowOneTimeNoticeIfNeeded();
         }
         public void UpdatePairingStatus(bool isPaired)
         {
@@ -757,18 +789,53 @@ namespace TEAMS2HA
             });
         }
 
-        private void ShowOneTimeNoticeIfNeeded()
+        private async Task ShowOneTimeNoticeIfNeeded()
         {
-            // Check if the one-time notice has already been shown
             if (!_settings.HasShownOneTimeNotice2)
             {
-                // Show the notice to the user
-                MessageBox.Show("Important: New for this version, improved logging and error checking.", "Notice", MessageBoxButton.OK, MessageBoxImage.Information);
+                var content = new StackPanel
+                {
+                    Margin = new Thickness(24),
+                    MaxWidth = 360,
+                    Children =
+                    {
+                        new PackIcon
+                        {
+                            Kind = PackIconKind.InformationOutline,
+                            Width = 40,
+                            Height = 40,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 0, 0, 12)
+                        },
+                        new TextBlock
+                        {
+                            Text = "What's New",
+                            FontSize = 18,
+                            FontWeight = FontWeights.SemiBold,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 0, 0, 8)
+                        },
+                        new TextBlock
+                        {
+                            Text = "Important: New for this version, improved logging and error checking.",
+                            TextWrapping = TextWrapping.Wrap,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Margin = new Thickness(0, 0, 0, 16)
+                        },
+                        new Button
+                        {
+                            Content = "OK",
+                            Style = (Style)FindResource("MaterialDesignRaisedButton"),
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            Width = 80,
+                            Command = DialogHost.CloseDialogCommand
+                        }
+                    }
+                };
 
-                // Update the setting so that the notice isn't shown again
+                await DialogHost.Show(content, "RootDialogHost");
+
                 _settings.HasShownOneTimeNotice2 = true;
-
-                // Save the updated settings to file
                 _settings.SaveSettingsToFile();
             }
         }
@@ -831,6 +898,9 @@ namespace TEAMS2HA
                 settings.UseWebsockets = Websockets.IsChecked ?? false;
                 settings.RunAtWindowsBoot = RunAtWindowsBootCheckBox.IsChecked ?? false;
                 settings.SensorPrefix = string.IsNullOrEmpty(SensorPrefixBox.Text) ? System.Environment.MachineName : SensorPrefixBox.Text;
+                settings.Theme = DarkModeToggle.IsChecked == true ? "Dark" : "Light";
+                if (ColorSchemeComboBox.SelectedItem is ColorThemePreset selectedPreset)
+                    settings.ColorScheme = selectedPreset.DisplayName;
             });
 
             // Now check if MQTT settings have changed
@@ -914,6 +984,10 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() =>
             {
                 TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
+                TeamsStatusIcon.Foreground = isConnected
+                    ? new SolidColorBrush(Colors.LightGreen)
+                    : new SolidColorBrush(Colors.Gray);
+                TeamsStatusIcon.ToolTip = TeamsConnectionStatus.Text;
                 _teamsStatusMenuItem.Header = "Teams Status: " + (isConnected ? "Connected" : "Disconnected");
                 if (_latestMeetingUpdate != null && _latestMeetingUpdate.MeetingState != null)
                 {
@@ -955,15 +1029,23 @@ namespace TEAMS2HA
             });
         }
 
-        private void ToggleThemeButton_Click(object sender, RoutedEventArgs e)
+        private void DarkModeToggle_Changed(object sender, RoutedEventArgs e)
         {
-            // Toggle the theme
-            isDarkTheme = !isDarkTheme;
-            _settings.Theme = isDarkTheme ? "Dark" : "Light";
-            ApplyTheme(_settings.Theme);
+            if (_isInitializing)
+                return;
+            _settings.Theme = DarkModeToggle.IsChecked == true ? "Dark" : "Light";
+            ApplyTheme(_settings.Theme, _settings.ColorScheme);
+        }
 
-            // Save settings after changing the theme
-            _ = SaveSettingsAsync();
+        private void ColorSchemeComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (_isInitializing)
+                return;
+            if (ColorSchemeComboBox.SelectedItem is ColorThemePreset preset)
+            {
+                _settings.ColorScheme = preset.DisplayName;
+                ApplyTheme(_settings.Theme, _settings.ColorScheme);
+            }
         }
 
         private void UpdateMqttStatus(string status)
@@ -980,13 +1062,24 @@ namespace TEAMS2HA
         {
             Dispatcher.Invoke(() =>
             {
-                // Update MQTT connection status text
-                MQTTConnectionStatus.Text = _mqttService != null && _mqttService.IsConnected ? "MQTT Status: Connected" : "MQTT Status: Disconnected";
-                TeamsConnectionStatus.Text = WebSocketManager.Instance.IsConnected ? "Teams: Connected" : "Teams: Disconnected";
-                // Update menu items
-                _mqttStatusMenuItem.Header = MQTTConnectionStatus.Text; // Reuse the text set above
-                _teamsStatusMenuItem.Header = WebSocketManager.Instance.IsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
-                // Add other status updates here as necessary
+                bool mqttConnected = _mqttService != null && _mqttService.IsConnected;
+                bool teamsConnected = WebSocketManager.Instance.IsConnected;
+
+                MQTTConnectionStatus.Text = mqttConnected ? "MQTT: Connected" : "MQTT: Disconnected";
+                TeamsConnectionStatus.Text = teamsConnected ? "Teams: Connected" : "Teams: Disconnected";
+
+                MqttStatusIcon.Foreground = mqttConnected
+                    ? new SolidColorBrush(Colors.LightGreen)
+                    : new SolidColorBrush(Colors.Gray);
+                MqttStatusIcon.ToolTip = MQTTConnectionStatus.Text;
+
+                TeamsStatusIcon.Foreground = teamsConnected
+                    ? new SolidColorBrush(Colors.LightGreen)
+                    : new SolidColorBrush(Colors.Gray);
+                TeamsStatusIcon.ToolTip = TeamsConnectionStatus.Text;
+
+                _mqttStatusMenuItem.Header = MQTTConnectionStatus.Text;
+                _teamsStatusMenuItem.Header = teamsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
             });
         }
 
