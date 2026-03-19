@@ -110,6 +110,15 @@ namespace TEAMS2HA.API
                     Log.Error($"Exception during disconnect: {e.Exception}");
                 }
 
+                Application.Current.Dispatcher.Invoke(() =>
+                {
+                    var mainWindow = Application.Current.MainWindow as MainWindow;
+                    if (mainWindow != null)
+                    {
+                        mainWindow.UpdateMqttStatus(false);
+                    }
+                });
+
                 await Task.CompletedTask;
             };
 
@@ -318,18 +327,14 @@ namespace TEAMS2HA.API
                     {
                         o.WithSslProtocols(SslProtocols.Tls12);
                         Log.Information("TLS is enabled.");
-                    });
-                }
-
-                if (settings.IgnoreCertificateErrors)
-                {
-                    mqttClientOptionsBuilder.WithTlsOptions(o =>
-                    {
-                        o.WithCertificateValidationHandler(_ =>
+                        if (settings.IgnoreCertificateErrors)
                         {
-                            Log.Warning("Certificate validation is disabled; this is not recommended for production.");
-                            return true;
-                        });
+                            o.WithCertificateValidationHandler(_ =>
+                            {
+                                Log.Warning("Certificate validation is disabled; this is not recommended for production.");
+                                return true;
+                            });
+                        }
                     });
                 }
 
