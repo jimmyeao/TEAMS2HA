@@ -12,6 +12,7 @@ jobs:
   release:
     runs-on: windows-latest
 
+    name: Build (${{ matrix.label }})
     strategy:
       fail-fast: false
       matrix:
