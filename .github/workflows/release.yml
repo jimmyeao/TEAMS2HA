@@ -5,11 +5,21 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: windows-latest
-    permissions:
-      contents: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-pc-windows-msvc
+            label: x64
+          - target: aarch64-pc-windows-msvc
+            label: arm64
 
     steps:
       - name: Checkout
@@ -25,12 +35,13 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: x86_64-pc-windows-msvc
+          targets: ${{ matrix.target }}
 
       - name: Cache Rust build
         uses: swatinem/rust-cache@v2
         with:
           workspaces: tauri/src-tauri -> target
+          key: ${{ matrix.target }}
 
       - name: Install frontend dependencies
         run: npm ci
@@ -46,10 +57,16 @@ jobs:
           releaseName: Teams2HA ${{ github.ref_name }}
           releaseBody: |
             ## Installation
-            Download `Teams2HA_*_x64-setup.exe` and run it.
+            Download the installer for your architecture and run it.
             No administrator rights required — installs per-user to `%LOCALAPPDATA%`.
+
+            | File | Architecture |
+            |------|-------------|
+            | `Teams2HA_*_x64-setup.exe` | Intel / AMD (most PCs) |
+            | `Teams2HA_*_arm64-setup.exe` | ARM64 (Surface Pro X, Copilot+ PCs) |
 
             If you previously had the .NET version installed, it will be automatically
             removed on first launch of the new version.
           releaseDraft: false
           prerelease: false
+          args: --target ${{ matrix.target }}
