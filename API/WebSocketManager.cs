@@ -22,7 +22,6 @@ namespace TEAMS2HA.API
         private bool _isConnecting;
         private System.Timers.Timer _reconnectTimer;
         private readonly TimeSpan _reconnectInterval = TimeSpan.FromSeconds(30); // Reconnect every 30 seconds
-        private readonly Action<string> _updateTokenAction;
         public event EventHandler<TeamsUpdateEventArgs> TeamsUpdateReceived;
         public event EventHandler<string> MessageReceived;
         public event Action<bool> ConnectionStatusChanged;
@@ -98,45 +97,6 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task PairWithTeamsAsync(Action<string> updateTokenCallback)
-        {
-            if (_isConnected)
-            {
-                _pairingResponseTaskSource = new TaskCompletionSource<string>();
-
-                string pairingCommand = "{\"action\":\"pair\",\"parameters\":{},\"requestId\":1}";
-                try
-                {
-                    await SendMessageAsync(pairingCommand);
-                } catch (Exception ex) {
-                    Log.Error("Error sending pairing command: " + ex.Message);
-                }
-                var responseTask = await Task.WhenAny(_pairingResponseTaskSource.Task, Task.Delay(TimeSpan.FromSeconds(30)));
-
-                if (responseTask == _pairingResponseTaskSource.Task)
-                {
-                    var response = await _pairingResponseTaskSource.Task;
-                    var newToken = JsonConvert.DeserializeObject<TokenUpdate>(response).NewToken;
-                    AppSettings.Instance.PlainTeamsToken = newToken;
-                    AppSettings.Instance.SaveSettingsToFile();
-
-                    _updateTokenAction?.Invoke(newToken);
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        var mainWindow = Application.Current.MainWindow as MainWindow;
-                        if (mainWindow != null)
-                        {
-                            mainWindow.UpdatePairingStatus(true);
-                        }
-                    });
-
-                }
-                else
-                {
-                    Log.Warning("Pairing response timed out.");
-                }
-            }
-        }
         private async void StartReceiving()
         {
             var buffer = new byte[4096];
@@ -223,21 +183,7 @@ namespace TEAMS2HA.API
         {
             Log.Debug($"Message Received: {message}");
 
-            if (message.Contains("tokenRefresh"))
-            {
-                _pairingResponseTaskSource?.SetResult(message);
-                Log.Information("Result Message {message}", message);
-                var tokenUpdate = JsonConvert.DeserializeObject<TokenUpdate>(message);
-                AppSettings.Instance.PlainTeamsToken = tokenUpdate.NewToken;
-                AppSettings.Instance.SaveSettingsToFile();
-                Log.Debug($"Token Updated: {AppSettings.Instance.PlainTeamsToken}");
-                // Update the UI on the main thread
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    _updateTokenAction?.Invoke(AppSettings.Instance.PlainTeamsToken);
-                });
-            }
-            else if (message.Contains("meetingPermissions"))
+            if (message.Contains("meetingPermissions"))
             {
                 // Update the Message property of the State class
                 var settings = new JsonSerializerSettings
@@ -247,16 +193,6 @@ namespace TEAMS2HA.API
 
                 MeetingUpdate meetingUpdate = JsonConvert.DeserializeObject<MeetingUpdate>(message, settings);
 
-                if (meetingUpdate?.MeetingPermissions?.CanPair == true)
-                {
-                    // The 'canPair' permission is true, initiate pairing
-                    Log.Debug("Pairing with Teams");
-                    _ = PairWithTeamsAsync(newToken =>
-                    {
-
-
-                    });
-                }
                 // need to add in sensors for permissions
                 if (meetingUpdate?.MeetingPermissions?.CanToggleMute == true)
                 {

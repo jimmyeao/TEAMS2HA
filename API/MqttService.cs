@@ -89,16 +89,7 @@ namespace TEAMS2HA.API
             _mqttClient.ConnectedAsync += async e =>
             {
                 Log.Information("Connected to MQTT broker.");
-
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    var mainWindow = Application.Current.MainWindow as MainWindow;
-                    if (mainWindow != null)
-                    {
-                        mainWindow.UpdateMqttStatus(true);
-                    }
-                });
-
+                StatusUpdated?.Invoke("Connected");
                 await Task.CompletedTask;
             };
 
@@ -109,16 +100,7 @@ namespace TEAMS2HA.API
                 {
                     Log.Error($"Exception during disconnect: {e.Exception}");
                 }
-
-                Application.Current.Dispatcher.Invoke(() =>
-                {
-                    var mainWindow = Application.Current.MainWindow as MainWindow;
-                    if (mainWindow != null)
-                    {
-                        mainWindow.UpdateMqttStatus(false);
-                    }
-                });
-
+                StatusUpdated?.Invoke("Disconnected");
                 await Task.CompletedTask;
             };
 
@@ -151,8 +133,6 @@ namespace TEAMS2HA.API
                         Log.Information("Attempting to reconnect to MQTT broker...");
                         await _mqttClient.ConnectAsync(_mqttClientOptions, _cancellationTokenSource.Token);
 
-                        // Re-subscribe to topics after reconnection
-                        await SetupSubscriptionsAsync();
                     }
                     catch (Exception ex)
                     {
@@ -163,24 +143,6 @@ namespace TEAMS2HA.API
             finally
             {
                 _connectionSemaphore.Release();
-            }
-        }
-
-        public async Task SubscribeToReactionButtonsAsync()
-        {
-            _deviceId = AppSettings.Instance.SensorPrefix.ToLower();
-            var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
-            foreach (var reaction in reactions)
-            {
-                string commandTopic = $"homeassistant/button/{_deviceId.ToLower()}/{reaction}/set";
-                try
-                {
-                    await SubscribeAsync(commandTopic, MqttQualityOfServiceLevel.AtLeastOnce);
-                }
-                catch (Exception ex)
-                {
-                    Log.Information($"Error during reaction button MQTT subscribe: {ex.Message}");
-                }
             }
         }
 
@@ -197,35 +159,6 @@ namespace TEAMS2HA.API
             Log.Information($"Received message on topic {e.ApplicationMessage.Topic}: {payload}");
 
             string topic = e.ApplicationMessage.Topic;
-
-            if (topic.StartsWith($"homeassistant/button/{_deviceId.ToLower()}/") && payload == "press")
-            {
-                var parts = topic.Split('/');
-                if (parts.Length > 3)
-                {
-                    var reaction = parts[3]; // Extract the reaction type from the topic
-
-                    // Construct the JSON message for the reaction
-                    var reactionPayload = new
-                    {
-                        action = "send-reaction",
-                        parameters = new { type = reaction },
-                        requestId = 1
-                    };
-
-                    string reactionPayloadJson = JsonConvert.SerializeObject(reactionPayload);
-
-                    // Invoke the command to send the reaction to Teams
-                    try
-                    {
-                        CommandToTeams?.Invoke(reactionPayloadJson);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error($"Error sending reaction to Teams: {ex.Message}");
-                    }
-                }
-            }
 
             // Handle switch commands
             var topicParts = topic.Split('/');
@@ -259,13 +192,6 @@ namespace TEAMS2HA.API
                     jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"toggle-video\",\"action\":\"toggle-video\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
                     break;
 
-                case "isbackgroundblurred":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"background-blur\",\"action\":\"toggle-background-blur\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
-
-                case "ishandraised":
-                    jsonMessage = $"{{\"apiVersion\":\"1.0.0\",\"service\":\"raise-hand\",\"action\":\"toggle-hand\",\"manufacturer\":\"Jimmy White\",\"device\":\"THFHA\",\"timestamp\":{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()},\"requestId\":1}}";
-                    break;
             }
 
             if (!string.IsNullOrEmpty(jsonMessage))
@@ -344,9 +270,7 @@ namespace TEAMS2HA.API
                 await _mqttClient.ConnectAsync(_mqttClientOptions, _cancellationTokenSource.Token);
 
                 Log.Information($"MQTT client connected with new settings.");
-                await PublishPermissionSensorsAsync();
-                await PublishReactionButtonsAsync();
-                await SetupSubscriptionsAsync();
+                await PublishTeamsStatusSensorAsync();
                 Log.Information("Subscribed to incoming messages.");
 
                 // Start the reconnect timer
@@ -363,73 +287,9 @@ namespace TEAMS2HA.API
             }
         }
 
-        public async Task PublishReactionButtonsAsync()
-        {
-            var reactions = new List<string> { "like", "love", "applause", "wow", "laugh" };
-            var deviceInfo = new
-            {
-                ids = new[] { $"teams2ha_{_deviceId}" },
-                mf = "Jimmy White",
-                mdl = "Teams2HA Device",
-                name = _deviceId,
-                sw = "v1.0"
-            };
-
-            foreach (var reaction in reactions)
-            {
-                string configTopic = $"homeassistant/button/{_deviceId}/{reaction}/config";
-                var payload = new
-                {
-                    name = reaction,
-                    unique_id = $"{_deviceId}_{reaction}_reaction",
-                    icon = GetIconForReaction(reaction),
-                    device = deviceInfo,
-                    command_topic = $"homeassistant/button/{_deviceId}/{reaction}/set",
-                    payload_press = "press"
-                };
-
-                var message = new MqttApplicationMessageBuilder()
-                    .WithTopic(configTopic)
-                    .WithPayload(JsonConvert.SerializeObject(payload))
-                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                    .WithRetainFlag(true)
-                    .Build();
-
-                if (IsConnected)
-                {
-                    try
-                    {
-                        await PublishAsync(message);
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Error($"Error publishing reaction button configuration: {ex.Message}");
-                    }
-                }
-            }
-        }
-
-        private string GetIconForReaction(string reaction)
-        {
-            return reaction switch
-            {
-                "like" => "mdi:thumb-up-outline",
-                "love" => "mdi:heart-outline",
-                "applause" => "mdi:hand-clap",
-                "wow" => "mdi:emoticon-excited-outline",
-                "laugh" => "mdi:emoticon-happy-outline",
-                _ => "mdi:hand-okay"
-            };
-        }
-
         public bool IsTeamsRunning()
         {
             return Process.GetProcessesByName("ms-teams").Length > 0;
-        }
-
-        public async Task SetupSubscriptionsAsync()
-        {
-            await SubscribeToReactionButtonsAsync();
         }
 
         public async Task SubscribeAsync(string topic, MqttQualityOfServiceLevel qos)
@@ -488,62 +348,6 @@ namespace TEAMS2HA.API
             {
                 Log.Information($"Error during MQTT unsubscribe: {ex.Message}");
             }
-        }
-
-        public async Task PublishPermissionSensorsAsync()
-        {
-            var permissions = new Dictionary<string, bool>
-            {
-                { "canToggleMute", State.Instance.CanToggleMute },
-                { "canToggleVideo", State.Instance.CanToggleVideo },
-                { "canToggleHand", State.Instance.CanToggleHand },
-                { "canToggleBlur", State.Instance.CanToggleBlur },
-                { "canLeave", State.Instance.CanLeave },
-                { "canReact", State.Instance.CanReact},
-                { "canToggleShareTray", State.Instance.CanToggleShareTray },
-                { "canToggleChat", State.Instance.CanToggleChat },
-                { "canStopSharing", State.Instance.CanStopSharing },
-                { "canPair", State.Instance.CanPair}
-            };
-
-            foreach (var permission in permissions)
-            {
-                bool isAllowed = permission.Value;
-                _deviceId = _settings.SensorPrefix.ToLower();
-                string sensorName = permission.Key.ToLower();
-                string configTopic = $"homeassistant/binary_sensor/{_deviceId.ToLower()}/{sensorName}/config";
-                var configPayload = new
-                {
-                    name = sensorName,
-                    unique_id = $"{_deviceId}_{sensorName}",
-                    device = _deviceInfo,
-                    icon = "mdi:eye",
-                    state_topic = $"homeassistant/binary_sensor/{_deviceId.ToLower()}/{sensorName}/state",
-                    payload_on = "true",
-                    payload_off = "false"
-                };
-
-                var configMessage = new MqttApplicationMessageBuilder()
-                    .WithTopic(configTopic)
-                    .WithPayload(JsonConvert.SerializeObject(configPayload))
-                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                    .WithRetainFlag(true)
-                    .Build();
-                await PublishAsync(configMessage);
-
-                string stateTopic = $"homeassistant/binary_sensor/{_deviceId.ToLower()}/{sensorName}/state";
-                string statePayload = isAllowed ? "true" : "false";
-                var stateMessage = new MqttApplicationMessageBuilder()
-                    .WithTopic(stateTopic)
-                    .WithPayload(statePayload)
-                    .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce)
-                    .WithRetainFlag(true)
-                    .Build();
-                await PublishAsync(stateMessage);
-            }
-
-            // Publish TeamsStatus as a text sensor alongside the permission sensors
-            await PublishTeamsStatusSensorAsync();
         }
 
         public async Task PublishTeamsStatusSensorAsync()
@@ -607,11 +411,7 @@ namespace TEAMS2HA.API
                     {
                         IsMuted = false,
                         IsVideoOn = false,
-                        IsHandRaised = false,
                         IsInMeeting = false,
-                        IsRecordingOn = false,
-                        IsBackgroundBlurred = false,
-                        IsSharing = false,
                         HasUnreadMessages = false,
                         TeamsRunning = IsTeamsRunning()
                     }
@@ -702,8 +502,6 @@ namespace TEAMS2HA.API
                             .Build();
 
                         await PublishAsync(binarySensorStateMessage);
-                        await PublishPermissionSensorsAsync();
-                        await PublishReactionButtonsAsync();
                     }
                 }
             }
@@ -715,11 +513,7 @@ namespace TEAMS2HA.API
             {
                 "IsMuted" => state.IsMuted ? "mdi:microphone-off" : "mdi:microphone",
                 "IsVideoOn" => state.IsVideoOn ? "mdi:camera" : "mdi:camera-off",
-                "IsHandRaised" => state.IsHandRaised ? "mdi:hand-back-left" : "mdi:hand-back-left-off",
                 "IsInMeeting" => state.IsInMeeting ? "mdi:account-group" : "mdi:account-off",
-                "IsRecordingOn" => state.IsRecordingOn ? "mdi:record-rec" : "mdi:record",
-                "IsBackgroundBlurred" => state.IsBackgroundBlurred ? "mdi:blur" : "mdi:blur-off",
-                "IsSharing" => state.IsSharing ? "mdi:monitor-share" : "mdi:monitor-off",
                 "HasUnreadMessages" => state.HasUnreadMessages ? "mdi:message-alert" : "mdi:message-outline",
                 _ => "mdi:eye"
             };
@@ -733,17 +527,9 @@ namespace TEAMS2HA.API
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
                 case "IsVideoOn":
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
-                case "IsBackgroundBlurred":
-                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
-                case "IsHandRaised":
-                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "ON" : "OFF";
                 case "IsInMeeting":
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
                 case "HasUnreadMessages":
-                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
-                case "IsRecordingOn":
-                    return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
-                case "IsSharing":
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
                 case "TeamsRunning":
                     return (bool)meetingUpdate.MeetingState.GetType().GetProperty(sensor).GetValue(meetingUpdate.MeetingState, null) ? "True" : "False";
@@ -758,13 +544,9 @@ namespace TEAMS2HA.API
             {
                 case "IsMuted":
                 case "IsVideoOn":
-                case "IsHandRaised":
-                case "IsBackgroundBlurred":
                     return "switch";
                 case "IsInMeeting":
                 case "HasUnreadMessages":
-                case "IsRecordingOn":
-                case "IsSharing":
                 case "TeamsRunning":
                     return "binary_sensor";
                 default:
@@ -780,11 +562,7 @@ namespace TEAMS2HA.API
                 {
                     IsMuted = false,
                     IsVideoOn = false,
-                    IsHandRaised = false,
                     IsInMeeting = false,
-                    IsRecordingOn = false,
-                    IsBackgroundBlurred = false,
-                    IsSharing = false,
                     HasUnreadMessages = false,
                     TeamsRunning = false,
                     TeamsStatus = "Unknown"
@@ -800,12 +578,8 @@ namespace TEAMS2HA.API
             {
                 $"switch.{deviceId.ToLower()}_ismuted",
                 $"switch.{deviceId.ToLower()}_isvideoon",
-                $"switch.{deviceId.ToLower()}_ishandraised",
-                $"binary_sensor.{deviceId.ToLower()}_isrecordingon",
                 $"binary_sensor.{deviceId.ToLower()}_isinmeeting",
-                $"binary_sensor.{deviceId.ToLower()}_issharing",
                 $"binary_sensor.{deviceId.ToLower()}_hasunreadmessages",
-                $"switch.{deviceId.ToLower()}_isbackgroundblurred",
                 $"binary_sensor.{deviceId.ToLower()}_teamsRunning",
                 $"sensor.{deviceId.ToLower()}_teamsstatus"
             };

@@ -28,12 +28,6 @@
 
                     <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" HorizontalAlignment="Right"
                                 VerticalAlignment="Center">
-                        <materialDesign:PackIcon x:Name="TeamsStatusIcon" Kind="MicrosoftTeams"
-                                                  Width="20" Height="20" Margin="0,0,4,0"
-                                                  Foreground="Gray" VerticalAlignment="Center"
-                                                  ToolTip="Teams: Disconnected"/>
-                        <TextBlock x:Name="TeamsConnectionStatus" Text="Teams" FontSize="11"
-                                   VerticalAlignment="Center" Margin="0,0,16,0"/>
                         <materialDesign:PackIcon x:Name="MqttStatusIcon" Kind="AccessPoint"
                                                   Width="20" Height="20" Margin="0,0,4,0"
                                                   Foreground="Gray" VerticalAlignment="Center"
@@ -56,27 +50,6 @@
             <!-- Main Content (last child — fills all remaining space) -->
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
                 <StackPanel Margin="16">
-
-                    <!-- Teams Connection Card -->
-                    <materialDesign:Card Padding="16" Margin="0,0,0,10"
-                                          materialDesign:ElevationAssist.Elevation="Dp2">
-                        <StackPanel>
-                            <TextBlock Text="Teams Connection"
-                                       Style="{StaticResource MaterialDesignHeadline6TextBlock}"
-                                       Margin="0,0,0,10"/>
-                            <DockPanel>
-                                <Button x:Name="PairButton" Content="Pair with Teams"
-                                        DockPanel.Dock="Right" Margin="12,0,0,0"
-                                        Style="{StaticResource MaterialDesignRaisedButton}"
-                                        Click="TestTeamsConnection_Click"/>
-                                <TextBox x:Name="TeamsApiKeyBox" IsReadOnly="True"
-                                         Style="{StaticResource MaterialDesignOutlinedTextBox}"
-                                         materialDesign:HintAssist.Hint="Pairing Status"
-                                         materialDesign:TextFieldAssist.UnderlineBrush="{DynamicResource ActiveFieldBrush}"
-                                         materialDesign:HintAssist.Foreground="{DynamicResource ActiveFieldBrush}"/>
-                            </DockPanel>
-                        </StackPanel>
-                    </materialDesign:Card>
 
                     <!-- MQTT Configuration Card -->
                     <materialDesign:Card Padding="16" Margin="0,0,0,10"

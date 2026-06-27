@@ -168,6 +168,21 @@ namespace TEAMS2HA.API
         }
 
         public bool TeamsRunning { get; set; }
+
+        private bool _hasUnreadMessages;
+        public bool HasUnreadMessages
+        {
+            get => _hasUnreadMessages;
+            set
+            {
+                if (_hasUnreadMessages != value)
+                {
+                    _hasUnreadMessages = value;
+                    StateChanged?.Invoke(this, EventArgs.Empty);
+                }
+            }
+        }
+
         public bool CanToggleMute { get; set; }
         public bool CanToggleVideo { get; set; }
         public bool CanToggleHand { get; set; }

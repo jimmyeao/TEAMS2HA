@@ -34,7 +34,6 @@ namespace TEAMS2HA
         private static AppSettings _instance;
 
         private string _mqttPassword; // Store the encrypted version internally
-        private string _teamsToken; // Store the encrypted version internally
 
         #endregion Private Fields
 
@@ -84,12 +83,6 @@ namespace TEAMS2HA
             set => _mqttPassword = value; // Only for deserialization
         }
 
-        public string EncryptedTeamsToken
-        {
-            get => _teamsToken;
-            set => _teamsToken = value; // Only for deserialization
-        }
-
         public bool IgnoreCertificateErrors { get; set; }
 
         public string MqttAddress { get; set; }
@@ -104,20 +97,9 @@ namespace TEAMS2HA
         public string MqttPort { get; set; }
         public string MqttUsername { get; set; }
 
-        [JsonIgnore]
-        public string PlainTeamsToken { get; set; }
-
         public bool RunAtWindowsBoot { get; set; }
         public bool RunMinimized { get; set; }
         public string SensorPrefix { get; set; }
-
-        [JsonIgnore]
-        public string TeamsToken
-        {
-            get => CryptoHelper.DecryptString(_teamsToken);
-            set => _teamsToken = CryptoHelper.EncryptString(value);
-        }
-
         public string Theme { get; set; }
         public string ColorScheme { get; set; } = "DeepPurple / Lime";
         public bool UseTLS { get; set; }
@@ -138,14 +120,6 @@ namespace TEAMS2HA
             else
             {
                 this.EncryptedMqttPassword = "";
-            }
-            if (!String.IsNullOrEmpty(this.PlainTeamsToken))
-            {
-                this.TeamsToken = CryptoHelper.EncryptString(this.PlainTeamsToken);
-            }
-            else
-            {
-                this.TeamsToken = "";
             }
             if (string.IsNullOrEmpty(this.SensorPrefix))
             {
@@ -203,10 +177,6 @@ namespace TEAMS2HA
                     if (!String.IsNullOrEmpty(this.EncryptedMqttPassword))
                     {
                         this.MqttPassword = CryptoHelper.DecryptString(this.EncryptedMqttPassword);
-                    }
-                    if (!String.IsNullOrEmpty(this.TeamsToken))
-                    {
-                        this.PlainTeamsToken = CryptoHelper.DecryptString(this.TeamsToken);
                     }
                     if (string.IsNullOrEmpty(this.MqttPort))
                     {
@@ -273,26 +243,22 @@ namespace TEAMS2HA
 
         private AppSettings _settings;
         private string _settingsFilePath;
-        private string _teamsApiKey;
-
-        private MenuItem _teamsStatusMenuItem;
-        private Action<string> _updateTokenAction;
         private string deviceid;
         private bool _isInitializing = false;
-        private bool isTeamsConnected = false;
-        private bool isTeamsSubscribed = false;
-        private bool mqttCommandToTeams = false;
         private bool mqttConnectionAttempting = false;
         private bool mqttConnectionStatusChanged = false;
         private bool mqttStatusUpdated = false;
 
         private List<string> sensorNames = new List<string>
         {
-            "IsMuted", "IsVideoOn", "IsHandRaised", "IsInMeeting", "IsRecordingOn", "IsBackgroundBlurred", "IsSharing", "HasUnreadMessages", "TeamsRunning"
+            "IsMuted", "IsVideoOn", "IsInMeeting", "HasUnreadMessages", "TeamsRunning"
         };
 
-        private bool teamspaired = false;
         private TeamsLogWatcher _teamsLogWatcher;
+        private WasapiMonitor _wasapiMonitor;
+        private CameraMonitor _cameraMonitor;
+        private MicrophoneMonitor _microphoneMonitor;
+        private ProcessWatcher _processWatcher;
 
         #endregion Private Fields
 
@@ -353,16 +319,6 @@ namespace TEAMS2HA
             // Create a new instance of the MQTT Service class
 
 
-            // Set the action to be performed when a new token is updated
-            _updateTokenAction = newToken =>
-            {
-                Dispatcher.Invoke(() =>
-                {
-                    TeamsApiKeyBox.Text = "Pairing Required";
-                    PairButton.IsEnabled = false;
-                });
-            };
-
             // Initialize connections
             InitializeConnections();
 
@@ -371,12 +327,115 @@ namespace TEAMS2HA
             _teamsLogWatcher.StatusChanged += (sender, status) =>
             {
                 State.Instance.Status = status;
+                bool callActive = _teamsLogWatcher.IsInCall;
+
+                // Only clear meeting state if:
+                // 1. Presence indicates we're truly not in any call-type state
+                // 2. The log watcher also has no active call (CallEnded seen)
+                // This prevents DoNotDisturb (screen share) from incorrectly clearing meeting state.
+                bool presenceInMeeting = status == "Busy" || status == "DoNotDisturb";
+                if (!presenceInMeeting && !callActive && State.Instance.Activity == "In a meeting")
+                {
+                    State.Instance.Activity = "Not in a Call";
+                    State.Instance.Microphone = "Off";
+                }
+
                 if (_mqttService != null && _mqttService.IsConnected)
                 {
+                    _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
                     _ = _mqttService.PublishTeamsStatusSensorAsync();
                 }
             };
+            _teamsLogWatcher.MeetingStateChanged += (sender, inMeeting) =>
+            {
+                State.Instance.Activity = inMeeting ? "In a meeting" : "Not in a Call";
+                if (_mqttService != null && _mqttService.IsConnected)
+                    _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
+            };
+            _teamsLogWatcher.UnreadMessagesChanged += (sender, hasUnread) =>
+            {
+                State.Instance.HasUnreadMessages = hasUnread;
+                if (_mqttService != null && _mqttService.IsConnected)
+                    _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
+            };
+            // Mute/sharing/recording come from OS-level sources — always publish immediately,
+            // never gate on the WebSocket window (which would delay unmute by up to 5 seconds
+            // because a WebSocket mute event resets the window just before the unmute fires).
+            _teamsLogWatcher.MuteStateChanged += (sender, muted) =>
+            {
+                State.Instance.Microphone = muted ? "On" : "Off";
+                if (_mqttService != null && _mqttService.IsConnected)
+                    _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
+            };
             _teamsLogWatcher.Start();
+
+            // WasapiMonitor: polls WASAPI capture sessions every 250 ms.
+            // Teams releases (or deactivates) its mic session when muted — that's the hardware
+            // signal that drives the mute LED on the microphone. Only apply within a call.
+            _wasapiMonitor = WasapiMonitor.Instance;
+            _wasapiMonitor.MuteStateChanged += (sender, muted) =>
+            {
+                if (State.Instance.Activity == "In a meeting")
+                {
+                    State.Instance.Microphone = muted ? "On" : "Off";
+                    if (_mqttService != null && _mqttService.IsConnected)
+                        _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
+                }
+            };
+            _wasapiMonitor.Start();
+
+            // MicrophoneMonitor: meeting presence only — do NOT touch mute state here.
+            // Setting Microphone here caused MicActiveChanged(true) (mic reacquired during mute
+            // processing) to overwrite the correct muted state with "Off" (unmuted).
+            _microphoneMonitor = MicrophoneMonitor.Instance;
+            _microphoneMonitor.MicActiveChanged += (sender, active) =>
+            {
+                if (active)
+                {
+                    // Mic captured → in a meeting. Don't change mute state.
+                    if (State.Instance.Activity != "In a meeting")
+                    {
+                        State.Instance.Activity = "In a meeting";
+                        if (_mqttService != null && _mqttService.IsConnected)
+                            _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
+                    }
+                }
+                else
+                {
+                    // Mic released. Only clear meeting state if presence AND log both say we left.
+                    bool stillInMeeting = State.Instance.Status == "Busy"
+                                       || State.Instance.Status == "DoNotDisturb"
+                                       || _teamsLogWatcher.IsInCall;
+                    if (!stillInMeeting && State.Instance.Activity == "In a meeting")
+                    {
+                        State.Instance.Activity = "Not in a Call";
+                        if (_mqttService != null && _mqttService.IsConnected)
+                            _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
+                    }
+                }
+            };
+            _microphoneMonitor.Start();
+
+            // Camera on/off via Windows Privacy Consent Store (same source as the camera LED)
+            _cameraMonitor = CameraMonitor.Instance;
+            _cameraMonitor.CameraActiveChanged += (sender, active) =>
+            {
+                State.Instance.Camera = active ? "On" : "Off";
+                if (_mqttService != null && _mqttService.IsConnected)
+                    _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
+            };
+            _cameraMonitor.Start();
+
+            // ProcessWatcher: keep TeamsRunning reflecting the actual process, not just API state
+            _processWatcher = new ProcessWatcher();
+            _processWatcher.TeamsRunningChanged += running =>
+            {
+                State.Instance.TeamsRunning = running;
+                Log.Information("Teams process running: {running}", running);
+                if (_mqttService != null && _mqttService.IsConnected)
+                    _ = _mqttService.PublishConfigurations(BuildMeetingUpdateFromState(), _settings);
+            };
+            State.Instance.TeamsRunning = _processWatcher.IsTeamsRunning();
 
             foreach (var sensor in sensorNames)
             {
@@ -395,7 +454,6 @@ namespace TEAMS2HA
                 MqttService.Instance.Initialize(_settings, _settings.SensorPrefix, sensorNames);
                 _mqttService = MqttService.Instance;
                 _mqttService.StatusUpdated += UpdateMqttStatus;
-                _mqttService.CommandToTeams += HandleCommandToTeams;
             }
 
             // Attempt MQTT connection (may fail on first run with empty settings)
@@ -411,60 +469,7 @@ namespace TEAMS2HA
                 Log.Error($"Failed to connect to MQTT: {ex.Message}");
             }
 
-            // Always initialize WebSocket regardless of MQTT status
-            InitializeWebSocket();
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
-        }
-
-        public bool IsTeamsConnected
-        {
-            get { return isTeamsConnected; }
-            set
-            {
-                if (isTeamsConnected != value)
-                {
-                    isTeamsConnected = value;
-
-
-                    if (isTeamsConnected)
-                    {
-                        TeamsConnectionStatusChanged(isTeamsConnected);
-                        _ = _mqttService.PublishConfigurations(null!, _settings);
-                        Console.WriteLine("Teams is now connected");
-                    }
-                    else
-                    {
-                        TeamsConnectionStatusChanged(isTeamsConnected);
-                        _ = _mqttService.PublishConfigurations(null!, _settings);
-                        Console.WriteLine("Teams is now disconnected");
-                    }
-                }
-            }
-        }
-        private async void InitializeWebSocket()
-        {
-            try
-            {
-                var uri = new Uri($"ws://localhost:8124?token={_settings.PlainTeamsToken}&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
-
-                await WebSocketManager.Instance.ConnectAsync(uri);
-
-                if (!isTeamsSubscribed)
-                {
-                    WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
-                    WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
-                    {
-                        Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
-                    };
-                    isTeamsSubscribed = true;
-                }
-
-                Dispatcher.Invoke(() => UpdateStatusMenuItems());
-            }
-            catch (Exception ex)
-            {
-                Log.Error($"Error initializing WebSocket connection: {ex.Message}");
-            }
         }
 
         private void MainWindow_StateChanged(object sender, EventArgs e)
@@ -595,9 +600,6 @@ namespace TEAMS2HA
                 // MQTT Status
                 _mqttStatusMenuItem = new MenuItem { Header = "MQTT Status: Unknown", IsEnabled = false };
 
-                // Teams Status
-                _teamsStatusMenuItem = new MenuItem { Header = "Teams Status: Unknown", IsEnabled = false };
-
                 // Logs
                 _logMenuItem = new MenuItem { Header = "View Logs" };
                 _logMenuItem.Click += LogsButton_Click; // Reuse existing event handler
@@ -613,7 +615,6 @@ namespace TEAMS2HA
 
                 contextMenu.Items.Add(showHideMenuItem);
                 contextMenu.Items.Add(_mqttStatusMenuItem);
-                contextMenu.Items.Add(_teamsStatusMenuItem);
                 contextMenu.Items.Add(_logMenuItem);
                 contextMenu.Items.Add(_aboutMenuItem);
                 contextMenu.Items.Add(new Separator()); // Separator before exit
@@ -630,12 +631,14 @@ namespace TEAMS2HA
         private async void ExitMenuItem_Click(object sender, RoutedEventArgs e)
         {
             _teamsLogWatcher?.Dispose();
+            _wasapiMonitor?.Dispose();
+            _cameraMonitor?.Dispose();
+            _microphoneMonitor?.Dispose();
+            _processWatcher = null;
 
             if (_mqttService != null)
             {
                 Log.Information("ExitMenuItem_Click: Disconnecting MQTT client...");
-                _mqttService.CommandToTeams -= HandleCommandToTeams;
-
                 if (_mqttService.IsConnected)
                 {
                     await _mqttService.DisconnectAsync();
@@ -648,29 +651,6 @@ namespace TEAMS2HA
 
             Application.Current.Shutdown();
         }
-
-        private async Task HandleCommandToTeams(string jsonMessage)
-        {
-            if (WebSocketManager.Instance != null && WebSocketManager.Instance.IsConnected)
-            {
-                try
-                {
-                    await WebSocketManager.Instance.SendMessageAsync(jsonMessage);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error("HandleCommandToTeams: Error sending message to Teams: {message}", ex.Message);
-                }
-            }
-            else
-            {
-                // Handle the case when WebSocketManager is not connected
-                Log.Warning("WebSocketManager is not connected. Message not sent.");
-            }
-        }
-
-
-
 
         private void LogsButton_Click(object sender, RoutedEventArgs e)
         {
@@ -732,16 +712,6 @@ namespace TEAMS2HA
                 SensorPrefixBox.Text = _settings.SensorPrefix;
             }
             MqttPort.Text = _settings.MqttPort;
-            if (_settings.PlainTeamsToken == null)
-            {
-                TeamsApiKeyBox.Text = "Not Paired";
-                PairButton.IsEnabled = true;
-            }
-            else
-            {
-                TeamsApiKeyBox.Text = "Paired";
-                PairButton.IsEnabled = false;
-            }
 
             // Initialize theme controls
             DarkModeToggle.IsChecked = _settings.Theme == "Dark";
@@ -762,33 +732,6 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() => UpdateStatusMenuItems());
             await ShowOneTimeNoticeIfNeeded();
         }
-        public void UpdatePairingStatus(bool isPaired)
-        {
-
-            Dispatcher.Invoke(() =>
-            {
-                // Assuming you have a Label or some status indicator in your MainWindow
-                TeamsApiKeyBox.Text = isPaired ? "Paired" : "Not Paired";
-            });
-
-        }
-        public void UpdateMqttStatus(bool isConnected)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                MQTTConnectionStatus.Text = isConnected ? "MQTT Status: Connected" : "MQTT Status: Not Connected";
-            });
-        }
-        // Event handler that enables the PairButton in WPF
-        private void TeamsClient_RequirePairing(object sender, EventArgs e)
-        {
-            // Use Dispatcher.Invoke to update the UI from a non-UI thread
-            Dispatcher.Invoke(() =>
-            {
-                PairButton.IsEnabled = true; // Note: Use IsEnabled in WPF, not Enabled
-            });
-        }
-
         private async Task ShowOneTimeNoticeIfNeeded()
         {
             if (!_settings.HasShownOneTimeNotice2)
@@ -959,74 +902,19 @@ namespace TEAMS2HA
             }
         }
 
-        private async void TeamsClient_TeamsUpdateReceived(object sender, TeamsUpdateEventArgs e)
+        private API.MeetingUpdate BuildMeetingUpdateFromState()
         {
-            if (_mqttService != null && _mqttService.IsConnected)
+            return new API.MeetingUpdate
             {
-                // Store the latest update
-                _latestMeetingUpdate = e.MeetingUpdate;
-                Log.Debug("TeamsClient_TeamsUpdateReceived: Teams Update Received {update}", _latestMeetingUpdate);
-                // Update sensor configurations
-                try
+                MeetingState = new API.MeetingState
                 {
-                    await _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
+                    IsMuted = State.Instance.Microphone == "On",
+                    IsVideoOn = State.Instance.Camera == "On",
+                    IsInMeeting = State.Instance.Activity == "In a meeting",
+                    HasUnreadMessages = State.Instance.HasUnreadMessages,
+                    TeamsRunning = State.Instance.TeamsRunning,
                 }
-                catch (Exception ex)
-                {
-                    Log.Error("TeamsClient_TeamsUpdateReceived: Error publishing configurations: {message}", ex.Message);
-                }
-                UpdateStatusMenuItems();
-            }
-        }
-
-        private void TeamsConnectionStatusChanged(bool isConnected)
-        {
-            Dispatcher.Invoke(() =>
-            {
-                TeamsConnectionStatus.Text = isConnected ? "Teams: Connected" : "Teams: Disconnected";
-                TeamsStatusIcon.Foreground = isConnected
-                    ? new SolidColorBrush(Colors.LightGreen)
-                    : new SolidColorBrush(Colors.Gray);
-                TeamsStatusIcon.ToolTip = TeamsConnectionStatus.Text;
-                _teamsStatusMenuItem.Header = "Teams Status: " + (isConnected ? "Connected" : "Disconnected");
-                if (_latestMeetingUpdate != null && _latestMeetingUpdate.MeetingState != null)
-                {
-                    _latestMeetingUpdate.MeetingState.TeamsRunning = isConnected;
-                }
-                _ = _mqttService.PublishConfigurations(_latestMeetingUpdate, _settings);
-            });
-        }
-
-
-        private async void TestTeamsConnection_Click(object sender, RoutedEventArgs e)
-        {
-            if (!WebSocketManager.Instance.IsConnected)
-            {
-                var uri = new Uri($"ws://localhost:8124?token=&protocol-version=2.0.0&manufacturer=JimmyWhite&device=PC&app=THFHA&app-version=2.0.26");
-                await WebSocketManager.Instance.ConnectAsync(uri);
-
-                // Register event handlers if this is the first successful connection
-                if (!isTeamsSubscribed && WebSocketManager.Instance.IsConnected)
-                {
-                    WebSocketManager.Instance.TeamsUpdateReceived += TeamsClient_TeamsUpdateReceived;
-                    WebSocketManager.Instance.ConnectionStatusChanged += (isConnected) =>
-                    {
-                        Dispatcher.Invoke(() => TeamsConnectionStatusChanged(isConnected));
-                    };
-                    isTeamsSubscribed = true;
-                }
-            }
-
-            Dispatcher.Invoke(() => UpdateStatusMenuItems());
-
-            await WebSocketManager.Instance.PairWithTeamsAsync(newToken =>
-            {
-                Dispatcher.Invoke(() =>
-                {
-                    TeamsApiKeyBox.Text = "Paired";
-                    UpdateStatusMenuItems();
-                });
-            });
+            };
         }
 
         private void DarkModeToggle_Changed(object sender, RoutedEventArgs e)
@@ -1063,23 +951,15 @@ namespace TEAMS2HA
             Dispatcher.Invoke(() =>
             {
                 bool mqttConnected = _mqttService != null && _mqttService.IsConnected;
-                bool teamsConnected = WebSocketManager.Instance.IsConnected;
 
                 MQTTConnectionStatus.Text = mqttConnected ? "MQTT: Connected" : "MQTT: Disconnected";
-                TeamsConnectionStatus.Text = teamsConnected ? "Teams: Connected" : "Teams: Disconnected";
 
                 MqttStatusIcon.Foreground = mqttConnected
                     ? new SolidColorBrush(Colors.LightGreen)
                     : new SolidColorBrush(Colors.Gray);
                 MqttStatusIcon.ToolTip = MQTTConnectionStatus.Text;
 
-                TeamsStatusIcon.Foreground = teamsConnected
-                    ? new SolidColorBrush(Colors.LightGreen)
-                    : new SolidColorBrush(Colors.Gray);
-                TeamsStatusIcon.ToolTip = TeamsConnectionStatus.Text;
-
                 _mqttStatusMenuItem.Header = MQTTConnectionStatus.Text;
-                _teamsStatusMenuItem.Header = teamsConnected ? "Teams Status: Connected" : "Teams Status: Disconnected";
             });
         }
 
