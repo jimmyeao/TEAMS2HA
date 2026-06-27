@@ -1,0 +1,22 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /tauri/src-tauri
+    schedule:
+      interval: weekly
+    ignore:
+      # Both of these are transitive deps locked by Tauri's own dependency
+      # constraints. We cannot resolve them without Tauri releasing updates.
+      # Suppress until upstream catches up.
+
+      # glib: Linux/GTK binding, unused on Windows, pinned at 0.18.5 by Tauri.
+      - dependency-name: glib
+
+      # rustls-webpki: TLS cert validation, pinned below the patched version
+      # by Tauri's TLS stack — not directly resolvable from our Cargo.toml.
+      - dependency-name: rustls-webpki
+
+  - package-ecosystem: npm
+    directory: /tauri
+    schedule:
+      interval: weekly
