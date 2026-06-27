@@ -1,5 +1,6 @@
 mod app_state;
 mod log_watcher;
+mod migration;
 mod mqtt_service;
 mod process_watcher;
 mod registry_monitor;
@@ -79,6 +80,11 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            // First-run migration: silently remove old ClickOnce install entry.
+            if settings::is_first_run() {
+                migration::remove_old_clickonce();
+            }
+
             let handle = app.handle().clone();
 
             // System tray (only created here — no declarative trayIcon in tauri.conf.json)

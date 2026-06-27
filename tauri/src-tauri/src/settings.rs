@@ -97,6 +97,10 @@ impl Settings {
     fn apply_run_at_boot(&self) {}
 }
 
+pub fn is_first_run() -> bool {
+    settings_path().map(|p| !p.exists()).unwrap_or(false)
+}
+
 fn settings_path() -> Result<PathBuf> {
     let dirs = ProjectDirs::from("com", "jimmyeao", "Teams2HA")
         .ok_or_else(|| anyhow::anyhow!("Cannot determine app data directory"))?;
