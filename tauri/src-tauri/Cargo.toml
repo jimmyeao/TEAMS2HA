@@ -1,0 +1,43 @@
+[package]
+name = "teams2ha"
+version = "0.1.0"
+description = "Teams2HA - Bridge Microsoft Teams status to Home Assistant via MQTT"
+authors = ["Jimmyeao"]
+edition = "2021"
+
+[lib]
+name = "tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-ico", "image-png"] }
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+rumqttc = { version = "0.24", features = ["use-native-tls", "websocket"] }
+winreg = "0.52"
+notify = "7"
+directories = "6"
+log = "0.4"
+env_logger = "0.11"
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1"
+hostname = "0.4"
+tauri-plugin-notification = "2"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Media_Audio",
+    "Win32_System_Com",
+    "Win32_Foundation",
+    "Win32_Security_Cryptography",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_Threading",
+    "Win32_System_Diagnostics_ToolHelp",
+] }

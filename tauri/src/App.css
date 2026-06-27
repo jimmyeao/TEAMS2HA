@@ -1,0 +1,146 @@
+:root,
+[data-theme="dark"] {
+  --bg: #1a1a2e;
+  --surface: #16213e;
+  --surface2: #0f3460;
+  --on-surface2: #e0e0e0;
+  --on-surface2-dim: #9e9e9e;
+  --accent: #7c4dff;
+  --text: #e0e0e0;
+  --text-dim: #9e9e9e;
+  --radius: 8px;
+  --connected: #69f0ae;
+  --disconnected: #ff5252;
+  --in-meeting: #ffab40;
+  --input-border: #333;
+}
+
+[data-theme="light"] {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --surface2: #3f51b5;
+  --on-surface2: #ffffff;
+  --on-surface2-dim: rgba(255,255,255,0.75);
+  --accent: #7c4dff;
+  --text: #1a1a2e;
+  --text-dim: #555770;
+  --radius: 8px;
+  --connected: #2e7d32;
+  --disconnected: #c62828;
+  --in-meeting: #e65100;
+  --input-border: #bdbdbd;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 14px;
+}
+
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+.app-header {
+  background: var(--surface2);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 2px 8px rgba(0,0,0,.4);
+  flex-shrink: 0;
+}
+
+.header-left { display: flex; align-items: center; gap: 10px; }
+.teams-icon { width: 28px; height: 28px; color: #7b68ee; }
+.app-title { font-size: 18px; font-weight: 600; }
+.app-main { flex: 1; overflow-y: auto; padding: 16px; }
+
+/* Status bar — lives in the header so always uses on-surface2 palette */
+.status-bar { display: flex; gap: 16px; }
+.status-indicator { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--on-surface2-dim); }
+.status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--disconnected); }
+.status-label { color: var(--on-surface2-dim); }
+
+.status-indicator.connected .status-dot { background: var(--connected); }
+.status-indicator.connected .status-label { color: var(--connected); }
+.status-indicator.disconnected .status-dot { background: var(--disconnected); }
+.status-indicator.disconnected .status-label { color: var(--disconnected); }
+.status-indicator.in-meeting .status-dot { background: var(--in-meeting); }
+.status-indicator.in-meeting .status-label { color: var(--in-meeting); }
+
+/* Light mode: status colours need to pop on the saturated header background */
+[data-theme="light"] .status-indicator.connected .status-label { color: #b9f6ca; }
+[data-theme="light"] .status-indicator.connected .status-dot { background: #b9f6ca; }
+[data-theme="light"] .status-indicator.disconnected .status-label { color: #ff8a80; }
+[data-theme="light"] .status-indicator.disconnected .status-dot { background: #ff8a80; }
+[data-theme="light"] .status-indicator.in-meeting .status-label { color: #ffd180; }
+[data-theme="light"] .status-indicator.in-meeting .status-dot { background: #ffd180; }
+
+/* Presence colours — work on dark header */
+.status-indicator.presence-available .status-dot { background: #69f0ae; }
+.status-indicator.presence-available .status-label { color: #69f0ae; }
+.status-indicator.presence-busy .status-dot,
+.status-indicator.presence-donotdisturb .status-dot { background: #ff5252; }
+.status-indicator.presence-busy .status-label,
+.status-indicator.presence-donotdisturb .status-label { color: #ff5252; }
+.status-indicator.presence-away .status-dot,
+.status-indicator.presence-berightback .status-dot { background: #ffab40; }
+.status-indicator.presence-away .status-label,
+.status-indicator.presence-berightback .status-label { color: #ffab40; }
+.status-indicator.presence-offline .status-dot { background: #9e9e9e; }
+.status-indicator.presence-offline .status-label { color: #9e9e9e; }
+
+/* Light mode presence — lighter tones for saturated header */
+[data-theme="light"] .status-indicator.presence-available .status-dot { background: #b9f6ca; }
+[data-theme="light"] .status-indicator.presence-available .status-label { color: #b9f6ca; }
+[data-theme="light"] .status-indicator.presence-busy .status-dot,
+[data-theme="light"] .status-indicator.presence-donotdisturb .status-dot { background: #ff8a80; }
+[data-theme="light"] .status-indicator.presence-busy .status-label,
+[data-theme="light"] .status-indicator.presence-donotdisturb .status-label { color: #ff8a80; }
+[data-theme="light"] .status-indicator.presence-away .status-dot,
+[data-theme="light"] .status-indicator.presence-berightback .status-dot { background: #ffd180; }
+[data-theme="light"] .status-indicator.presence-away .status-label,
+[data-theme="light"] .status-indicator.presence-berightback .status-label { color: #ffd180; }
+
+/* Cards */
+.card { background: var(--surface); border-radius: var(--radius); padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 4px rgba(0,0,0,.3); }
+.card-title { font-size: 15px; font-weight: 600; margin-bottom: 14px; color: var(--accent); }
+
+/* Fields */
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 12px; }
+.field label { font-size: 12px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .5px; }
+.field input {
+  background: var(--bg); border: 1px solid var(--input-border); border-radius: 4px;
+  color: var(--text); padding: 8px 10px; font-size: 14px; outline: none; transition: border-color .15s;
+}
+.field input:focus { border-color: var(--accent); }
+.field-row { display: flex; gap: 12px; }
+.flex-grow { flex: 1; }
+.field-narrow { width: 100px; }
+
+/* Chips */
+.chip-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.chip { padding: 5px 14px; border-radius: 16px; border: 1px solid #444; cursor: pointer; font-size: 13px; color: var(--text-dim); transition: all .15s; user-select: none; }
+.chip:hover { border-color: var(--accent); color: var(--text); }
+.chip.chip-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Theme toggle */
+.theme-row { display: flex; align-items: center; gap: 10px; margin-top: 4px; }
+.toggle-label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 16px; }
+.toggle { position: absolute; opacity: 0; width: 0; }
+.toggle-track { display: inline-block; width: 44px; height: 24px; background: #444; border-radius: 12px; position: relative; transition: background .2s; }
+.toggle-track::after { content: ""; position: absolute; width: 18px; height: 18px; background: #fff; border-radius: 50%; top: 3px; left: 3px; transition: transform .2s; }
+.toggle:checked ~ .toggle-track { background: var(--accent); }
+.toggle:checked ~ .toggle-track::after { transform: translateX(20px); }
+
+/* Actions */
+.settings-form { max-width: 700px; margin: 0 auto; }
+.action-row { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding-bottom: 16px; }
+.btn-primary { background: var(--accent); color: #fff; border: none; border-radius: var(--radius); padding: 9px 22px; font-size: 14px; font-weight: 500; cursor: pointer; transition: opacity .15s; }
+.btn-primary:hover { opacity: .85; }
+.btn-primary:disabled { opacity: .5; cursor: default; }
+.save-status { font-size: 13px; }
+.save-status.ok { color: var(--connected); }
+.save-status.err { color: var(--disconnected); }
