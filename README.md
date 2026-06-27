@@ -34,6 +34,7 @@ The topic will be
 
 (note, 2 way control is not possible at the moment, investigating the reliability of addign this in)
 
+Footnote: I have left the old .net source code intact, in case Microsoft reverse their decidion, the new code is in the Tauri folder, if you need to make changes. PRs always welcome :)
 
 
 
