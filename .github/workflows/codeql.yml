@@ -32,11 +32,6 @@ jobs:
         uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
-          # Scope JS/TS analysis to the Tauri frontend only
-          config: |
-            paths-ignore:
-              - '**/node_modules/**'
-              - '**/dist/**'
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3
