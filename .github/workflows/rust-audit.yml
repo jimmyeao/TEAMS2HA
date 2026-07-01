@@ -11,6 +11,7 @@ on:
       - 'tauri/src-tauri/**'
   schedule:
     - cron: '30 4 * * 1'
+  workflow_dispatch:
 
 jobs:
   audit:
@@ -26,10 +27,16 @@ jobs:
 
       - name: Run audit
         working-directory: tauri/src-tauri
-        run: cargo audit
-        # Known unfixable transitive deps (pinned by Tauri upstream):
-        #   RUSTSEC-2023-0052  rustls-webpki  — tolerated, no compatible patch
-        #   RUSTSEC-2024-0367  glib           — Linux only, not compiled on Windows
+        # Ignored advisories are all for rustls-webpki 0.102.8, pinned by Tauri's
+        # own dependency tree. The patched version (0.103.13) is also resolved; only
+        # the 0.102.x copy we cannot control remains vulnerable. Will un-ignore when
+        # Tauri drops the 0.102.x constraint upstream.
+        run: >
+          cargo audit
+          --ignore RUSTSEC-2026-0049
+          --ignore RUSTSEC-2026-0098
+          --ignore RUSTSEC-2026-0099
+          --ignore RUSTSEC-2026-0104
 
   clippy:
     name: cargo clippy
