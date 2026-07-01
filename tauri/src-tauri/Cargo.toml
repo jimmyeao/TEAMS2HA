@@ -20,7 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 rumqttc = { version = "0.25", features = ["use-native-tls", "websocket"] }
-winreg = "0.55"
+winreg = "0.56"
 notify = "8"
 directories = "6"
 log = "0.4"
