@@ -17,12 +17,6 @@ pub struct MeetingState {
     pub presence: String,
 }
 
-#[derive(Debug, Clone)]
-pub enum MqttCommand {
-    ToggleMute,
-    ToggleVideo,
-}
-
 pub struct MqttService {
     client: AsyncClient,
     prefix: String,
@@ -33,7 +27,6 @@ pub struct MqttService {
 impl MqttService {
     pub async fn connect(
         settings: &Settings,
-        cmd_tx: mpsc::Sender<MqttCommand>,
         reconnect_tx: mpsc::Sender<()>,
         app: AppHandle,
     ) -> Result<Self> {
@@ -76,12 +69,8 @@ impl MqttService {
                         Ok(Event::Incoming(Packet::ConnAck(_))) => {
                             log::info!("MQTT: connected to broker");
                             app.emit("mqtt-status", "Connected").ok();
-                            subscribe(&client_clone, &prefix_clone).await;
                             publish_discovery_inner(&client_clone, &prefix_clone).await;
                             let _ = reconnect_tx.send(()).await;
-                        }
-                        Ok(Event::Incoming(Packet::Publish(msg))) => {
-                            handle_incoming(&prefix_clone, &msg.topic, &msg.payload, &cmd_tx).await;
                         }
                         Ok(Event::Outgoing(rumqttc::Outgoing::Disconnect)) => {
                             log::info!("MQTT: disconnect sent");
@@ -157,18 +146,6 @@ impl MqttService {
     }
 }
 
-async fn subscribe(client: &AsyncClient, prefix: &str) {
-    if let Err(e) = client
-        .subscribe(
-            format!("homeassistant/switch/{prefix}/+/set"),
-            QoS::AtLeastOnce,
-        )
-        .await
-    {
-        log::warn!("MQTT subscribe error: {e}");
-    }
-}
-
 async fn publish_discovery_inner(client: &AsyncClient, prefix: &str) {
     let device = json!({
         "identifiers": [format!("teams2ha_{prefix}")],
@@ -189,7 +166,6 @@ async fn publish_discovery_inner(client: &AsyncClient, prefix: &str) {
             "name": name,
             "unique_id": format!("{prefix}_{id}"),
             "state_topic": format!("homeassistant/switch/{prefix}/{id}/state"),
-            "command_topic": format!("homeassistant/switch/{prefix}/{id}/set"),
             "payload_on": "ON",
             "payload_off": "OFF",
             "device": device
@@ -249,29 +225,4 @@ async fn publish_discovery_inner(client: &AsyncClient, prefix: &str) {
     }
 
     log::info!("MQTT: discovery published for prefix '{prefix}'");
-}
-
-async fn handle_incoming(
-    prefix: &str,
-    topic: &str,
-    payload: &[u8],
-    cmd_tx: &mpsc::Sender<MqttCommand>,
-) {
-    let payload_str = std::str::from_utf8(payload).unwrap_or("").trim();
-    log::debug!("MQTT incoming: {topic} = {payload_str}");
-
-    let switch_prefix = format!("homeassistant/switch/{prefix}/");
-    if let Some(rest) = topic.strip_prefix(&switch_prefix) {
-        if let Some(id) = rest.strip_suffix("/set") {
-            match id {
-                "ismuted" => {
-                    let _ = cmd_tx.send(MqttCommand::ToggleMute).await;
-                }
-                "isvideoon" => {
-                    let _ = cmd_tx.send(MqttCommand::ToggleVideo).await;
-                }
-                _ => {}
-            }
-        }
-    }
 }

@@ -39,10 +39,5 @@
         "displayLanguageSelector": false
       }
     }
-  },
-  "plugins": {
-    "shell": {
-      "open": true
-    }
   }
 }

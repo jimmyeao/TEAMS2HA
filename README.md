@@ -7,7 +7,7 @@
 <H1>IMPORTANT</H1>
   
 Microsoft are deprecating the Teams local API, which has sadly broken our application.
-I have written a new lightweight version in Rust/Tauri that uses teams logs and hardware signals to see if you are in a meeting, get your status, mute state and video state. You will need to remove the old version, and install this version - admin rights are NOT required.
+I have written a new lightweight version in Rust/Tauri that uses teams logs and hardware signals to see if you are in a meeting, get your status, mute state and video state. The client is read-only (no 2-way command handling) and no longer writes Windows startup persistence entries. You will need to remove the old version, and install this version - admin rights are NOT required.
 
 Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
 <img width="822" height="712" alt="image" src="https://github.com/user-attachments/assets/5595f5ff-e4f3-44e6-8054-1cc381370fab" />
@@ -35,7 +35,6 @@ The topic will be
 (note, 2 way control is not possible at the moment, investigating the reliability of addign this in)
 
 Footnote: I have left the old .net source code intact, in case Microsoft reverse their decidion, the new code is in the Tauri folder, if you need to make changes. PRs always welcome :)
-
 
 
 

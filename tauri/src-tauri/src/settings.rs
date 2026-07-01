@@ -67,34 +67,8 @@ impl Settings {
         }
         let json = serde_json::to_string_pretty(self)?;
         fs::write(&path, json)?;
-        self.apply_run_at_boot();
         Ok(())
     }
-
-    #[cfg(windows)]
-    fn apply_run_at_boot(&self) {
-        use winreg::enums::HKEY_CURRENT_USER;
-        use winreg::RegKey;
-        let hkcu = RegKey::predef(HKEY_CURRENT_USER);
-        let run_key = hkcu
-            .open_subkey_with_flags(
-                r"SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
-                winreg::enums::KEY_SET_VALUE,
-            )
-            .ok();
-        if let Some(key) = run_key {
-            if self.run_at_boot {
-                if let Ok(exe) = std::env::current_exe() {
-                    let _ = key.set_value("Teams2HA", &exe.to_string_lossy().as_ref());
-                }
-            } else {
-                let _ = key.delete_value("Teams2HA");
-            }
-        }
-    }
-
-    #[cfg(not(windows))]
-    fn apply_run_at_boot(&self) {}
 }
 
 pub fn is_first_run() -> bool {

@@ -1,6 +1,5 @@
 mod app_state;
 mod log_watcher;
-mod migration;
 mod mqtt_service;
 mod process_watcher;
 mod registry_monitor;
@@ -9,7 +8,7 @@ mod wasapi_monitor;
 
 use app_state::{new_shared, SharedState};
 use log_watcher::LogEvent;
-use mqtt_service::{MeetingState, MqttCommand, MqttService};
+use mqtt_service::{MeetingState, MqttService};
 use process_watcher::ProcessEvent;
 use registry_monitor::RegistryEvent;
 use settings::Settings;
@@ -23,7 +22,6 @@ use tokio::sync::{mpsc, RwLock};
 use wasapi_monitor::WasapiEvent;
 
 type MqttHandle = Arc<RwLock<Option<MqttService>>>;
-type CmdTx = Arc<mpsc::Sender<MqttCommand>>;
 type ReconnectTx = Arc<mpsc::Sender<()>>;
 
 #[tauri::command]
@@ -44,15 +42,13 @@ async fn get_mqtt_status(mqtt: State<'_, MqttHandle>) -> Result<String, String> 
 async fn save_settings(
     settings: Settings,
     mqtt: State<'_, MqttHandle>,
-    cmd_tx: State<'_, CmdTx>,
     reconnect_tx: State<'_, ReconnectTx>,
     app: AppHandle,
 ) -> Result<(), String> {
     settings.save().map_err(|e| e.to_string())?;
 
-    let tx: mpsc::Sender<MqttCommand> = (**cmd_tx).clone();
     let rtx: mpsc::Sender<()> = (**reconnect_tx).clone();
-    match MqttService::connect(&settings, tx, rtx, app.clone()).await {
+    match MqttService::connect(&settings, rtx, app.clone()).await {
         Ok(svc) => {
             *mqtt.write().await = Some(svc);
             // "Connected" + state re-publish triggered by ConnAck in the eventloop
@@ -78,13 +74,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            // First-run migration: silently remove old ClickOnce install entry.
-            if settings::is_first_run() {
-                migration::remove_old_clickonce();
-            }
-
             let handle = app.handle().clone();
 
             // System tray (only created here — no declarative trayIcon in tauri.conf.json)
@@ -117,15 +107,12 @@ pub fn run() {
             let shared = new_shared();
             let mqtt_handle: MqttHandle = Arc::new(RwLock::new(None));
 
-            // Persistent channels — shared across initial connect and all reconnects.
-            let (cmd_tx, mut cmd_rx) = mpsc::channel::<MqttCommand>(16);
+            // Persistent channel — shared across initial connect and all reconnects.
             let (reconnect_tx, mut reconnect_rx) = mpsc::channel::<()>(4);
-            let cmd_tx = Arc::new(cmd_tx);
             let reconnect_tx = Arc::new(reconnect_tx);
 
             app.manage(shared.clone());
             app.manage(mqtt_handle.clone());
-            app.manage(cmd_tx.clone());
             app.manage(reconnect_tx.clone());
 
             // Monitor channels
@@ -144,12 +131,11 @@ pub fn run() {
             let settings = Settings::load();
             let run_minimized = settings.run_minimized;
             let mqtt_h2 = mqtt_handle.clone();
-            let tx2: mpsc::Sender<MqttCommand> = (*cmd_tx).clone();
             let rtx2: mpsc::Sender<()> = (*reconnect_tx).clone();
             let handle2 = handle.clone();
             tauri::async_runtime::spawn(async move {
                 if !settings.mqtt_address.is_empty() {
-                    match MqttService::connect(&settings, tx2, rtx2, handle2.clone()).await {
+                    match MqttService::connect(&settings, rtx2, handle2.clone()).await {
                         Ok(svc) => {
                             *mqtt_h2.write().await = Some(svc);
                         }
@@ -190,9 +176,6 @@ pub fn run() {
                         }
                         Some(ev) = proc_rx.recv() => {
                             handle_process_event(ev, &shared2, &mqtt_h3, &handle3).await;
-                        }
-                        Some(_cmd) = cmd_rx.recv() => {
-                            log::info!("MQTT command received (no Teams API to forward to)");
                         }
                         Some(()) = reconnect_rx.recv() => {
                             // ConnAck received — push current state so HA sensors

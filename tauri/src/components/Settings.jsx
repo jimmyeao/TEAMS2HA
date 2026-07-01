@@ -134,11 +134,6 @@ export default function Settings() {
 
         <div className="chip-row">
           <Chip
-            label="Run at Boot"
-            checked={settings.runAtBoot}
-            onChange={(v) => set("runAtBoot", v)}
-          />
-          <Chip
             label="Start Minimised"
             checked={settings.runMinimized}
             onChange={(v) => set("runMinimized", v)}
