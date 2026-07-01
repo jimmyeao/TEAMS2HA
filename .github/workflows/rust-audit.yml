@@ -1,0 +1,53 @@
+name: Rust Security Audit
+
+on:
+  push:
+    branches: [ "master" ]
+    paths:
+      - 'tauri/src-tauri/**'
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - 'tauri/src-tauri/**'
+  schedule:
+    - cron: '30 4 * * 1'
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run audit
+        working-directory: tauri/src-tauri
+        run: cargo audit
+        # Known unfixable transitive deps (pinned by Tauri upstream):
+        #   RUSTSEC-2023-0052  rustls-webpki  — tolerated, no compatible patch
+        #   RUSTSEC-2024-0367  glib           — Linux only, not compiled on Windows
+
+  clippy:
+    name: cargo clippy
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: tauri/src-tauri -> target
+
+      - name: Run clippy
+        working-directory: tauri/src-tauri
+        run: cargo clippy --all-targets -- -D warnings
