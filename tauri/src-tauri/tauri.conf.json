@@ -13,8 +13,10 @@
     "windows": [
       {
         "title": "Teams2HA",
-        "width": 820,
-        "height": 680,
+        "width": 900,
+        "height": 700,
+        "minWidth": 560,
+        "minHeight": 520,
         "resizable": true,
         "visible": false
       }
