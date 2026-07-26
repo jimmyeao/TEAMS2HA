@@ -83,16 +83,15 @@ impl MqttService {
         // ignore_cert_errors flag silently downgraded TLS to plain TCP, and the
         // TLS+websockets combination came out as unencrypted ws://.
         if settings.use_tls {
-            if settings.ignore_cert_errors {
-                log::warn!(
-                    "MQTT: 'ignore certificate errors' is not supported; \
-                     connecting with TLS and full certificate verification"
-                );
-            }
-            if settings.use_websockets {
-                opts.set_transport(Transport::Wss(TlsConfiguration::Native));
+            let tls = if settings.ignore_cert_errors {
+                build_permissive_tls()
             } else {
-                opts.set_transport(Transport::Tls(TlsConfiguration::Native));
+                TlsConfiguration::Native
+            };
+            if settings.use_websockets {
+                opts.set_transport(Transport::Wss(tls));
+            } else {
+                opts.set_transport(Transport::Tls(tls));
             }
         } else if settings.use_websockets {
             opts.set_transport(Transport::Ws);
@@ -195,6 +194,42 @@ impl MqttService {
         }
 
         Ok(())
+    }
+}
+
+/// TLS config for the "ignore certificate errors" setting: still a real TLS
+/// handshake, but self-signed and hostname-mismatched broker certificates are
+/// accepted. Needed for the common home setup of a Mosquitto instance with a
+/// self-signed cert; the old code path handled that case by dropping encryption
+/// altogether, which is strictly worse.
+///
+/// native_tls comes in through rumqttc's own re-export so the connector type is
+/// guaranteed to match the version rumqttc links against.
+fn build_permissive_tls() -> TlsConfiguration {
+    use rumqttc::tokio_native_tls::native_tls;
+
+    match native_tls::TlsConnector::builder()
+        .danger_accept_invalid_certs(true)
+        .danger_accept_invalid_hostnames(true)
+        .build()
+    {
+        Ok(connector) => {
+            log::warn!(
+                "MQTT: certificate verification disabled by user setting — the connection \
+                 is encrypted but the broker's identity is not verified"
+            );
+            TlsConfiguration::NativeConnector(connector)
+        }
+        // Don't fall back to plaintext: a failed builder is not a reason to
+        // downgrade. Full verification may reject a self-signed cert, but that
+        // fails loudly instead of leaking credentials.
+        Err(e) => {
+            log::warn!(
+                "MQTT: could not build permissive TLS connector ({e}); \
+                 falling back to full certificate verification"
+            );
+            TlsConfiguration::Native
+        }
     }
 }
 
