@@ -2,7 +2,7 @@ use std::time::Duration;
 use tokio::sync::{mpsc, watch};
 use tokio::time::Instant;
 
-/// Home-network detection based on the MAC address of the default IPv4 gateway.
+/// Home-network detection based on the MAC address(es) of the default IPv4 gateway(s).
 ///
 /// The gateway MAC is used instead of SSID or broker reachability because:
 /// - it works both on Wi-Fi and wired/docked connections,
@@ -10,21 +10,36 @@ use tokio::time::Instant;
 /// - a VPN tunnel can make the broker reachable away from home, but it can never make a
 ///   foreign gateway answer ARP with the home router's MAC.
 ///
+/// We enumerate *every* default-route (`0.0.0.0/0`) gateway rather than resolving the best
+/// route to a public IP: on a multi-homed machine (Ethernet + Tailscale/VPN, dock, etc.) an
+/// exit-node or VPN installs more-specific `/1` split routes that hijack "best route to
+/// 8.8.8.8", pointing it at a tunnel with no ARP-able LAN gateway. The physical NIC's
+/// `0.0.0.0/0` route (and its real home-router next hop) survives that, so scanning all
+/// default routes finds the home gateway even while a VPN is up.
+///
 /// An empty configured MAC disables the feature (always considered home).
 pub fn is_home(configured: &str) -> bool {
     let macs = parse_macs(configured);
     if macs.is_empty() {
         return true; // Feature disabled — behave as before.
     }
-    match current_gateway_mac_bytes() {
-        Some(mac) => macs.contains(&mac),
-        None => false,
-    }
+    let current = current_gateway_macs();
+    current.iter().any(|c| macs.contains(c))
 }
 
-/// Formatted gateway MAC for the "Use Current Network" button, e.g. "AA:BB:CC:DD:EE:FF".
+/// Formatted gateway MAC(s) for the "Use Current Network" button, comma-separated when the
+/// machine has multiple physical uplinks (e.g. "AA:BB:CC:DD:EE:FF, 11:22:33:44:55:66").
 pub fn current_gateway_mac() -> Option<String> {
-    current_gateway_mac_bytes().map(format_mac)
+    let macs = current_gateway_macs();
+    if macs.is_empty() {
+        return None;
+    }
+    Some(
+        macs.iter()
+            .map(|m| format_mac(*m))
+            .collect::<Vec<_>>()
+            .join(", "),
+    )
 }
 
 const POLL_INTERVAL: Duration = Duration::from_secs(20);
@@ -162,32 +177,98 @@ fn format_mac(mac: [u8; 6]) -> String {
         .join(":")
 }
 
+/// GetIp*Table return this when the passed buffer is null/too small; the required byte
+/// count comes back in the size out-param.
 #[cfg(windows)]
-fn current_gateway_mac_bytes() -> Option<[u8; 6]> {
-    use windows::Win32::NetworkManagement::IpHelper::{GetBestRoute, SendARP, MIB_IPFORWARDROW};
+const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
+
+/// Fetch a variable-length IP-helper table using the standard size-then-fill dance and hand
+/// its rows to `f` as a slice. `table_of` locates the `[Row; 1]` flexible array inside the
+/// allocated buffer. Returns whatever `f` produces, or `None` if either call fails.
+#[cfg(windows)]
+unsafe fn with_ip_table<Table, Row, R>(
+    get: unsafe fn(Option<*mut Table>, *mut u32, bool) -> u32,
+    table_of: unsafe fn(*mut Table) -> (u32, *const Row),
+    f: impl FnOnce(&[Row]) -> R,
+) -> Option<R> {
+    let mut size: u32 = 0;
+    if get(None, &mut size, false) != ERROR_INSUFFICIENT_BUFFER || size == 0 {
+        return None;
+    }
+    let mut buf = vec![0u8; size as usize];
+    let table = buf.as_mut_ptr() as *mut Table;
+    if get(Some(table), &mut size, false) != 0 {
+        return None;
+    }
+    let (num, first) = table_of(table);
+    Some(f(std::slice::from_raw_parts(first, num as usize)))
+}
+
+#[cfg(windows)]
+fn current_gateway_macs() -> Vec<[u8; 6]> {
+    use std::collections::HashMap;
+    use windows::Win32::NetworkManagement::IpHelper::{
+        GetIpAddrTable, GetIpForwardTable, SendARP, MIB_IPADDRTABLE, MIB_IPFORWARDTABLE,
+    };
 
     unsafe {
-        let mut row: MIB_IPFORWARDROW = std::mem::zeroed();
-        // Any public IP works — we only need the route's next hop (the LAN gateway).
-        let dest = u32::from_ne_bytes([8, 8, 8, 8]);
-        if GetBestRoute(dest, Some(0), &mut row) != 0 {
-            return None;
-        }
-        let gateway = row.dwForwardNextHop;
-        if gateway == 0 {
-            // On-link route (e.g. a VPN tunnel) — nothing to ARP.
-            return None;
-        }
-        let mut mac = [0u8; 8];
-        let mut len: u32 = 6;
-        if SendARP(gateway, 0, mac.as_mut_ptr() as *mut core::ffi::c_void, &mut len) != 0 || len != 6 {
-            return None;
-        }
-        Some([mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]])
+        // Map interface index -> that interface's own IPv4 address. SendARP needs the source
+        // IP of the interface the request goes out on: on a multi-homed machine (Ethernet +
+        // Tailscale/VPN + dock) passing srcip 0 makes Windows fail source selection and
+        // return ERROR_BAD_NET_NAME, so the gateway MAC never resolves. Feeding the correct
+        // per-interface source fixes exactly that.
+        let if_src: HashMap<u32, u32> = with_ip_table::<MIB_IPADDRTABLE, _, _>(
+            GetIpAddrTable,
+            |t| ((*t).dwNumEntries, (*t).table.as_ptr()),
+            |rows| {
+                rows.iter()
+                    .filter(|r| r.dwAddr != 0)
+                    .map(|r| (r.dwIndex, r.dwAddr))
+                    .collect()
+            },
+        )
+        .unwrap_or_default();
+
+        with_ip_table::<MIB_IPFORWARDTABLE, _, _>(
+            GetIpForwardTable,
+            |t| ((*t).dwNumEntries, (*t).table.as_ptr()),
+            |rows| {
+                let mut seen_gateways = std::collections::HashSet::new();
+                let mut macs: Vec<[u8; 6]> = Vec::new();
+                for row in rows {
+                    // Only default routes (0.0.0.0/0). A VPN/exit-node hijacks traffic with
+                    // more-specific /1 routes, but the physical LAN gateway keeps the real /0,
+                    // so scanning /0 routes finds the home gateway even while a VPN is up.
+                    if row.dwForwardDest != 0 || row.dwForwardMask != 0 {
+                        continue;
+                    }
+                    let gateway = row.dwForwardNextHop;
+                    // Skip on-link default routes (next hop 0.0.0.0, e.g. a tunnel) and
+                    // gateways already ARP'd (two NICs on one subnet share a next hop).
+                    if gateway == 0 || !seen_gateways.insert(gateway) {
+                        continue;
+                    }
+                    let src = if_src.get(&row.dwForwardIfIndex).copied().unwrap_or(0);
+                    let mut mac = [0u8; 8];
+                    let mut len: u32 = 6;
+                    if SendARP(gateway, src, mac.as_mut_ptr() as *mut core::ffi::c_void, &mut len)
+                        == 0
+                        && len == 6
+                    {
+                        let m = [mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]];
+                        if !macs.contains(&m) {
+                            macs.push(m);
+                        }
+                    }
+                }
+                macs
+            },
+        )
+        .unwrap_or_default()
     }
 }
 
 #[cfg(not(windows))]
-fn current_gateway_mac_bytes() -> Option<[u8; 6]> {
-    None
+fn current_gateway_macs() -> Vec<[u8; 6]> {
+    Vec::new()
 }
