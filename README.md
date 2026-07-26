@@ -23,16 +23,27 @@ We support plain MQTT, MQTT over TLS, MQTT over Websockets and MQTT over Websock
 This is how it should look in MQTT in Homeassistant
 
 The topic will be 
-- homeassistant/switch/YOURNAME/ismuted
-- homeassistant/switch/YOURNAME/isvideoon
+- homeassistant/switch/YOURNAME/ismuted/state
+- homeassistant/switch/YOURNAME/isvideoon/state
 - homeassistant/sensor/YOURNAME/teamsstatus/state
-- homeassistant/sensor/YOURNAME/presence/state
 - homeassistant/binary_sensor/YOURNAME/isinmeeting/state
+- homeassistant/binary_sensor/YOURNAME/hasunreadmessages/state
 - homeassistant/binary_sensor/YOURNAME/teamsrunning/state
+
+Plus an availability topic, teams2ha/YOURNAME/availability, which is set to offline by the broker (via the MQTT Last Will) if the app stops unexpectedly, so entities show as unavailable in Home Assistant rather than getting stuck on a stale value.
 
 <img width="1037" height="584" alt="image" src="https://github.com/user-attachments/assets/476b0107-d738-4f37-96a4-a50b9ed3ed6a" />
 
 (note, 2 way control is not possible at the moment, investigating the reliability of addign this in)
+
+<h2>A note on mute detection</h2>
+
+Teams' mute button does not change anything visible in the Windows audio stack, so mute is read from the Teams meeting window itself using UI Automation. Two things follow from that:
+
+- A Teams window has to be open. If Teams is fully closed to the system tray there is nothing to read, and mute is reported as unknown rather than guessed.
+- It reads the mute button's accessible name, so a Teams UI redesign or a non-English Teams may break it. If mute stops updating after a Teams update, please raise an issue - there is a diagnostic tool in the repo (tauri/src-tauri/examples/uia_probe.rs) that dumps what Teams is exposing.
+
+Muting Teams from the Windows volume mixer or Sound settings is detected separately and always works.
 
 Footnote: I have left the old .net source code intact, in case Microsoft reverse their decidion, the new code is in the Tauri folder, if you need to make changes. PRs always welcome :)
 
