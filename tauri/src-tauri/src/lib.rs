@@ -39,6 +39,15 @@ async fn get_settings() -> Result<Settings, String> {
     Ok(Settings::load())
 }
 
+/// Version shown in the UI, so "is this install up to date?" is answerable at a glance.
+///
+/// Comes from CARGO_PKG_VERSION, which the release workflow stamps from the git tag —
+/// so a released build reports its real version rather than whatever is committed.
+#[tauri::command]
+async fn get_app_version() -> Result<String, String> {
+    Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
 #[tauri::command]
 async fn get_mqtt_status(mqtt: State<'_, MqttHandle>) -> Result<String, String> {
     Ok(if mqtt.read().await.is_some() {
@@ -250,6 +259,12 @@ pub fn run() {
             // restarts the app, and that is disruptive mid-call. See updater.rs.
             updater::start(handle.clone(), shared.clone());
 
+            // Version in the OS title bar as well as the in-app header, so it is visible
+            // even when the window is only showing in the taskbar.
+            if let Some(w) = handle.get_webview_window("main") {
+                let _ = w.set_title(&format!("Teams2HA v{}", env!("CARGO_PKG_VERSION")));
+            }
+
             // Window visibility
             if run_minimized {
                 if let Some(w) = handle.get_webview_window("main") {
@@ -300,7 +315,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_state, get_mqtt_status, get_current_gateway_mac])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_state, get_mqtt_status, get_current_gateway_mac, get_app_version])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -448,59 +463,6 @@ fn recompute_muted(s: &mut AppState) {
     };
 }
 
-#[cfg(test)]
-mod tests {
-    use super::recompute_muted;
-    use crate::app_state::AppState;
-
-    fn state(uia: Option<bool>, wasapi: Option<bool>) -> AppState {
-        AppState {
-            uia_muted: uia,
-            last_wasapi_muted: wasapi,
-            ..Default::default()
-        }
-    }
-
-    fn muted(uia: Option<bool>, wasapi: Option<bool>) -> bool {
-        let mut s = state(uia, wasapi);
-        recompute_muted(&mut s);
-        s.meeting.is_muted
-    }
-
-    #[test]
-    fn uia_wins_over_a_missing_capture_session() {
-        // The regression this guards against: Teams sitting idle has no capture
-        // session, and treating that as "muted" would override UIA reporting the
-        // mute button as live the moment a meeting was detected.
-        assert!(!muted(Some(false), None));
-    }
-
-    #[test]
-    fn either_source_reporting_muted_means_muted() {
-        assert!(muted(Some(true), Some(false)));
-        assert!(muted(Some(false), Some(true)));
-        assert!(muted(Some(true), Some(true)));
-    }
-
-    #[test]
-    fn both_sources_live_is_not_muted() {
-        assert!(!muted(Some(false), Some(false)));
-    }
-
-    #[test]
-    fn falls_back_to_the_session_flag_when_uia_has_no_reading() {
-        assert!(muted(None, Some(true)));
-        assert!(!muted(None, Some(false)));
-    }
-
-    #[test]
-    fn no_window_and_no_session_reads_as_muted() {
-        // Nothing to go on: no window to read and Teams is not capturing, so during
-        // a meeting the mic is not live. The legacy inference, confined to this case.
-        assert!(muted(None, None));
-    }
-}
-
 async fn handle_uia_event(
     ev: UiaEvent,
     shared: &SharedState,
@@ -579,4 +541,54 @@ async fn handle_process_event(
     s.meeting.teams_running = running;
     drop(s);
     publish(mqtt, app, shared, false).await;
+}
+
+// Tests last: clippy's items_after_test_module rejects anything defined below them.
+#[cfg(test)]
+mod tests {
+    use super::recompute_muted;
+    use crate::app_state::AppState;
+
+    fn muted(uia: Option<bool>, wasapi: Option<bool>) -> bool {
+        let mut s = AppState {
+            uia_muted: uia,
+            last_wasapi_muted: wasapi,
+            ..Default::default()
+        };
+        recompute_muted(&mut s);
+        s.meeting.is_muted
+    }
+
+    #[test]
+    fn uia_wins_over_a_missing_capture_session() {
+        // The regression this guards against: Teams sitting idle has no capture
+        // session, and treating that as "muted" would override UIA reporting the
+        // mute button as live the moment a meeting was detected.
+        assert!(!muted(Some(false), None));
+    }
+
+    #[test]
+    fn either_source_reporting_muted_means_muted() {
+        assert!(muted(Some(true), Some(false)));
+        assert!(muted(Some(false), Some(true)));
+        assert!(muted(Some(true), Some(true)));
+    }
+
+    #[test]
+    fn both_sources_live_is_not_muted() {
+        assert!(!muted(Some(false), Some(false)));
+    }
+
+    #[test]
+    fn falls_back_to_the_session_flag_when_uia_has_no_reading() {
+        assert!(muted(None, Some(true)));
+        assert!(!muted(None, Some(false)));
+    }
+
+    #[test]
+    fn no_window_and_no_session_reads_as_muted() {
+        // Nothing to go on: no window to read and Teams is not capturing, so during
+        // a meeting the mic is not live. The legacy inference, confined to this case.
+        assert!(muted(None, None));
+    }
 }

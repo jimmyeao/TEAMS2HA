@@ -9,6 +9,11 @@ import "./App.css";
 function App() {
   const [mqttStatus, setMqttStatus] = useState("Unknown");
   const [meetingState, setMeetingState] = useState(null);
+  const [version, setVersion] = useState("");
+
+  useEffect(() => {
+    invoke("get_app_version").then(setVersion).catch(console.error);
+  }, []);
 
   useEffect(() => {
     // Listen for backend events
@@ -38,7 +43,10 @@ function App() {
         <div className="brand">
           <img className="brand-icon" src={appIcon} alt="" width="32" height="32" />
           <div className="brand-text">
-            <h1 className="brand-title">Teams2HA</h1>
+            <h1 className="brand-title">
+              Teams2HA
+              {version && <span className="brand-version">v{version}</span>}
+            </h1>
             <p className="brand-sub">Teams presence → Home Assistant</p>
           </div>
         </div>

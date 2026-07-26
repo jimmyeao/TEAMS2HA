@@ -154,40 +154,6 @@ fn extract_presence(line: &str) -> Option<String> {
     None
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Verbatim from MSTeams_2026-07-26_12-24-08.00.log.
-    const REAL_LINE_ZERO: &str = "2026-07-26T11:24:22.599057+01:00 0x00006de8 <INFO> native_modules::UserDataCrossCloudModule: CloudStateChanged: New Cloud State Event: UserDataCloudState total number of users: 1 { user id :ea554d6e27f17268, availability: Available, unread notification count: 0 }";
-
-    #[test]
-    fn zero_unread_is_not_unread() {
-        assert_eq!(extract_unread_count(REAL_LINE_ZERO), Some(0));
-        // The regression: the old check was `contains("true") || contains("1")`, and this
-        // real line contains '1' in its timestamp, so it reported unread messages forever.
-        assert!(REAL_LINE_ZERO.contains('1'));
-    }
-
-    #[test]
-    fn nonzero_unread_is_unread() {
-        let line = REAL_LINE_ZERO.replace("count: 0", "count: 3");
-        assert_eq!(extract_unread_count(&line), Some(3));
-    }
-
-    #[test]
-    fn multi_digit_count_parses_fully() {
-        let line = REAL_LINE_ZERO.replace("count: 0", "count: 42");
-        assert_eq!(extract_unread_count(&line), Some(42));
-    }
-
-    #[test]
-    fn unrelated_lines_are_ignored() {
-        assert_eq!(extract_unread_count("boot::SingleInstanceService: Creating server mutex"), None);
-        assert_eq!(extract_unread_count(""), None);
-    }
-}
-
 fn find_latest_log() -> Option<PathBuf> {
     let teams_appdata = std::env::var("LOCALAPPDATA").ok()?;
     let log_dir = PathBuf::from(&teams_appdata).join("Packages")
@@ -219,4 +185,42 @@ fn find_latest_log() -> Option<PathBuf> {
         })
         .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
         .map(|e| e.path())
+}
+
+// Tests last: clippy's items_after_test_module rejects anything defined below them.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verbatim from MSTeams_2026-07-26_12-24-08.00.log.
+    const REAL_LINE_ZERO: &str = "2026-07-26T11:24:22.599057+01:00 0x00006de8 <INFO> native_modules::UserDataCrossCloudModule: CloudStateChanged: New Cloud State Event: UserDataCloudState total number of users: 1 { user id :ea554d6e27f17268, availability: Available, unread notification count: 0 }";
+
+    #[test]
+    fn zero_unread_is_not_unread() {
+        assert_eq!(extract_unread_count(REAL_LINE_ZERO), Some(0));
+        // The regression: the old check was `contains("true") || contains("1")`, and this
+        // real line contains '1' in its timestamp, so it reported unread messages forever.
+        assert!(REAL_LINE_ZERO.contains('1'));
+    }
+
+    #[test]
+    fn nonzero_unread_is_unread() {
+        let line = REAL_LINE_ZERO.replace("count: 0", "count: 3");
+        assert_eq!(extract_unread_count(&line), Some(3));
+    }
+
+    #[test]
+    fn multi_digit_count_parses_fully() {
+        let line = REAL_LINE_ZERO.replace("count: 0", "count: 42");
+        assert_eq!(extract_unread_count(&line), Some(42));
+    }
+
+    #[test]
+    fn unrelated_lines_are_ignored() {
+        assert_eq!(
+            extract_unread_count("boot::SingleInstanceService: Creating server mutex"),
+            None
+        );
+        assert_eq!(extract_unread_count(""), None);
+    }
 }
