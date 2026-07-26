@@ -70,10 +70,14 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signs the updater artifacts. Without these the build still succeeds but
+          # Signs the updater artifacts. Without this the build still succeeds but
           # produces no .sig files, and clients reject the update.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # The signing key has no password, but this must still be present and empty:
+          # if the variable is unset entirely the CLI prompts for a password on stdin
+          # and the job hangs until it times out. GitHub rejects empty secret values,
+          # so it is hardcoded here rather than stored as a secret.
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           projectPath: tauri
           tagName: ${{ github.ref_name }}

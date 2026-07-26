@@ -137,9 +137,13 @@ explicit check from the tray is never deferred.
 
 Updates are signed with a minisign keypair. The public half is `plugins.updater.pubkey`
 in `tauri.conf.json`; the private half is the `TAURI_SIGNING_PRIVATE_KEY` repository
-secret (with `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, empty if the key has no password).
-A client rejects any update whose signature does not verify against the embedded public
-key, so control of the release host alone is not enough to push code to users.
+secret. A client rejects any update whose signature does not verify against the embedded
+public key, so control of the release host alone is not enough to push code to users.
+
+`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is set to an empty string in the workflow rather than
+stored as a secret, because the key has no password and GitHub does not accept a secret
+with an empty value. It must still be **present**: with the variable unset entirely the
+CLI prompts for a password on stdin and the job hangs until it times out.
 
 > **Do not lose the private key.** The public key is compiled into every shipped binary.
 > Without the private key you cannot sign updates, and every existing install stops
