@@ -11,7 +11,6 @@ use tokio::time::Instant;
 ///   foreign gateway answer ARP with the home router's MAC.
 ///
 /// An empty configured MAC disables the feature (always considered home).
-
 pub fn is_home(configured: &str) -> bool {
     let macs = parse_macs(configured);
     if macs.is_empty() {
@@ -76,7 +75,12 @@ pub fn start(tx: mpsc::Sender<HomeEvent>, mut mac_rx: watch::Receiver<String>) {
             )
             .await
             {
-                Ok(join) => join.unwrap_or(true),
+                // Treat a crashed lookup task the same as a timed-out one: "not home".
+                // The two-strike debounce below absorbs a one-off failure either way.
+                Ok(join) => join.unwrap_or_else(|e| {
+                    log::warn!("Gateway MAC lookup task failed ({e}); treating as not home");
+                    false
+                }),
                 Err(_) => {
                     log::warn!("Gateway MAC lookup timed out; treating as not home");
                     false
