@@ -11,7 +11,6 @@ use tokio::time::Instant;
 ///   foreign gateway answer ARP with the home router's MAC.
 ///
 /// An empty configured MAC disables the feature (always considered home).
-
 pub fn is_home(configured: &str) -> bool {
     let macs = parse_macs(configured);
     if macs.is_empty() {
