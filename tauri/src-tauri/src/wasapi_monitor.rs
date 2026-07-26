@@ -1,12 +1,24 @@
-/// Polls WASAPI capture sessions every 250 ms to detect Teams mute state.
-/// Teams signals mute via the Windows-level mute flag on its capture session,
-/// which is the same signal that drives the hardware mute LED on the mic.
+//! Polls WASAPI capture sessions every 250 ms.
+//!
+//! This is **not** the primary mute source — Teams' own mute button is invisible here;
+//! `uia_monitor` reads that. What this catches is the *OS-level* mute: muting Teams from
+//! the Windows volume mixer or Sound settings, which UI Automation cannot see.
+
 use std::time::Duration;
 use tokio::sync::mpsc;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WasapiEvent {
+    /// A Teams capture session exists and reported this mute state.
     MuteChanged(bool),
+    /// Teams has no capture session at all.
+    ///
+    /// Reported as its own event rather than as "muted". On older Teams builds this was
+    /// *the* mute signal — Teams released its capture session when muted — but it is an
+    /// inference, not a reading, so `recompute_muted` in lib.rs uses it only as a
+    /// fallback when UI Automation has no reading. Treating it as authoritative would
+    /// let a stale "no session" override a perfectly good UIA reading of "not muted".
+    NoSession,
 }
 
 pub fn start(tx: mpsc::Sender<WasapiEvent>) {
@@ -35,8 +47,10 @@ fn poll_wasapi_blocking(tx: mpsc::Sender<WasapiEvent>) {
                 }
             };
 
-        let mut last_muted: Option<bool> = None;
-        let mut session_present: Option<bool> = None;
+        // Some(Some(flag)) = a session exists and reported that flag
+        // Some(None)       = no Teams capture session
+        // None             = nothing reported yet
+        let mut last_sent: Option<Option<bool>> = None;
         // Error state is logged on transition only — at 4 polls/sec, logging every
         // failure would flood the file, but silence made "unchanged" and "could not
         // read" indistinguishable when diagnosing mute detection.
@@ -58,68 +72,54 @@ fn poll_wasapi_blocking(tx: mpsc::Sender<WasapiEvent>) {
                 _ => {}
             }
 
-            // Map a reading to a mute state.
+            // ┌───────────────────┬──────────────────────────────────────────────────┐
+            // │ Err(())           │ the audio API failed: no measurement at all, so  │
+            // │                   │ hold the last state rather than inventing a mute │
+            // │                   │ flank mid-call.                                  │
+            // │ Ok(None)          │ no Teams capture session → report NoSession.     │
+            // │ Ok(Some(reading)) │ a session exists → report its mute flags.         │
+            // └───────────────────┴──────────────────────────────────────────────────┘
             //
-            // ┌─────────────────────┬────────────────────────────────────────────────┐
-            // │ Err(())             │ the audio API failed: no measurement at all,   │
-            // │                     │ so hold the last known state rather than       │
-            // │                     │ inventing a mute flank mid-call.               │
-            // │ Ok(None)            │ Teams has no capture session → MUTED.          │
-            // │ Ok(Some(reading))   │ a session exists → use its mute flags.         │
-            // └─────────────────────┴────────────────────────────────────────────────┘
+            // History, because this arm has been got wrong twice:
             //
-            // *** Ok(None) => Some(true) is load-bearing. Do not "simplify" it. ***
+            // Teams' own mute button is invisible here — verified 2026-07-26 across
+            // several real calls that the per-session mute (ISimpleAudioVolume) and
+            // the capture endpoint mute (IAudioEndpointVolume) both stay false through
+            // mute toggles. On older builds Teams *released* its capture session when
+            // muted, so `Ok(None)` was the mute signal, and commit e5c28ed broke mute
+            // entirely by reclassifying it as "no reading, hold last state".
             //
-            // Teams' in-app mute is not observable as a flag. Verified 2026-07-26
-            // across several real calls: the per-session mute (ISimpleAudioVolume)
-            // and the capture endpoint mute (IAudioEndpointVolume) both stay false
-            // through mute toggles, Teams logs no mute state, and Windows offers no
-            // mic-mute control of its own during a Teams call. What *is* observable
-            // is that Teams releases its capture session when muted — so "Teams is
-            // not capturing" is precisely how we know the mic is muted.
-            //
-            // Commit e5c28ed reclassified this case as "no reading available, hold
-            // the last state". That reads like an obvious correctness fix — absence
-            // of data really isn't the same as a false value — and it did fix a real
-            // bug in the Err arm above, which previously also returned "muted" and
-            // so produced false flanks on a transient COM hiccup. But applying the
-            // same reasoning to Ok(None) removed the only working mute signal, and
-            // mute detection silently stopped working altogether.
-            let muted = match &reading {
+            // Current Teams keeps the session open while muted, so that inference no
+            // longer fires anyway, and uia_monitor is the real source. `Ok(None)` is
+            // therefore reported as its own event and left for lib.rs to weigh: still
+            // usable as a fallback when UIA has no reading, but never allowed to
+            // override one. Reporting it as "muted" here would mean a Teams that is
+            // merely idle could mark you muted the moment a meeting is detected.
+            let current: Option<Option<bool>> = match &reading {
                 Err(()) => None,
-                Ok(None) => Some(true),
-                Ok(Some(r)) => Some(r.muted()),
+                Ok(None) => Some(None),
+                Ok(Some(r)) => Some(Some(r.muted())),
             };
 
-            // Session appearing/disappearing is logged separately from the mute state
-            // so the log shows the underlying cause, not just the conclusion.
-            let present = match &reading {
-                Ok(Some(_)) => Some(true),
-                Ok(None) => Some(false),
-                Err(()) => None,
-            };
-            if let Some(p) = present {
-                if session_present != Some(p) {
-                    session_present = Some(p);
-                    match &reading {
-                        Ok(Some(r)) => {
-                            log::info!("WasapiMonitor: Teams capture session open ({r})")
-                        }
-                        _ => log::info!("WasapiMonitor: Teams capture session closed"),
-                    }
-                }
-            }
-
-            if let Some(m) = muted {
-                if Some(m) != last_muted {
-                    last_muted = Some(m);
-                    match &reading {
+            if let Some(state) = current {
+                if last_sent != Some(state) {
+                    last_sent = Some(state);
+                    match (state, &reading) {
                         // Both flag components are logged: if Teams ever does start
                         // reflecting mute in one of them, this is where it will show.
-                        Ok(Some(r)) => log::info!("WasapiMonitor: mute → {m} ({r})"),
-                        _ => log::info!("WasapiMonitor: mute → {m} (no Teams capture session)"),
+                        (Some(m), Ok(Some(r))) => {
+                            log::info!("WasapiMonitor: session mute → {m} ({r})");
+                            let _ = tx.blocking_send(WasapiEvent::MuteChanged(m));
+                        }
+                        (Some(m), _) => {
+                            log::info!("WasapiMonitor: session mute → {m}");
+                            let _ = tx.blocking_send(WasapiEvent::MuteChanged(m));
+                        }
+                        (None, _) => {
+                            log::info!("WasapiMonitor: no Teams capture session");
+                            let _ = tx.blocking_send(WasapiEvent::NoSession);
+                        }
                     }
-                    let _ = tx.blocking_send(WasapiEvent::MuteChanged(m));
                 }
             }
         }

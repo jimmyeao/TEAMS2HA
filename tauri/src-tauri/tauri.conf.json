@@ -14,9 +14,9 @@
       {
         "title": "Teams2HA",
         "width": 900,
-        "height": 700,
+        "height": 820,
         "minWidth": 560,
-        "minHeight": 520,
+        "minHeight": 620,
         "resizable": true,
         "visible": false
       }

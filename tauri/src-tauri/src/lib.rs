@@ -418,16 +418,87 @@ async fn handle_log_event(ev: LogEvent, shared: &SharedState, mqtt: &MqttHandle,
 
 /// Combine the two mute sources into `meeting.is_muted`.
 ///
-/// They observe different things and both silence the microphone, so either one being
-/// set means muted:
-/// * `uia_muted` — Teams' own mute button. The only source for it (see uia_monitor).
-///   `None` = no reading available, which must not be read as "unmuted".
-/// * `last_wasapi_muted` — the OS-level per-app mute, i.e. muting Teams from the Windows
-///   control panel or volume mixer. Teams' own button does not move this.
+/// * `uia_muted` — Teams' own mute button, read from its window. The only source for it,
+///   and therefore authoritative. `None` = no reading (Teams closed to the tray, or the
+///   button not found), which must never be read as "unmuted".
+/// * `last_wasapi_muted` — the mute flag on Teams' audio session, i.e. muting Teams from
+///   the Windows volume mixer or Sound settings. UIA cannot see that. `None` = Teams has
+///   no capture session at all.
+///
+/// The two observe different things and either silences the mic, so where both are
+/// available the answer is their OR.
+///
+/// The subtlety is what "no capture session" means. It is *evidence* of mute — on older
+/// Teams builds it was the only mute signal — but it is an inference, so it is used only
+/// when UIA has nothing to say. Letting it participate in the OR would mean an idle Teams
+/// with no session marks you muted the instant a meeting is detected, overriding a
+/// perfectly good UIA reading of "not muted".
 fn recompute_muted(s: &mut AppState) {
-    let uia = s.uia_muted.unwrap_or(false);
-    let wasapi = s.last_wasapi_muted.unwrap_or(false);
-    s.meeting.is_muted = uia || wasapi;
+    s.meeting.is_muted = match (s.uia_muted, s.last_wasapi_muted) {
+        // Both readings available — either one silences the mic.
+        (Some(uia), Some(wasapi)) => uia || wasapi,
+        // UIA is authoritative; a missing session is not allowed to override it.
+        (Some(uia), None) => uia,
+        // No UIA reading: fall back to the audio session's own flag.
+        (None, Some(wasapi)) => wasapi,
+        // Nothing anywhere: no window to read and Teams is not capturing, so during a
+        // meeting the mic is not live. This is the legacy inference, now confined to
+        // the one case where there is genuinely nothing better to go on.
+        (None, None) => true,
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::recompute_muted;
+    use crate::app_state::AppState;
+
+    fn state(uia: Option<bool>, wasapi: Option<bool>) -> AppState {
+        AppState {
+            uia_muted: uia,
+            last_wasapi_muted: wasapi,
+            ..Default::default()
+        }
+    }
+
+    fn muted(uia: Option<bool>, wasapi: Option<bool>) -> bool {
+        let mut s = state(uia, wasapi);
+        recompute_muted(&mut s);
+        s.meeting.is_muted
+    }
+
+    #[test]
+    fn uia_wins_over_a_missing_capture_session() {
+        // The regression this guards against: Teams sitting idle has no capture
+        // session, and treating that as "muted" would override UIA reporting the
+        // mute button as live the moment a meeting was detected.
+        assert!(!muted(Some(false), None));
+    }
+
+    #[test]
+    fn either_source_reporting_muted_means_muted() {
+        assert!(muted(Some(true), Some(false)));
+        assert!(muted(Some(false), Some(true)));
+        assert!(muted(Some(true), Some(true)));
+    }
+
+    #[test]
+    fn both_sources_live_is_not_muted() {
+        assert!(!muted(Some(false), Some(false)));
+    }
+
+    #[test]
+    fn falls_back_to_the_session_flag_when_uia_has_no_reading() {
+        assert!(muted(None, Some(true)));
+        assert!(!muted(None, Some(false)));
+    }
+
+    #[test]
+    fn no_window_and_no_session_reads_as_muted() {
+        // Nothing to go on: no window to read and Teams is not capturing, so during
+        // a meeting the mic is not live. The legacy inference, confined to this case.
+        assert!(muted(None, None));
+    }
 }
 
 async fn handle_uia_event(
@@ -454,10 +525,13 @@ async fn handle_wasapi_event(
     mqtt: &MqttHandle,
     app: &AppHandle,
 ) {
-    let WasapiEvent::MuteChanged(muted) = ev;
     let mut s = shared.write().await;
     // Always record it, even outside a meeting — see AppState::last_wasapi_muted.
-    s.last_wasapi_muted = Some(muted);
+    s.last_wasapi_muted = match ev {
+        WasapiEvent::MuteChanged(muted) => Some(muted),
+        // Not "muted": recompute_muted decides what an absent session means.
+        WasapiEvent::NoSession => None,
+    };
     if s.meeting.is_in_meeting {
         recompute_muted(&mut s);
     }
