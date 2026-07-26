@@ -62,7 +62,11 @@ impl Settings {
             return Ok(Self::default());
         }
         let json = fs::read_to_string(&path)?;
-        Ok(serde_json::from_str(&json)?)
+        let mut settings: Self = serde_json::from_str(&json)?;
+        // Stored DPAPI-protected; plaintext everywhere above this line, including over
+        // the IPC boundary to the settings UI, which has to render the actual value.
+        settings.mqtt_password = crate::crypto::unprotect(&settings.mqtt_password);
+        Ok(settings)
     }
 
     pub fn save(&self) -> Result<()> {
@@ -70,7 +74,11 @@ impl Settings {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let json = serde_json::to_string_pretty(self)?;
+        // Encrypt only the on-disk copy; `self` stays plaintext for the caller, which
+        // may still be using it to open an MQTT connection.
+        let mut on_disk = self.clone();
+        on_disk.mqtt_password = crate::crypto::protect(&self.mqtt_password);
+        let json = serde_json::to_string_pretty(&on_disk)?;
         fs::write(&path, json)?;
         self.apply_run_at_boot();
         Ok(())

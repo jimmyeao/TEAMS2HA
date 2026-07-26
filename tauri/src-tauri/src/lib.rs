@@ -1,4 +1,5 @@
 mod app_state;
+mod crypto;
 mod home_network;
 mod log_watcher;
 mod migration;
