@@ -220,7 +220,10 @@ async fn publish_discovery_inner(client: &AsyncClient, prefix: &str) {
         "identifiers": [format!("teams2ha_{prefix}")],
         "name": format!("Teams2HA ({})", prefix),
         "model": "Teams2HA",
-        "manufacturer": "jimmyeao"
+        "manufacturer": "jimmyeao",
+        // Real app version (release builds get it stamped from the git tag). Without this
+        // the device registry keeps showing whatever an older install once published.
+        "sw_version": env!("CARGO_PKG_VERSION")
     });
 
     let switches = [("ismuted", "Is Muted"), ("isvideoon", "Is Video On")];
