@@ -53,6 +53,13 @@ impl MqttService {
         reconnect_tx: mpsc::Sender<()>,
         app: AppHandle,
     ) -> Result<Self> {
+        // No broker address means there is nothing to connect to. Without this guard
+        // rumqttc happily accepts an empty host and the eventloop below retries it
+        // forever, logging a timeout every 10s into a 5 MB-capped log file.
+        if settings.mqtt_address.trim().is_empty() {
+            anyhow::bail!("no MQTT broker address configured");
+        }
+
         let prefix = settings.sensor_prefix.to_lowercase();
         let port = settings.mqtt_port;
 
