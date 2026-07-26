@@ -1,6 +1,7 @@
 [![CodeQL](https://github.com/jimmyeao/TEAMS2HA/actions/workflows/codeql.yml/badge.svg)](https://github.com/jimmyeao/TEAMS2HA/actions/workflows/codeql.yml)[![GitHub tag](https://img.shields.io/github/tag/jimmyeao/TEAMS2HA?include_prereleases=&sort=semver&color=blue)](https://github.com/jimmyeao/TEAMS2HA/releases/)
 [![License](https://img.shields.io/badge/License-MIT-blue)](#license)
 [![issues - Teams2HA](https://img.shields.io/github/issues/jimmyeao/TEAMS2HA)](https://github.com/jimmyeao/TEAMS2HA/issues)
+[![Rust Security Audit](https://github.com/jimmyeao/TEAMS2HA/actions/workflows/rust-audit.yml/badge.svg)](https://github.com/jimmyeao/TEAMS2HA/actions/workflows/rust-audit.yml)
 
 <H1>Teams2HA</H1>
 
