@@ -75,6 +75,10 @@ async fn poll_loop(tx: mpsc::Sender<LogEvent>) {
 }
 
 async fn process_line(line: &str, tx: &mpsc::Sender<LogEvent>, in_call: &mut bool) {
+    // NOTE: modern Teams (MSTeams_8wekyb3d8bbwe) does not log mute state at all — a search
+    // of its logs finds "mute" only in `HFP_VCC_UNMUTE_FIX` and `server mutex`. This branch
+    // is retained for the classic Teams log fallback in find_latest_log(); on current Teams
+    // the mute signal comes solely from wasapi_monitor. Do not assume this covers mute.
     if line.contains("NotifyCallMuteStateChanged") {
         let muted = line.contains("muteState: true");
         log::debug!("LogWatcher: mute → {muted}");
@@ -92,10 +96,26 @@ async fn process_line(line: &str, tx: &mpsc::Sender<LogEvent>, in_call: &mut boo
             log::debug!("LogWatcher: presence → {status}");
             let _ = tx.send(LogEvent::PresenceChanged(status)).await;
         }
-    } else if line.contains("unread") || line.contains("UnreadCount") {
-        let has_unread = line.contains("true") || line.contains("1");
-        let _ = tx.send(LogEvent::UnreadMessages(has_unread)).await;
+    } else if let Some(count) = extract_unread_count(line) {
+        log::debug!("LogWatcher: unread count → {count}");
+        let _ = tx.send(LogEvent::UnreadMessages(count > 0)).await;
     }
+}
+
+/// Teams reports the unread count inside its user-data state lines:
+/// `... availability: Available, unread notification count: 0 }`
+///
+/// This was previously `line.contains("true") || line.contains("1")`, which matched the
+/// '1' in the ISO timestamp of practically every line — so the sensor latched to
+/// "unread" the first time such a line appeared and never cleared. Parse the number.
+fn extract_unread_count(line: &str) -> Option<u32> {
+    let rest = line.split("unread notification count:").nth(1)?;
+    let digits: String = rest
+        .trim_start()
+        .chars()
+        .take_while(|c| c.is_ascii_digit())
+        .collect();
+    digits.parse().ok()
 }
 
 /// Read the last 256 KB of the log file and return the most recent presence value.
@@ -132,6 +152,40 @@ fn extract_presence(line: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Verbatim from MSTeams_2026-07-26_12-24-08.00.log.
+    const REAL_LINE_ZERO: &str = "2026-07-26T11:24:22.599057+01:00 0x00006de8 <INFO> native_modules::UserDataCrossCloudModule: CloudStateChanged: New Cloud State Event: UserDataCloudState total number of users: 1 { user id :ea554d6e27f17268, availability: Available, unread notification count: 0 }";
+
+    #[test]
+    fn zero_unread_is_not_unread() {
+        assert_eq!(extract_unread_count(REAL_LINE_ZERO), Some(0));
+        // The regression: the old check was `contains("true") || contains("1")`, and this
+        // real line contains '1' in its timestamp, so it reported unread messages forever.
+        assert!(REAL_LINE_ZERO.contains('1'));
+    }
+
+    #[test]
+    fn nonzero_unread_is_unread() {
+        let line = REAL_LINE_ZERO.replace("count: 0", "count: 3");
+        assert_eq!(extract_unread_count(&line), Some(3));
+    }
+
+    #[test]
+    fn multi_digit_count_parses_fully() {
+        let line = REAL_LINE_ZERO.replace("count: 0", "count: 42");
+        assert_eq!(extract_unread_count(&line), Some(42));
+    }
+
+    #[test]
+    fn unrelated_lines_are_ignored() {
+        assert_eq!(extract_unread_count("boot::SingleInstanceService: Creating server mutex"), None);
+        assert_eq!(extract_unread_count(""), None);
+    }
 }
 
 fn find_latest_log() -> Option<PathBuf> {
