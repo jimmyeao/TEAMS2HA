@@ -97,10 +97,12 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
-          # NOT includeUpdaterJson: with a build matrix each job would publish a
-          # latest.json describing only its own architecture, and the second upload
-          # would overwrite the first — leaving half of the users unable to update.
-          # The combined manifest is assembled once, in the job below.
+          # Must be explicitly false: it defaults to true, and with a build matrix each
+          # job then publishes a latest.json describing only its own architecture, the
+          # second overwriting the first. The combined manifest is assembled once, in
+          # the job below. Left at the default, a client checking for updates midway
+          # through a release could fetch a manifest that omits its own architecture.
+          includeUpdaterJson: false
 
   # The updater endpoint in tauri.conf.json points at this file. It must list every
   # architecture, so it can only be built after all matrix jobs have uploaded their
