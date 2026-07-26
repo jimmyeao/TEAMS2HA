@@ -9,6 +9,7 @@ mod registry_monitor;
 mod settings;
 mod teams_proc;
 mod uia_monitor;
+mod updater;
 mod wasapi_monitor;
 
 use app_state::{new_shared, AppState, SharedState};
@@ -151,6 +152,7 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // The window's X hides to the tray rather than quitting — Teams2HA is a background
         // bridge that must keep publishing to HA once the UI is dismissed. Quit is the tray
         // menu item, which goes through app.exit()/ExitRequested, a path prevent_close does
@@ -171,8 +173,9 @@ pub fn run() {
 
             // System tray (only created here — no declarative trayIcon in tauri.conf.json)
             let show = MenuItem::with_id(app, "show", "Show / Hide", true, None::<&str>)?;
+            let update = MenuItem::with_id(app, "update", "Check for updates", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&show, &quit])?;
+            let menu = Menu::with_items(app, &[&show, &update, &quit])?;
 
             let _tray = TrayIconBuilder::new()
                 .icon(app.default_window_icon().unwrap().clone())
@@ -180,6 +183,14 @@ pub fn run() {
                 .tooltip("Teams2HA")
                 .on_menu_event(move |app, event| match event.id().as_ref() {
                     "show" => toggle_window(app),
+                    "update" => {
+                        // Explicitly requested, so pass no state: unlike the scheduled
+                        // check, this one is not deferred during a meeting.
+                        let app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            updater::check_and_install(&app, None).await;
+                        });
+                    }
                     "quit" => app.exit(0),
                     _ => {}
                 })
@@ -234,6 +245,10 @@ pub fn run() {
             let home_mac_tx: HomeMacTx = Arc::new(home_mac_tx);
             app.manage(home_mac_tx);
             home_network::start(home_tx, home_mac_rx);
+
+            // Auto-update. Scheduled checks defer while a meeting is active — installing
+            // restarts the app, and that is disruptive mid-call. See updater.rs.
+            updater::start(handle.clone(), shared.clone());
 
             // Window visibility
             if run_minimized {

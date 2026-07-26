@@ -70,6 +70,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the updater artifacts. Without these the build still succeeds but
+          # produces no .sig files, and clients reject the update.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: tauri
           tagName: ${{ github.ref_name }}
@@ -89,3 +93,59 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.target }}
+          # NOT includeUpdaterJson: with a build matrix each job would publish a
+          # latest.json describing only its own architecture, and the second upload
+          # would overwrite the first — leaving half of the users unable to update.
+          # The combined manifest is assembled once, in the job below.
+
+  # The updater endpoint in tauri.conf.json points at this file. It must list every
+  # architecture, so it can only be built after all matrix jobs have uploaded their
+  # installers and signatures.
+  updater-manifest:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build and upload latest.json
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+
+          gh release download "$TAG" --repo "$REPO" --pattern '*-setup.exe.sig' --dir sigs
+
+          # Fail loudly rather than publishing a manifest that silently omits an
+          # architecture — a missing .sig means that build was not signed.
+          x64_sig_file=$(find sigs -name '*x64-setup.exe.sig' | head -n1)
+          arm_sig_file=$(find sigs -name '*arm64-setup.exe.sig' | head -n1)
+          for f in "$x64_sig_file" "$arm_sig_file"; do
+            if [ -z "$f" ] || [ ! -s "$f" ]; then
+              echo "::error::Missing or empty updater signature. Is TAURI_SIGNING_PRIVATE_KEY set?"
+              exit 1
+            fi
+          done
+
+          base="https://github.com/$REPO/releases/download/$TAG"
+
+          # jq --arg handles JSON escaping; signatures must not be interpolated raw.
+          jq -n \
+            --arg version "$version" \
+            --arg pub_date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg x64_sig "$(cat "$x64_sig_file")" \
+            --arg x64_url "$base/$(basename "$x64_sig_file" .sig)" \
+            --arg arm_sig "$(cat "$arm_sig_file")" \
+            --arg arm_url "$base/$(basename "$arm_sig_file" .sig)" \
+            '{
+              version: $version,
+              pub_date: $pub_date,
+              platforms: {
+                "windows-x86_64":  { signature: $x64_sig, url: $x64_url },
+                "windows-aarch64": { signature: $arm_sig, url: $arm_url }
+              }
+            }' > latest.json
+
+          cat latest.json
+          gh release upload "$TAG" latest.json --repo "$REPO" --clobber

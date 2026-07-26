@@ -25,8 +25,17 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/jimmyeao/TEAMS2HA/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFBMzBDQkMxQTE2NUZGMkYKUldRdi8yV2h3Y3N3cWpkSlNaUFhiNVd6cGtGeG9RaCs5L2NzY0JNL2N6ZjhnZHlZWk15WjZ2L1MK"
+    }
+  },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis"],
     "icon": [
       "icons/32x32.png",

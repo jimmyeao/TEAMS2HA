@@ -120,6 +120,47 @@ Because DPAPI binds the blob to the Windows account, copying `settings.json` to 
 user or machine yields a password that cannot be decrypted. That is reported as empty —
 re-enter it in the UI.
 
+## Releases and auto-update
+
+Pushing a `vX.Y.Z` tag triggers `.github/workflows/release.yml`, which stamps the version
+from the tag into `tauri.conf.json`, `package.json` and `Cargo.toml`, builds x64 and arm64
+installers, and publishes a **public, non-draft** GitHub release. Installed clients pick it
+up automatically.
+
+The app checks for updates 30s after startup and every six hours, and on demand from the
+tray menu. Scheduled checks are **skipped while a meeting is in progress** — installing
+restarts the app, which drops MQTT and briefly marks every entity unavailable in Home
+Assistant, and doing that mid-call is how users learn to switch auto-update off. An
+explicit check from the tray is never deferred.
+
+### Signing keys
+
+Updates are signed with a minisign keypair. The public half is `plugins.updater.pubkey`
+in `tauri.conf.json`; the private half is the `TAURI_SIGNING_PRIVATE_KEY` repository
+secret (with `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`, empty if the key has no password).
+A client rejects any update whose signature does not verify against the embedded public
+key, so control of the release host alone is not enough to push code to users.
+
+> **Do not lose the private key.** The public key is compiled into every shipped binary.
+> Without the private key you cannot sign updates, and every existing install stops
+> accepting them — the only recovery is for each user to reinstall by hand. Keep a backup
+> outside the repository.
+
+Regenerate only if you accept that cost:
+
+```sh
+npx @tauri-apps/cli signer generate --write-keys <path-outside-the-repo>
+```
+
+### The updater manifest
+
+The endpoint is `latest.json` on the GitHub release. `tauri-action`'s `includeUpdaterJson`
+is deliberately **not** used: with a build matrix each job publishes a manifest describing
+only its own architecture, and the second upload overwrites the first, leaving half the
+users unable to update. The `updater-manifest` job assembles the combined file after both
+builds and fails if a signature is missing, rather than publishing a manifest that silently
+omits an architecture.
+
 ## Troubleshooting
 
 | Symptom | Check |
