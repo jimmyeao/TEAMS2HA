@@ -79,8 +79,21 @@ impl MqttService {
             opts.set_credentials(&settings.mqtt_username, &settings.mqtt_password);
         }
 
-        if settings.use_tls && !settings.ignore_cert_errors {
-            opts.set_transport(Transport::Tls(TlsConfiguration::Native));
+        // "Use TLS" must always yield an encrypted transport. Previously the
+        // ignore_cert_errors flag silently downgraded TLS to plain TCP, and the
+        // TLS+websockets combination came out as unencrypted ws://.
+        if settings.use_tls {
+            if settings.ignore_cert_errors {
+                log::warn!(
+                    "MQTT: 'ignore certificate errors' is not supported; \
+                     connecting with TLS and full certificate verification"
+                );
+            }
+            if settings.use_websockets {
+                opts.set_transport(Transport::Wss(TlsConfiguration::Native));
+            } else {
+                opts.set_transport(Transport::Tls(TlsConfiguration::Native));
+            }
         } else if settings.use_websockets {
             opts.set_transport(Transport::Ws);
         }
