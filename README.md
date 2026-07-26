@@ -9,8 +9,11 @@
 Microsoft are deprecating the Teams local API, which has sadly broken our application.
 I have written a new lightweight version in Rust/Tauri that uses teams logs and hardware signals to see if you are in a meeting, get your status, mute state and video state. You will need to remove the old version, and install this version - admin rights are NOT required.
 
-Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will auto update once installed)
-<img width="822" height="712" alt="image" src="https://github.com/user-attachments/assets/5595f5ff-e4f3-44e6-8054-1cc381370fab" />
+Note: As of 26/07/2026 Microsoft no longer expose the mute state, we are now scraping this directly from the UI, please let me know if this is not working for you.
+
+Download the latest version from https://github.com/jimmyeao/TEAMS2HA/releases (app will now auto update once installed)
+<img width="902" height="852" alt="image" src="https://github.com/user-attachments/assets/e3e073ba-bcce-42c9-a055-f17eae6c9259" />
+
 
 
 <h2>MQTT</h2>
