@@ -237,8 +237,11 @@ pub fn run() {
             let (proc_tx, mut proc_rx) = mpsc::channel::<ProcessEvent>(64);
             let (uia_tx, mut uia_rx) = mpsc::channel::<UiaEvent>(16);
 
-            // Start OS monitors
-            log_watcher::start(log_tx);
+            // Start OS monitors. The log watcher gets a live view on whether
+            // Teams runs: a Teams exit mid-call never logs the end-lines for
+            // running calls, so the watcher must be able to drop its call set.
+            let (teams_run_tx, teams_run_rx) = watch::channel(true);
+            log_watcher::start(log_tx, teams_run_rx);
             wasapi_monitor::start(wasapi_tx);
             uia_monitor::start(uia_tx);
             tauri::async_runtime::spawn(async move { registry_monitor::start(reg_tx).await });
@@ -296,6 +299,8 @@ pub fn run() {
                             handle_registry_event(ev, &shared2, &mqtt_h3, &handle3).await;
                         }
                         Some(ev) = proc_rx.recv() => {
+                            let ProcessEvent::TeamsRunningChanged(running) = &ev;
+                            let _ = teams_run_tx.send(*running);
                             handle_process_event(ev, &shared2, &mqtt_h3, &handle3).await;
                         }
                         Some(_cmd) = cmd_rx.recv() => {
