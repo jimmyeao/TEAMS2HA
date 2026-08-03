@@ -1,0 +1,71 @@
+name: macOS Build (manual)
+
+# Manual trigger only, deliberately not wired into release.yml's `push: tags: v*` trigger.
+# The macOS port is still WIP (see uia_monitor.rs's #[cfg(target_os = "macos")] code) and
+# hasn't been verified against a real Teams-for-Mac build yet, and the Apple signing secrets
+# referenced below don't exist in this repo yet either. Once both are sorted, this can be
+# folded into release.yml's matrix alongside the existing Windows x64/arm64 jobs.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-14
+    name: Build (arm64)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tauri/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: tauri/src-tauri -> target
+          key: aarch64-apple-darwin
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: tauri
+
+      - name: Build (dmg, arm64)
+        working-directory: tauri
+        env:
+          # All of the Apple signing/notarization vars below are optional as far as Tauri's
+          # own bundler is concerned: when unset it still produces a build, just ad-hoc-signed
+          # and unnotarized (fine for a local test install on the machine that built it, not
+          # for handing to anyone else — Gatekeeper will refuse it). None of these secrets
+          # exist in this repo yet; add them once a Developer ID cert + app-specific password
+          # (or an App Store Connect API key) are ready.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          # Apple ID notarization method. (Alternative: APPLE_API_ISSUER / APPLE_API_KEY /
+          # APPLE_API_KEY_PATH for the App Store Connect API key method instead — swap these
+          # three for those three if that's the preferred route once secrets are set up.)
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run tauri build -- --target aarch64-apple-darwin --bundles dmg
+
+      - name: Upload dmg as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Teams2HA-macos-arm64-dmg
+          path: tauri/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          if-no-files-found: error
