@@ -19,7 +19,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 rumqttc = { version = "0.25", features = ["use-native-tls", "websocket"] }
-winreg = "0.56"
 notify = "8"
 directories = "6"
 log = "0.4"
@@ -32,6 +31,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-updater = "2"
 
 [target.'cfg(windows)'.dependencies]
+winreg = "0.56"
 windows = { version = "0.62", features = [
     "Win32_Media_Audio",
     "Win32_Media_Audio_Endpoints",
