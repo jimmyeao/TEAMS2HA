@@ -4,6 +4,7 @@
 //! `uia_monitor` reads that. What this catches is the *OS-level* mute: muting Teams from
 //! the Windows volume mixer or Sound settings, which UI Automation cannot see.
 
+#[cfg(windows)]
 use std::time::Duration;
 use tokio::sync::mpsc;
 

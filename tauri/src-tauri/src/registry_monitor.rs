@@ -68,6 +68,9 @@ pub async fn start(tx: mpsc::Sender<RegistryEvent>) {
     }
 }
 
+// `device` is only read inside the #[cfg(windows)] arm below; on other platforms the whole
+// body collapses to a bare `false` and the parameter goes unused.
+#[cfg_attr(not(windows), allow(unused_variables))]
 fn is_device_active(device: &str) -> bool {
     #[cfg(windows)]
     {

@@ -65,13 +65,14 @@ pub fn is_teams_pid(_pid: u32) -> bool {
 /// widen/narrow this match if it doesn't find the process.
 #[cfg(target_os = "macos")]
 pub fn teams_pid() -> Option<u32> {
-    use libproc::proc_pid::{listpids, name, ProcType};
+    use libproc::proc_pid::{name, ProcType};
 
     #[allow(deprecated)]
-    let pids = listpids(ProcType::ProcAllPIDS).ok()?;
+    let pids = libproc::proc_pid::listpids(ProcType::ProcAllPIDS).ok()?;
 
     pids.into_iter().find(|&pid| {
-        name(pid)
+        // libproc's `name` takes pid_t (i32) even though `listpids` yields u32.
+        name(pid as i32)
             .map(|n| {
                 let n = n.to_lowercase();
                 n.contains("teams")
