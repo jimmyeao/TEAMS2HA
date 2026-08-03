@@ -155,3 +155,29 @@ jobs:
 
           cat latest.json
           gh release upload "$TAG" latest.json --repo "$REPO" --clobber
+
+      - name: Append auto-generated changelog to release notes
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Diffs merged PRs/commits since the previous tag; GitHub picks the
+          # previous tag automatically when target_commitish/previous_tag_name
+          # are omitted.
+          changelog=$(gh api "repos/$REPO/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            --jq '.body')
+
+          current_body=$(gh release view "$TAG" --repo "$REPO" --json body --jq '.body')
+
+          {
+            printf '%s\n' "$current_body"
+            printf '\n---\n\n'
+            printf '%s\n' "$changelog"
+          } > combined_notes.md
+
+          gh release edit "$TAG" --repo "$REPO" --notes-file combined_notes.md
