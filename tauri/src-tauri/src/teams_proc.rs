@@ -81,7 +81,11 @@ pub fn teams_pid() -> Option<u32> {
     })
 }
 
+// Kept for parity with the Windows API shape (and for any future macOS caller that has a
+// candidate pid in hand already, e.g. a Phase 2 registry_monitor backend) — nothing calls it
+// yet, since uia_monitor's macOS backend uses `teams_pid()` directly instead.
 #[cfg(target_os = "macos")]
+#[allow(dead_code)]
 pub fn is_teams_pid(pid: u32) -> bool {
     teams_pid() == Some(pid)
 }
