@@ -30,9 +30,16 @@
 use std::time::Duration;
 use tokio::sync::mpsc;
 
+#[cfg(target_os = "macos")]
+use axuielement::prelude::*;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiaEvent {
     MuteChanged(bool),
+    /// macOS only: Teams' meeting-toolbar camera button flipped. Windows never constructs
+    /// this — its video signal comes from `registry_monitor` instead — so this variant does
+    /// not change Windows behavior at all.
+    VideoChanged(bool),
     /// No Teams mute button visible (typically: not in a meeting, or no Teams window).
     Unknown,
 }
@@ -50,6 +57,24 @@ fn classify(name: &str) -> Option<bool> {
     if lower.contains("unmute") {
         Some(true)
     } else if lower.contains("mute") {
+        Some(false)
+    } else {
+        None
+    }
+}
+
+/// `Turn Camera Off` → camera currently on, `Turn Camera On` → camera currently off.
+///
+/// Action-based naming, same convention as `classify`: the label describes what clicking the
+/// button would do, not the current state. Verified live against Teams-for-Mac in Accessibility
+/// Inspector during a real meeting; exact casing is normalized away by lowercasing first, same
+/// as `classify`.
+#[cfg(target_os = "macos")]
+fn classify_camera(name: &str) -> Option<bool> {
+    let lower = name.to_lowercase();
+    if lower.contains("turn camera off") {
+        Some(true)
+    } else if lower.contains("turn camera on") {
         Some(false)
     } else {
         None
@@ -204,7 +229,116 @@ impl Uia {
     }
 }
 
-#[cfg(not(windows))]
+/// Depth cap on the AX tree walk below — guards against a pathological/very deep tree (Teams
+/// is Electron/Chromium-hosted on macOS) turning a single poll into a runaway walk. Windows'
+/// `FindAll(TreeScope_Descendants, ...)` doesn't need this because UIA does the recursion
+/// itself; `AXUIElement` has no descendants-in-one-call equivalent, so the walk is manual here.
+#[cfg(target_os = "macos")]
+const MAX_AX_DEPTH: u32 = 25;
+
+#[cfg(target_os = "macos")]
+fn poll_blocking(tx: mpsc::Sender<UiaEvent>) {
+    let mut last_mute: Option<bool> = None;
+    let mut last_video: Option<bool> = None;
+
+    loop {
+        std::thread::sleep(Duration::from_millis(750));
+
+        let (mute, video) = crate::teams_proc::teams_pid()
+            .and_then(|pid| AXUIElement::from_pid(pid as i32))
+            .map(|app| find_toolbar_buttons(&app))
+            .unwrap_or((None, None));
+
+        if mute != last_mute {
+            match mute {
+                Some(m) => {
+                    log::info!("UiaMonitor: Teams mute → {m}");
+                    let _ = tx.blocking_send(UiaEvent::MuteChanged(m));
+                }
+                None => {
+                    log::info!("UiaMonitor: no Teams mute button visible");
+                    let _ = tx.blocking_send(UiaEvent::Unknown);
+                }
+            }
+            last_mute = mute;
+        }
+
+        if video != last_video {
+            if let Some(v) = video {
+                log::info!("UiaMonitor: Teams camera → {v}");
+                let _ = tx.blocking_send(UiaEvent::VideoChanged(v));
+            }
+            last_video = video;
+        }
+    }
+}
+
+/// Walks every one of Teams' windows looking for the meeting toolbar's mute and camera toggle
+/// buttons. Unlike the Windows path, this does a fresh walk every poll rather than caching a
+/// found element across polls — simpler, and 750ms is infrequent enough that the extra walk
+/// should not matter; worth revisiting only if it turns out to be slow against a real Teams AX
+/// tree.
+#[cfg(target_os = "macos")]
+fn find_toolbar_buttons(app: &AXUIElement) -> (Option<bool>, Option<bool>) {
+    use axuielement::ax_attribute::attributes::AX_WINDOWS_ATTRIBUTE;
+
+    let mut mute = None;
+    let mut video = None;
+
+    let windows = app
+        .element_array_attribute(AX_WINDOWS_ATTRIBUTE)
+        .unwrap_or_default();
+    for window in &windows {
+        walk(window, 0, &mut mute, &mut video);
+        if mute.is_some() && video.is_some() {
+            break;
+        }
+    }
+
+    (mute, video)
+}
+
+#[cfg(target_os = "macos")]
+fn walk(el: &AXUIElement, depth: u32, mute: &mut Option<bool>, video: &mut Option<bool>) {
+    use axuielement::ax_attribute::attributes::{AX_DESCRIPTION_ATTRIBUTE, AX_TITLE_ATTRIBUTE};
+
+    if depth > MAX_AX_DEPTH || (mute.is_some() && video.is_some()) {
+        return;
+    }
+
+    // Icon-only toolbar buttons like these often carry their accessible name in AXDescription
+    // rather than AXTitle (there is no visible text label) — check both.
+    let label = el
+        .string_attribute(AX_TITLE_ATTRIBUTE)
+        .ok()
+        .flatten()
+        .filter(|s| !s.is_empty())
+        .or_else(|| el.string_attribute(AX_DESCRIPTION_ATTRIBUTE).ok().flatten());
+
+    if let Some(label) = label {
+        if mute.is_none() {
+            if let Some(m) = classify(&label) {
+                *mute = Some(m);
+            }
+        }
+        if video.is_none() {
+            if let Some(v) = classify_camera(&label) {
+                *video = Some(v);
+            }
+        }
+    }
+
+    if let Ok(children) = el.children() {
+        for child in &children {
+            walk(child, depth + 1, mute, video);
+            if mute.is_some() && video.is_some() {
+                return;
+            }
+        }
+    }
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn poll_blocking(_tx: mpsc::Sender<UiaEvent>) {
     log::warn!("UiaMonitor: not supported on this platform");
 }
@@ -232,5 +366,28 @@ mod tests {
         assert_eq!(classify("Leave"), None);
         assert_eq!(classify("Share content"), None);
         assert_eq!(classify(""), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    mod camera {
+        use super::super::classify_camera;
+
+        #[test]
+        fn names_observed_from_teams_for_mac() {
+            // User-verified live via Accessibility Inspector during a real Teams-for-Mac
+            // meeting. Exact casing beyond this paraphrase is NOT independently confirmed —
+            // classify_camera lowercases before matching, so casing differences shouldn't
+            // matter, but if this test starts failing against a real build, capture the
+            // verbatim string (as the Windows test above does) and update it here.
+            assert_eq!(classify_camera("Turn Camera Off"), Some(true));
+            assert_eq!(classify_camera("Turn Camera On"), Some(false));
+        }
+
+        #[test]
+        fn unrelated_buttons_are_ignored() {
+            assert_eq!(classify_camera("Leave"), None);
+            assert_eq!(classify_camera("Mute Mic"), None);
+            assert_eq!(classify_camera(""), None);
+        }
     }
 }

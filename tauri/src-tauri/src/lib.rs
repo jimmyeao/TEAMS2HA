@@ -475,10 +475,20 @@ async fn handle_uia_event(
     app: &AppHandle,
 ) {
     let mut s = shared.write().await;
-    s.uia_muted = match ev {
-        UiaEvent::MuteChanged(m) => Some(m),
-        UiaEvent::Unknown => None,
-    };
+    match ev {
+        UiaEvent::MuteChanged(m) => s.uia_muted = Some(m),
+        UiaEvent::Unknown => s.uia_muted = None,
+        UiaEvent::VideoChanged(on) => {
+            s.meeting.is_video_on = on;
+            // macOS only in practice (Windows never constructs this variant, so this arm is
+            // dead code there): there is no macOS equivalent of registry_monitor's mic-in-use
+            // signal yet, so this is the only mac signal that can start a meeting. Mirrors how
+            // handle_registry_event's MicChanged(true) eagerly sets is_in_meeting on Windows.
+            if !s.meeting.is_in_meeting {
+                s.meeting.is_in_meeting = true;
+            }
+        }
+    }
     if s.meeting.is_in_meeting {
         recompute_muted(&mut s);
     }

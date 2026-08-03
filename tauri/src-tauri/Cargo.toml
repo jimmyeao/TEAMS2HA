@@ -47,3 +47,11 @@ windows = { version = "0.62", features = [
     "Win32_NetworkManagement_IpHelper",
     "Win32_Networking_WinSock",
 ] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+# Reads Teams' meeting-toolbar mute/camera buttons via the Accessibility API — the macOS
+# equivalent of the `windows` crate's Win32_UI_Accessibility (UI Automation) usage above.
+axuielement = "0.9"
+# PID-by-process-name lookup, the macOS equivalent of teams_proc.rs's Windows
+# QueryFullProcessImageNameW usage.
+libproc = "0.14"

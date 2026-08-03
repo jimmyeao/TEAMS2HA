@@ -47,7 +47,40 @@ pub fn is_teams_pid(pid: u32) -> bool {
     }
 }
 
-#[cfg(not(windows))]
+#[cfg(not(any(windows, target_os = "macos")))]
 pub fn is_teams_pid(_pid: u32) -> bool {
     false
+}
+
+/// PID of the running Teams process, or `None` if it isn't running.
+///
+/// Unlike Windows' `is_teams_pid` (which checks a candidate pid handed to it while walking
+/// UI Automation's window tree), the macOS Accessibility API takes a pid to construct an
+/// `AXUIElement` for an application rather than yielding one while walking windows — so
+/// `uia_monitor`'s macOS backend needs the pid up front instead.
+///
+/// Process name unconfirmed against a real "new Teams" install — matched by substring like
+/// the Windows path above so small naming variations across Teams versions don't silently
+/// break it. Verify via Activity Monitor or `osascript -e 'id of app "Microsoft Teams"'` and
+/// widen/narrow this match if it doesn't find the process.
+#[cfg(target_os = "macos")]
+pub fn teams_pid() -> Option<u32> {
+    use libproc::proc_pid::{listpids, name, ProcType};
+
+    #[allow(deprecated)]
+    let pids = listpids(ProcType::ProcAllPIDS).ok()?;
+
+    pids.into_iter().find(|&pid| {
+        name(pid)
+            .map(|n| {
+                let n = n.to_lowercase();
+                n.contains("teams")
+            })
+            .unwrap_or(false)
+    })
+}
+
+#[cfg(target_os = "macos")]
+pub fn is_teams_pid(pid: u32) -> bool {
+    teams_pid() == Some(pid)
 }
