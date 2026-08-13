@@ -468,6 +468,23 @@ fn recompute_muted(s: &mut AppState) {
     };
 }
 
+/// Combine the two video sources into `meeting.is_video_on`.
+///
+/// * `uia_video` — Teams' own camera button, read from its meeting-toolbar window.
+///   Authoritative whenever available: it reflects what Teams itself believes about
+///   video state, regardless of which device is actually feeding the camera — including
+///   virtual-camera passthroughs like NVIDIA Broadcast, whose consent-store entry
+///   `last_registry_video` can miss entirely. `None` = no reading (no meeting window, or
+///   button not found).
+/// * `last_registry_video` — Windows' Privacy Consent Store camera-in-use flag for
+///   Teams. Used only when there is no UIA reading to prefer.
+///
+/// Unlike `recompute_muted`, this is not an OR: the two are competing estimates of one
+/// fact, not two independent things that can each really turn the camera on.
+fn recompute_video(s: &mut AppState) {
+    s.meeting.is_video_on = s.uia_video.unwrap_or(s.last_registry_video);
+}
+
 async fn handle_uia_event(
     ev: UiaEvent,
     shared: &SharedState,
@@ -479,14 +496,19 @@ async fn handle_uia_event(
         UiaEvent::MuteChanged(m) => s.uia_muted = Some(m),
         UiaEvent::Unknown => s.uia_muted = None,
         UiaEvent::VideoChanged(on) => {
-            s.meeting.is_video_on = on;
-            // macOS only in practice (Windows never constructs this variant, so this arm is
-            // dead code there): there is no macOS equivalent of registry_monitor's mic-in-use
-            // signal yet, so this is the only mac signal that can start a meeting. Mirrors how
-            // handle_registry_event's MicChanged(true) eagerly sets is_in_meeting on Windows.
+            s.uia_video = Some(on);
+            recompute_video(&mut s);
+            // There is no registry_monitor mic-in-use signal on macOS, so this is the only
+            // mac signal that can start a meeting. On Windows, RegistryEvent::MicChanged
+            // usually gets there first, but this is just as valid a starting signal on the
+            // rare poll where it doesn't.
             if !s.meeting.is_in_meeting {
                 s.meeting.is_in_meeting = true;
             }
+        }
+        UiaEvent::VideoUnknown => {
+            s.uia_video = None;
+            recompute_video(&mut s);
         }
     }
     if s.meeting.is_in_meeting {
@@ -524,7 +546,10 @@ async fn handle_registry_event(
 ) {
     let mut s = shared.write().await;
     match ev {
-        RegistryEvent::CameraChanged(active) => s.meeting.is_video_on = active,
+        RegistryEvent::CameraChanged(active) => {
+            s.last_registry_video = active;
+            recompute_video(&mut s);
+        }
         RegistryEvent::MicChanged(active) => {
             if active && !s.meeting.is_in_meeting {
                 s.meeting.is_in_meeting = true;
@@ -561,7 +586,7 @@ async fn handle_process_event(
 // Tests last: clippy's items_after_test_module rejects anything defined below them.
 #[cfg(test)]
 mod tests {
-    use super::recompute_muted;
+    use super::{recompute_muted, recompute_video};
     use crate::app_state::AppState;
 
     fn muted(uia: Option<bool>, wasapi: Option<bool>) -> bool {
@@ -605,5 +630,30 @@ mod tests {
         // Nothing to go on: no window to read and Teams is not capturing, so during
         // a meeting the mic is not live. The legacy inference, confined to this case.
         assert!(muted(None, None));
+    }
+
+    fn video_on(uia: Option<bool>, registry: bool) -> bool {
+        let mut s = AppState {
+            uia_video: uia,
+            last_registry_video: registry,
+            ..Default::default()
+        };
+        recompute_video(&mut s);
+        s.meeting.is_video_on
+    }
+
+    #[test]
+    fn uia_video_reading_wins_over_the_registry_flag() {
+        // The regression this guards against: a virtual-camera passthrough (e.g. NVIDIA
+        // Broadcast) can leave the registry's consent-store flag stuck, so a confident
+        // UIA reading must not be overridden by it either way.
+        assert!(video_on(Some(true), false));
+        assert!(!video_on(Some(false), true));
+    }
+
+    #[test]
+    fn falls_back_to_the_registry_flag_when_uia_has_no_reading() {
+        assert!(video_on(None, true));
+        assert!(!video_on(None, false));
     }
 }
