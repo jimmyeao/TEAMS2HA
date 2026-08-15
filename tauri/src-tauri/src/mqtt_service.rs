@@ -156,6 +156,15 @@ impl MqttService {
         })
     }
 
+    // Uses `try_publish` (non-blocking) rather than `publish().await` deliberately: this is
+    // called from the app's single central event-loop task (see `publish()` in lib.rs), which
+    // also owns reconnect/resume handling. rumqttc's internal request channel is only drained
+    // while a connection is live — while disconnected it fills up (default cap 64), and the
+    // blocking `publish().await` would then hang forever waiting for room. Since that stalls
+    // the same task that's supposed to detect and rebuild a dead connection, a stuck publish
+    // could permanently prevent the app from ever reconnecting. These are retained topics
+    // republished on every state change and again in full on the next ConnAck, so a publish
+    // dropped here because the channel is full is not lost — it's superseded.
     pub async fn publish_state(&self, state: &MeetingState) -> Result<()> {
         let prefix = &self.prefix;
 
@@ -167,16 +176,12 @@ impl MqttService {
             ("binary_sensor", "teamsrunning", state.teams_running),
         ];
         for (component, id, value) in bool_pairs {
-            if let Err(e) = self
-                .client
-                .publish(
-                    format!("homeassistant/{component}/{prefix}/{id}/state"),
-                    QoS::AtLeastOnce,
-                    true,
-                    if *value { "ON" } else { "OFF" },
-                )
-                .await
-            {
+            if let Err(e) = self.client.try_publish(
+                format!("homeassistant/{component}/{prefix}/{id}/state"),
+                QoS::AtLeastOnce,
+                true,
+                if *value { "ON" } else { "OFF" },
+            ) {
                 log::warn!("MQTT publish failed [{id}]: {e}");
             }
         }
@@ -186,16 +191,12 @@ impl MqttService {
                 "MQTT publishing teamsstatus: '{}' → homeassistant/sensor/{prefix}/teamsstatus/state",
                 state.presence
             );
-            if let Err(e) = self
-                .client
-                .publish(
-                    format!("homeassistant/sensor/{prefix}/teamsstatus/state"),
-                    QoS::AtLeastOnce,
-                    true,
-                    state.presence.as_bytes().to_vec(),
-                )
-                .await
-            {
+            if let Err(e) = self.client.try_publish(
+                format!("homeassistant/sensor/{prefix}/teamsstatus/state"),
+                QoS::AtLeastOnce,
+                true,
+                state.presence.as_bytes().to_vec(),
+            ) {
                 log::warn!("MQTT publish failed [teamsstatus]: {e}");
             }
         }
