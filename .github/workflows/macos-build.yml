@@ -51,6 +51,14 @@ jobs:
           # for handing to anyone else — Gatekeeper will refuse it). None of these secrets
           # exist in this repo yet; add them once a Developer ID cert + app-specific password
           # (or an App Store Connect API key) are ready.
+          #
+          # Caveat that bit us: `${{ secrets.APPLE_CERTIFICATE }}` for a secret that doesn't
+          # exist evaluates to an empty string, not an absent var — GitHub Actions has no way
+          # to express "unset" here. Tauri's bundler only checks `env::var(..).is_ok()`, and
+          # `Ok("")` still passes, so it walked into the codesign path with an empty cert blob
+          # and `security import` rejected it (SecKeychainItemImport: parameters not valid).
+          # The `run:` step below actually unsets these when the cert is blank so the bundler
+          # sees them as genuinely absent and falls back to ad-hoc signing as intended.
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
@@ -61,7 +69,12 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run tauri build -- --target aarch64-apple-darwin --bundles dmg
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+              KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          npm run tauri build -- --target aarch64-apple-darwin --bundles dmg
 
       - name: Upload dmg as a workflow artifact
         uses: actions/upload-artifact@v4
