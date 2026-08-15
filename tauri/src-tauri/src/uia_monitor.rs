@@ -1,4 +1,4 @@
-//! Teams' in-app mute state, read via UI Automation.
+//! Teams' in-app mute and camera state, read via UI Automation.
 //!
 //! # Why UIA and not the audio stack
 //!
@@ -18,6 +18,15 @@
 //! The one place the state *is* visible is the meeting window's mute button, whose
 //! accessible name flips between `Mute mic` (live) and `Unmute mic` (muted).
 //!
+//! The camera signal has an analogous gap: `registry_monitor`'s Privacy Consent Store
+//! reading reflects physical-camera use, but a virtual-camera passthrough (e.g. NVIDIA
+//! Broadcast sitting between the real webcam and Teams) doesn't reliably route through
+//! the Frame Server capability check the consent store is fed by, so it can leave
+//! `LastUsedTimeStop` stuck non-zero even while video is genuinely on. The meeting
+//! window's camera button (`Turn Camera Off` while on, `Turn Camera On` while off) is
+//! read the same way as mute and, on Windows, takes precedence over the registry
+//! reading whenever a meeting window is present — see `recompute_video` in `lib.rs`.
+//!
 //! # Known limitations — please read before relying on this
 //!
 //! * **Needs a realised Teams window.** With Teams closed to the tray its processes have
@@ -36,10 +45,15 @@ use axuielement::prelude::*;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiaEvent {
     MuteChanged(bool),
-    /// macOS only: Teams' meeting-toolbar camera button flipped. Windows never constructs
-    /// this — its video signal comes from `registry_monitor` instead — so this variant does
-    /// not change Windows behavior at all.
+    /// Teams' meeting-toolbar camera button flipped. On Windows this takes precedence
+    /// over `registry_monitor`'s reading whenever available — see `recompute_video` in
+    /// `lib.rs` — because it reflects Teams' own belief about video state regardless of
+    /// which device is actually feeding the camera.
     VideoChanged(bool),
+    /// No Teams camera button visible (typically: not in a meeting, or no Teams window).
+    /// Distinct from `VideoChanged(false)` so `recompute_video` falls back to the
+    /// registry reading instead of assuming video is off.
+    VideoUnknown,
     /// No Teams mute button visible (typically: not in a meeting, or no Teams window).
     Unknown,
 }
@@ -68,8 +82,9 @@ fn classify(name: &str) -> Option<bool> {
 /// Action-based naming, same convention as `classify`: the label describes what clicking the
 /// button would do, not the current state. Verified live against Teams-for-Mac in Accessibility
 /// Inspector during a real meeting; exact casing is normalized away by lowercasing first, same
-/// as `classify`.
-#[cfg(target_os = "macos")]
+/// as `classify`. Not independently verified against Teams-for-Windows — if that turns out to
+/// use different wording, `search` below just keeps reporting no camera reading, same as before
+/// this was wired up on Windows.
 fn classify_camera(name: &str) -> Option<bool> {
     let lower = name.to_lowercase();
     if lower.contains("turn camera off") {
@@ -91,22 +106,25 @@ fn poll_blocking(tx: mpsc::Sender<UiaEvent>) {
         let ctx = match Uia::new() {
             Some(c) => c,
             None => {
-                log::error!("UiaMonitor: could not initialise UI Automation; Teams mute will not be detected");
+                log::error!("UiaMonitor: could not initialise UI Automation; Teams mute/camera will not be detected");
                 return;
             }
         };
 
-        let mut last: Option<bool> = None;
-        // Holding the element between polls avoids re-walking the whole WebView2 tree
-        // every second; it is only re-searched when the cached element goes stale.
-        let mut cached = None;
+        let mut last_mute: Option<bool> = None;
+        let mut last_video: Option<bool> = None;
+        // Holding the buttons found last time avoids re-walking the whole WebView2 tree
+        // every poll; each is only re-searched once its own cached element goes stale.
+        let mut cached_mute = None;
+        let mut cached_video = None;
 
         loop {
             std::thread::sleep(Duration::from_millis(750));
 
-            let reading = ctx.read_mute(&mut cached);
-            if reading != last {
-                match reading {
+            let (mute, video) = ctx.read(&mut cached_mute, &mut cached_video);
+
+            if mute != last_mute {
+                match mute {
                     Some(m) => {
                         log::info!("UiaMonitor: Teams mute → {m}");
                         let _ = tx.blocking_send(UiaEvent::MuteChanged(m));
@@ -116,7 +134,21 @@ fn poll_blocking(tx: mpsc::Sender<UiaEvent>) {
                         let _ = tx.blocking_send(UiaEvent::Unknown);
                     }
                 }
-                last = reading;
+                last_mute = mute;
+            }
+
+            if video != last_video {
+                match video {
+                    Some(v) => {
+                        log::info!("UiaMonitor: Teams camera → {v}");
+                        let _ = tx.blocking_send(UiaEvent::VideoChanged(v));
+                    }
+                    None => {
+                        log::info!("UiaMonitor: no Teams camera button visible");
+                        let _ = tx.blocking_send(UiaEvent::VideoUnknown);
+                    }
+                }
+                last_video = video;
             }
         }
     }
@@ -161,36 +193,61 @@ impl Uia {
         })
     }
 
-    /// Current mute state, or None when no Teams mute button can be found.
-    unsafe fn read_mute(
+    /// Current (mute, video) state; either is `None` when its button cannot be found.
+    unsafe fn read(
         &self,
-        cached: &mut Option<windows::Win32::UI::Accessibility::IUIAutomationElement>,
-    ) -> Option<bool> {
-        // Fast path: the button we found last time is usually still there, with only its
+        cached_mute: &mut Option<windows::Win32::UI::Accessibility::IUIAutomationElement>,
+        cached_video: &mut Option<windows::Win32::UI::Accessibility::IUIAutomationElement>,
+    ) -> (Option<bool>, Option<bool>) {
+        // Fast path: the buttons found last time are usually still there, with only their
         // accessible name changed.
-        if let Some(el) = cached.as_ref() {
-            if let Ok(name) = el.CurrentName() {
-                if let Some(muted) = classify(&name.to_string()) {
-                    return Some(muted);
-                }
-            }
-            // Stale (window closed, or the node was replaced) — fall through and re-search.
-            *cached = None;
+        let mut mute = cached_mute
+            .as_ref()
+            .and_then(|el| el.CurrentName().ok())
+            .and_then(|name| classify(&name.to_string()));
+        if mute.is_none() {
+            *cached_mute = None;
         }
 
-        self.search(cached)
+        let mut video = cached_video
+            .as_ref()
+            .and_then(|el| el.CurrentName().ok())
+            .and_then(|name| classify_camera(&name.to_string()));
+        if video.is_none() {
+            *cached_video = None;
+        }
+
+        if mute.is_some() && video.is_some() {
+            return (mute, video);
+        }
+
+        self.search(cached_mute, cached_video, &mut mute, &mut video);
+        (mute, video)
     }
 
+    /// Walks Teams' windows for whichever of the mute/camera buttons `read`'s fast path did
+    /// not already resolve, filling in `mute`/`video` in place and caching whatever is found
+    /// (leaving an already-resolved value and its cache entry untouched).
     unsafe fn search(
         &self,
-        cached: &mut Option<windows::Win32::UI::Accessibility::IUIAutomationElement>,
-    ) -> Option<bool> {
+        cached_mute: &mut Option<windows::Win32::UI::Accessibility::IUIAutomationElement>,
+        cached_video: &mut Option<windows::Win32::UI::Accessibility::IUIAutomationElement>,
+        mute: &mut Option<bool>,
+        video: &mut Option<bool>,
+    ) {
         use windows::Win32::UI::Accessibility::{TreeScope_Children, TreeScope_Descendants};
 
-        let top = self.root.FindAll(TreeScope_Children, &self.any).ok()?;
+        let top = match self.root.FindAll(TreeScope_Children, &self.any) {
+            Ok(t) => t,
+            Err(_) => return,
+        };
         let n = top.Length().unwrap_or(0);
 
         for i in 0..n {
+            if mute.is_some() && video.is_some() {
+                return;
+            }
+
             let win = match top.GetElement(i) {
                 Ok(w) => w,
                 Err(_) => continue,
@@ -202,7 +259,7 @@ impl Uia {
             }
 
             // Teams has several windows (main, meeting, notifications); only the meeting
-            // window carries a mute button, so check them all and take the first hit.
+            // window carries these buttons, so check them all and take the first hit.
             let found = match win.FindAll(TreeScope_Descendants, &self.buttons) {
                 Ok(b) => b,
                 Err(_) => continue,
@@ -210,6 +267,9 @@ impl Uia {
 
             let bn = found.Length().unwrap_or(0);
             for j in 0..bn {
+                if mute.is_some() && video.is_some() {
+                    break;
+                }
                 let btn = match found.GetElement(j) {
                     Ok(b) => b,
                     Err(_) => continue,
@@ -218,14 +278,24 @@ impl Uia {
                     Ok(s) => s.to_string(),
                     Err(_) => continue,
                 };
-                if let Some(muted) = classify(&name) {
-                    *cached = Some(btn);
-                    return Some(muted);
+
+                // A button matches at most one of these, so cloning here only to move
+                // `btn` outright below never wastes a real clone in practice — it is only
+                // needed to keep `btn` available for the second check.
+                if mute.is_none() {
+                    if let Some(m) = classify(&name) {
+                        *mute = Some(m);
+                        *cached_mute = Some(btn.clone());
+                    }
+                }
+                if video.is_none() {
+                    if let Some(v) = classify_camera(&name) {
+                        *video = Some(v);
+                        *cached_video = Some(btn);
+                    }
                 }
             }
         }
-
-        None
     }
 }
 
@@ -368,17 +438,17 @@ mod tests {
         assert_eq!(classify(""), None);
     }
 
-    #[cfg(target_os = "macos")]
     mod camera {
         use super::super::classify_camera;
 
         #[test]
         fn names_observed_from_teams_for_mac() {
             // User-verified live via Accessibility Inspector during a real Teams-for-Mac
-            // meeting. Exact casing beyond this paraphrase is NOT independently confirmed —
-            // classify_camera lowercases before matching, so casing differences shouldn't
-            // matter, but if this test starts failing against a real build, capture the
-            // verbatim string (as the Windows test above does) and update it here.
+            // meeting. Not yet independently verified against Teams-for-Windows — assumed
+            // to match since the mute strings above do too, but if Windows turns out to
+            // phrase it differently, capture the verbatim string and update this test; until
+            // then `search` just keeps reporting no camera reading there, same as before this
+            // was wired up on Windows.
             assert_eq!(classify_camera("Turn Camera Off"), Some(true));
             assert_eq!(classify_camera("Turn Camera On"), Some(false));
         }

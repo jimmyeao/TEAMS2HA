@@ -19,6 +19,17 @@ pub struct AppState {
     /// window / button not found) — deliberately distinct from `Some(false)`, so a
     /// missing reading never reads as "unmuted".
     pub uia_muted: Option<bool>,
+    /// Teams' in-app camera button, from UI Automation. Same `None` convention as
+    /// `uia_muted`. See `recompute_video` in `lib.rs`: authoritative over
+    /// `last_registry_video` whenever a reading is available.
+    pub uia_video: Option<bool>,
+    /// Windows only: the Privacy Consent Store's camera-in-use flag for Teams (see
+    /// `registry_monitor`). Reliable for a physical webcam, but a virtual-camera
+    /// passthrough (e.g. NVIDIA Broadcast) can leave it never updating, since that path
+    /// doesn't always route through the Frame Server capability check the store is fed
+    /// by. Kept only as `recompute_video`'s fallback for when there is no meeting window
+    /// yet to read a camera button from.
+    pub last_registry_video: bool,
     /// Last state that was actually delivered to MQTT — used to skip republishing
     /// an unchanged state on every monitor event. Only set after a successful
     /// publish, so a failed publish is retried on the next event.
