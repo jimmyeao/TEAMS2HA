@@ -89,8 +89,9 @@ jobs:
 
             | File | Architecture |
             |------|-------------|
-            | `Teams2HA_*_x64-setup.exe` | Intel / AMD (most PCs) |
-            | `Teams2HA_*_arm64-setup.exe` | ARM64 (Surface Pro X, Copilot+ PCs) |
+            | `Teams2HA_*_x64-setup.exe` | Windows Intel / AMD (most PCs) |
+            | `Teams2HA_*_arm64-setup.exe` | Windows ARM64 (Surface Pro X, Copilot+ PCs) |
+            | `Teams2HA_*_aarch64.dmg` | macOS Apple Silicon (signed and notarized) |
 
             If you previously had the .NET version installed, it will be automatically
             removed on first launch of the new version.
@@ -103,6 +104,95 @@ jobs:
           # the job below. Left at the default, a client checking for updates midway
           # through a release could fetch a manifest that omits its own architecture.
           includeUpdaterJson: false
+
+  release-macos:
+    # Gated on the Windows release job so the GitHub Release already exists by the time
+    # this uploads to it — `gh release upload` doesn't create one, only attaches to it.
+    needs: release
+    runs-on: macos-14
+    name: Build (macOS arm64)
+    # A build failure here (e.g. a bad cert, or the still-WIP macOS port hitting a real
+    # compile issue) must not take down the Windows release that already succeeded.
+    continue-on-error: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version from tag
+        shell: bash
+        working-directory: tauri
+        run: |
+          set -euo pipefail
+          tag="${{ github.ref_name }}"
+          version="${tag#v}"
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Tag '$tag' must be X.Y.Z semver (e.g. v1.2.3). Aborting."
+            exit 1
+          fi
+          echo "Stamping internal version $version from tag $tag"
+          perl -pi -e "s/\"version\": \"[^\"]*\"/\"version\": \"$version\"/" src-tauri/tauri.conf.json package.json
+          perl -pi -e "s/^version = \"[^\"]*\"/version = \"$version\"/" src-tauri/Cargo.toml
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tauri/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Cache Rust build
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: tauri/src-tauri -> target
+          key: aarch64-apple-darwin
+
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: tauri
+
+      - name: Build (dmg, arm64)
+        working-directory: tauri
+        env:
+          # Real Developer ID cert + notarization credentials, once added to repo secrets.
+          # See macos-build.yml for the full rundown of each var's purpose.
+          #
+          # Caveat: a secret that doesn't exist still arrives here as an empty string, not
+          # an absent var — Tauri's bundler treats Ok("") as "signing configured" and fails
+          # codesign on an empty cert. The run: step below unsets these when blank so an
+          # unconfigured cert falls back to ad-hoc signing instead of a hard failure; once
+          # APPLE_CERTIFICATE is a real secret this branch never triggers.
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          # Apple ID notarization method. (Alternative: APPLE_API_ISSUER / APPLE_API_KEY /
+          # APPLE_API_KEY_PATH for the App Store Connect API key method instead.)
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "::warning::No APPLE_CERTIFICATE secret set — building ad-hoc signed only, unnotarized."
+            unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY \
+              KEYCHAIN_PASSWORD APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+          fi
+          npm run tauri build -- --target aarch64-apple-darwin --bundles dmg
+
+      - name: Upload dmg to the release
+        working-directory: tauri
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release upload "$TAG" src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg --repo "$REPO" --clobber
 
   # The updater endpoint in tauri.conf.json points at this file. It must list every
   # architecture, so it can only be built after all matrix jobs have uploaded their
