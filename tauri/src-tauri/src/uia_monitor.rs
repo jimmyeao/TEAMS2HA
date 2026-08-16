@@ -56,6 +56,14 @@ pub enum UiaEvent {
     VideoUnknown,
     /// No Teams mute button visible (typically: not in a meeting, or no Teams window).
     Unknown,
+    /// macOS only: the meeting toolbar (mute *and* camera buttons) has been absent for
+    /// several consecutive polls. Windows never sends this — it has `registry_monitor`'s
+    /// mic-in-use check and `log_watcher`'s log-file parsing to end a meeting, both of
+    /// which are hard stubs on macOS, so this is that platform's only substitute. Debounced
+    /// in `poll_blocking` (not just "both `Unknown` this poll") because a backgrounded Teams
+    /// window can make Chromium briefly skip AX-tree upkeep, which must not be mistaken for
+    /// the call having ended.
+    MeetingEnded,
 }
 
 pub fn start(tx: mpsc::Sender<UiaEvent>) {
@@ -306,15 +314,30 @@ impl Uia {
 #[cfg(target_os = "macos")]
 const MAX_AX_DEPTH: u32 = 25;
 
+/// Consecutive 750ms polls with neither button found before `UiaEvent::MeetingEnded` fires —
+/// 3s of continuous absence, long enough that a backgrounded Teams window's Chromium
+/// AX-tree hiccup (a poll or two) doesn't get mistaken for the call actually ending.
+#[cfg(target_os = "macos")]
+const MEETING_END_DEBOUNCE: u32 = 4;
+
 #[cfg(target_os = "macos")]
 fn poll_blocking(tx: mpsc::Sender<UiaEvent>) {
     let mut last_mute: Option<bool> = None;
     let mut last_video: Option<bool> = None;
+    let mut absent_polls: u32 = 0;
+
+    let mut last_pid: Option<u32> = None;
 
     loop {
         std::thread::sleep(Duration::from_millis(750));
 
-        let (mute, video) = crate::teams_proc::teams_pid()
+        let pid = crate::teams_proc::teams_pid();
+        if pid != last_pid {
+            log::debug!("UiaMonitor: teams_pid() → {pid:?}");
+            last_pid = pid;
+        }
+
+        let (mute, video) = pid
             .and_then(|pid| AXUIElement::from_pid(pid as i32))
             .map(|app| find_toolbar_buttons(&app))
             .unwrap_or((None, None));
@@ -334,11 +357,30 @@ fn poll_blocking(tx: mpsc::Sender<UiaEvent>) {
         }
 
         if video != last_video {
-            if let Some(v) = video {
-                log::info!("UiaMonitor: Teams camera → {v}");
-                let _ = tx.blocking_send(UiaEvent::VideoChanged(v));
+            match video {
+                Some(v) => {
+                    log::info!("UiaMonitor: Teams camera → {v}");
+                    let _ = tx.blocking_send(UiaEvent::VideoChanged(v));
+                }
+                None => {
+                    log::info!("UiaMonitor: no Teams camera button visible");
+                    let _ = tx.blocking_send(UiaEvent::VideoUnknown);
+                }
             }
             last_video = video;
+        }
+
+        // See `UiaEvent::MeetingEnded`'s doc comment for why this exists. Tracked here
+        // rather than via the `Unknown`/`VideoUnknown` events above: those only fire on
+        // *change*, so once both settle at "not found" they stop firing at all — this must
+        // run every poll to actually count consecutive absences.
+        if mute.is_none() && video.is_none() {
+            absent_polls += 1;
+            if absent_polls == MEETING_END_DEBOUNCE {
+                let _ = tx.blocking_send(UiaEvent::MeetingEnded);
+            }
+        } else {
+            absent_polls = 0;
         }
     }
 }
@@ -355,9 +397,14 @@ fn find_toolbar_buttons(app: &AXUIElement) -> (Option<bool>, Option<bool>) {
     let mut mute = None;
     let mut video = None;
 
-    let windows = app
-        .element_array_attribute(AX_WINDOWS_ATTRIBUTE)
-        .unwrap_or_default();
+    let windows = match app.element_array_attribute(AX_WINDOWS_ATTRIBUTE) {
+        Ok(w) => w,
+        Err(e) => {
+            log::debug!("UiaMonitor: AXWindows lookup failed: {e:?}");
+            Vec::new()
+        }
+    };
+    log::debug!("UiaMonitor: found {} Teams window(s)", windows.len());
     for window in &windows {
         walk(window, 0, &mut mute, &mut video);
         if mute.is_some() && video.is_some() {

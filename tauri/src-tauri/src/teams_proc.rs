@@ -59,24 +59,26 @@ pub fn is_teams_pid(_pid: u32) -> bool {
 /// `AXUIElement` for an application rather than yielding one while walking windows — so
 /// `uia_monitor`'s macOS backend needs the pid up front instead.
 ///
-/// Process name unconfirmed against a real "new Teams" install — matched by substring like
-/// the Windows path above so small naming variations across Teams versions don't silently
-/// break it. Verify via Activity Monitor or `osascript -e 'id of app "Microsoft Teams"'` and
-/// widen/narrow this match if it doesn't find the process.
+/// Verified live against a real Microsoft Teams for Mac install: matches on the executable's
+/// full path (via `pidpath`) rather than the short process name. Matching on name alone was
+/// tried first and is broken — every process's short name (`libproc::proc_pid::name`) is
+/// truncated/simple enough that our own process, `teams2ha`, contains "teams" as a substring
+/// and was winning the match instead of the real Teams process, silently reading Teams2HA's
+/// own (buttonless) app window as "the Teams window" and never finding mute/camera. The
+/// bundle's `Contents/MacOS/` path segment also excludes Teams' many Helpers/XPCServices
+/// child processes (WebView, ModuleHost, notification center, …), which don't own the
+/// meeting-toolbar window `uia_monitor` is looking for.
 #[cfg(target_os = "macos")]
 pub fn teams_pid() -> Option<u32> {
-    use libproc::proc_pid::{name, ProcType};
+    use libproc::proc_pid::{pidpath, ProcType};
 
     #[allow(deprecated)]
     let pids = libproc::proc_pid::listpids(ProcType::ProcAllPIDS).ok()?;
 
     pids.into_iter().find(|&pid| {
-        // libproc's `name` takes pid_t (i32) even though `listpids` yields u32.
-        name(pid as i32)
-            .map(|n| {
-                let n = n.to_lowercase();
-                n.contains("teams")
-            })
+        // libproc's `pidpath` takes pid_t (i32) even though `listpids` yields u32.
+        pidpath(pid as i32)
+            .map(|p| p.to_lowercase().contains("microsoft teams.app/contents/macos/"))
             .unwrap_or(false)
     })
 }

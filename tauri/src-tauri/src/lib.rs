@@ -155,9 +155,35 @@ fn init_logging() {
     builder.init();
 }
 
+/// Registers Teams2HA in System Settings > Privacy & Security > Accessibility and, on first
+/// launch, triggers macOS's TCC prompt for it. Without this, the app never appears in that
+/// list at all — Accessibility permission is not "denied", it's simply never requested — so
+/// every AX call `uia_monitor`'s macOS backend makes silently returns nothing, which reads
+/// identically to "no meeting toolbar button found".
+///
+/// macOS shows the prompt only once per app per install; if the user dismisses or denies it,
+/// this returns `false` silently on every later call until they grant it manually in Settings.
+/// Must run on the main thread, before the async runtime spawns anything — this call is made
+/// from `run()` before `tauri::Builder` takes over.
+#[cfg(target_os = "macos")]
+fn ensure_accessibility_permission() {
+    if axuielement::is_process_trusted_with_prompt() {
+        log::info!("Accessibility permission already granted.");
+    } else {
+        log::warn!(
+            "Accessibility permission not granted — Teams meeting controls (mute/camera) will \
+             not be detected until it's granted in System Settings > Privacy & Security > \
+             Accessibility, then the app is restarted."
+        );
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_logging();
+
+    #[cfg(target_os = "macos")]
+    ensure_accessibility_permission();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -509,6 +535,14 @@ async fn handle_uia_event(
         UiaEvent::VideoUnknown => {
             s.uia_video = None;
             recompute_video(&mut s);
+        }
+        UiaEvent::MeetingEnded => {
+            // macOS only (see the variant's doc comment): the only signal available there
+            // to end a meeting, since registry_monitor's mic-in-use check and log_watcher's
+            // log-file parsing — Windows' two signals for this — are both hard stubs on
+            // macOS.
+            s.meeting.is_in_meeting = false;
+            s.meeting.is_muted = false;
         }
     }
     if s.meeting.is_in_meeting {

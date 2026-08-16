@@ -73,6 +73,10 @@ fn is_teams_running() -> bool {
             false
         }
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        crate::teams_proc::teams_pid().is_some()
+    }
+    #[cfg(not(any(windows, target_os = "macos")))]
     false
 }

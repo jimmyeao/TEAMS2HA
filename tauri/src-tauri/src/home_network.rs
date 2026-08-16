@@ -268,7 +268,62 @@ fn current_gateway_macs() -> Vec<[u8; 6]> {
     }
 }
 
-#[cfg(not(windows))]
+/// Same "every default-route gateway, not just the best one" approach as the Windows
+/// implementation above, via BSD command-line tools rather than a native API — macOS has no
+/// direct equivalent of `GetIpForwardTable`/`SendARP` exposed to Rust without pulling in the
+/// SystemConfiguration framework for what `netstat`/`arp` already do in two subprocess calls.
+#[cfg(target_os = "macos")]
+fn current_gateway_macs() -> Vec<[u8; 6]> {
+    use std::collections::HashSet;
+    use std::net::Ipv4Addr;
+    use std::process::Command;
+
+    let Ok(netstat) = Command::new("netstat").args(["-rn", "-f", "inet"]).output() else {
+        return Vec::new();
+    };
+    let netstat = String::from_utf8_lossy(&netstat.stdout);
+
+    let mut seen_gateways = HashSet::new();
+    let mut macs: Vec<[u8; 6]> = Vec::new();
+
+    for line in netstat.lines() {
+        let mut fields = line.split_whitespace();
+        if fields.next() != Some("default") {
+            continue;
+        }
+        // The gateway field is a real IPv4 address for a normal route, but can be e.g.
+        // "link#22" for an on-link/tunnel default route (no ARP-able next hop) — skip those,
+        // same as the Windows path skips a next hop of 0.0.0.0.
+        let Some(gateway) = fields.next().and_then(|g| g.parse::<Ipv4Addr>().ok()) else {
+            continue;
+        };
+        if !seen_gateways.insert(gateway) {
+            continue;
+        }
+
+        let Ok(arp) = Command::new("arp").args(["-n", &gateway.to_string()]).output() else {
+            continue;
+        };
+        let arp = String::from_utf8_lossy(&arp.stdout);
+        // e.g. "? (192.168.0.1) at 78:45:58:d0:f0:96 on en0 ifscope [ethernet]" — macOS's arp
+        // omits leading zeros per octet ("...at 14:ac:60:af:0:4d..."), so each segment is
+        // parsed by value rather than assumed to be two hex digits.
+        if let Some(mac_str) = arp.split(" at ").nth(1).and_then(|rest| rest.split(" on ").next())
+        {
+            let bytes: Vec<u8> = mac_str
+                .split(':')
+                .filter_map(|b| u8::from_str_radix(b, 16).ok())
+                .collect();
+            if let Ok(mac) = <[u8; 6]>::try_from(bytes.as_slice()) {
+                macs.push(mac);
+            }
+        }
+    }
+
+    macs
+}
+
+#[cfg(not(any(windows, target_os = "macos")))]
 fn current_gateway_macs() -> Vec<[u8; 6]> {
     Vec::new()
 }
