@@ -1,6 +1,8 @@
 use crate::settings::Settings;
 use anyhow::Result;
-use rumqttc::{AsyncClient, Event, LastWill, MqttOptions, Packet, QoS, TlsConfiguration, Transport};
+use rumqttc::{
+    AsyncClient, Event, LastWill, MqttOptions, Packet, QoS, TlsConfiguration, Transport,
+};
 use serde_json::json;
 use std::time::Duration;
 use tauri::{AppHandle, Emitter};
@@ -61,11 +63,12 @@ impl MqttService {
         }
 
         let prefix = settings.sensor_prefix.to_lowercase();
+        let broker_addr = normalized_broker_address(settings);
         let port = settings.mqtt_port;
 
         let mut opts = MqttOptions::new(
             format!("teams2ha-{}", hostname::get()?.to_string_lossy()),
-            &settings.mqtt_address,
+            &broker_addr,
             port,
         );
         opts.set_keep_alive(Duration::from_secs(30));
@@ -88,20 +91,23 @@ impl MqttService {
 
         // "Use TLS" must always yield an encrypted transport. Previously the
         // ignore_cert_errors flag silently downgraded TLS to plain TCP, and the
-        // TLS+websockets combination came out as unencrypted ws://.
-        if settings.use_tls {
+        // TLS+websockets combination fed a native-tls config into rumqttc's WSS
+        // path even though that transport only accepts a rustls-backed config.
+        if settings.use_websockets {
+            if settings.use_tls {
+                opts.set_transport(Transport::Wss(build_websocket_tls(
+                    settings.ignore_cert_errors,
+                )));
+            } else {
+                opts.set_transport(Transport::Ws);
+            }
+        } else if settings.use_tls {
             let tls = if settings.ignore_cert_errors {
                 build_permissive_tls()
             } else {
                 TlsConfiguration::Native
             };
-            if settings.use_websockets {
-                opts.set_transport(Transport::Wss(tls));
-            } else {
-                opts.set_transport(Transport::Tls(tls));
-            }
-        } else if settings.use_websockets {
-            opts.set_transport(Transport::Ws);
+            opts.set_transport(Transport::Tls(tls));
         }
 
         let (client, mut eventloop) = AsyncClient::new(opts, 64);
@@ -172,7 +178,11 @@ impl MqttService {
             ("switch", "ismuted", state.is_muted),
             ("switch", "isvideoon", state.is_video_on),
             ("binary_sensor", "isinmeeting", state.is_in_meeting),
-            ("binary_sensor", "hasunreadmessages", state.has_unread_messages),
+            (
+                "binary_sensor",
+                "hasunreadmessages",
+                state.has_unread_messages,
+            ),
             ("binary_sensor", "teamsrunning", state.teams_running),
         ];
         for (component, id, value) in bool_pairs {
@@ -239,6 +249,136 @@ fn build_permissive_tls() -> TlsConfiguration {
             TlsConfiguration::Native
         }
     }
+}
+
+fn build_websocket_tls(ignore_cert_errors: bool) -> TlsConfiguration {
+    ensure_rustls_provider();
+    if ignore_cert_errors {
+        build_permissive_websocket_tls()
+    } else {
+        TlsConfiguration::default()
+    }
+}
+
+fn build_permissive_websocket_tls() -> TlsConfiguration {
+    use rumqttc::tokio_rustls::rustls::{
+        client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
+        pki_types::{CertificateDer, ServerName, UnixTime},
+        ClientConfig, DigitallySignedStruct, Error, SignatureScheme,
+    };
+    use std::sync::Arc;
+
+    #[derive(Debug)]
+    struct NoVerifier;
+
+    impl ServerCertVerifier for NoVerifier {
+        fn verify_server_cert(
+            &self,
+            _end_entity: &CertificateDer<'_>,
+            _intermediates: &[CertificateDer<'_>],
+            _server_name: &ServerName<'_>,
+            _ocsp_response: &[u8],
+            _now: UnixTime,
+        ) -> Result<ServerCertVerified, Error> {
+            Ok(ServerCertVerified::assertion())
+        }
+
+        fn verify_tls12_signature(
+            &self,
+            _message: &[u8],
+            _cert: &CertificateDer<'_>,
+            _dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn verify_tls13_signature(
+            &self,
+            _message: &[u8],
+            _cert: &CertificateDer<'_>,
+            _dss: &DigitallySignedStruct,
+        ) -> Result<HandshakeSignatureValid, Error> {
+            Ok(HandshakeSignatureValid::assertion())
+        }
+
+        fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+            vec![
+                SignatureScheme::RSA_PKCS1_SHA1,
+                SignatureScheme::ECDSA_SHA1_Legacy,
+                SignatureScheme::RSA_PKCS1_SHA256,
+                SignatureScheme::ECDSA_NISTP256_SHA256,
+                SignatureScheme::RSA_PKCS1_SHA384,
+                SignatureScheme::ECDSA_NISTP384_SHA384,
+                SignatureScheme::RSA_PKCS1_SHA512,
+                SignatureScheme::ECDSA_NISTP521_SHA512,
+                SignatureScheme::RSA_PSS_SHA256,
+                SignatureScheme::RSA_PSS_SHA384,
+                SignatureScheme::RSA_PSS_SHA512,
+                SignatureScheme::ED25519,
+                SignatureScheme::ED448,
+            ]
+        }
+    }
+
+    log::warn!(
+        "MQTT: certificate verification disabled by user setting — the WSS connection \
+         is encrypted but the broker's identity is not verified"
+    );
+
+    TlsConfiguration::from(
+        ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoVerifier))
+            .with_no_client_auth(),
+    )
+}
+
+fn ensure_rustls_provider() {
+    use rumqttc::tokio_rustls::rustls::crypto::{ring, CryptoProvider};
+
+    if CryptoProvider::get_default().is_none() {
+        let _ = ring::default_provider().install_default();
+    }
+}
+
+fn normalized_broker_address(settings: &Settings) -> String {
+    let address = settings.mqtt_address.trim();
+    if !settings.use_websockets || address.is_empty() {
+        return address.to_string();
+    }
+
+    let scheme = if settings.use_tls { "wss" } else { "ws" };
+    let rest = address
+        .split_once("://")
+        .map(|(_, rest)| rest)
+        .unwrap_or(address);
+
+    let split_at = rest.find(['/', '?']).unwrap_or(rest.len());
+    let (authority, suffix) = rest.split_at(split_at);
+    let authority = authority.trim_end_matches('/');
+
+    let authority = if has_explicit_port(authority) {
+        authority.to_string()
+    } else {
+        format!("{authority}:{}", settings.mqtt_port)
+    };
+
+    let suffix = if suffix.is_empty() { "/mqtt" } else { suffix };
+    format!("{scheme}://{authority}{suffix}")
+}
+
+fn has_explicit_port(authority: &str) -> bool {
+    if authority.is_empty() {
+        return false;
+    }
+    if authority.starts_with('[') {
+        return authority
+            .rsplit_once("]:")
+            .is_some_and(|(_, port)| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()));
+    }
+    authority
+        .rsplit_once(':')
+        .is_some_and(|(_, port)| !port.is_empty() && port.chars().all(|c| c.is_ascii_digit()))
 }
 
 fn availability_topic(prefix: &str) -> String {
@@ -387,5 +527,83 @@ async fn handle_incoming(
                 _ => {}
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings() -> Settings {
+        Settings {
+            mqtt_address: "homeassistant.local".into(),
+            mqtt_port: 9001,
+            mqtt_username: String::new(),
+            mqtt_password: String::new(),
+            sensor_prefix: "pc".into(),
+            use_tls: false,
+            ignore_cert_errors: false,
+            use_websockets: false,
+            run_at_boot: false,
+            run_minimized: false,
+            theme: "dark".into(),
+            color_scheme: "DeepPurple / Lime".into(),
+            home_gateway_mac: String::new(),
+        }
+    }
+
+    #[test]
+    fn websocket_address_adds_scheme_port_and_default_path() {
+        let mut settings = settings();
+        settings.use_websockets = true;
+
+        assert_eq!(
+            normalized_broker_address(&settings),
+            "ws://homeassistant.local:9001/mqtt"
+        );
+    }
+
+    #[test]
+    fn websocket_address_preserves_path_and_forces_tls_scheme() {
+        let mut settings = settings();
+        settings.use_websockets = true;
+        settings.use_tls = true;
+        settings.mqtt_address = "ws://home.pauwal.de/mqtt".into();
+        settings.mqtt_port = 443;
+
+        assert_eq!(
+            normalized_broker_address(&settings),
+            "wss://home.pauwal.de:443/mqtt"
+        );
+    }
+
+    #[test]
+    fn websocket_address_keeps_existing_port_and_query() {
+        let mut settings = settings();
+        settings.use_websockets = true;
+        settings.mqtt_address = "broker.example.com:8443/mqtt?client_id=test".into();
+
+        assert_eq!(
+            normalized_broker_address(&settings),
+            "ws://broker.example.com:8443/mqtt?client_id=test"
+        );
+    }
+
+    #[test]
+    fn detects_explicit_ipv6_port() {
+        assert!(has_explicit_port("[2001:db8::1]:9001"));
+        assert!(!has_explicit_port("[2001:db8::1]"));
+    }
+
+    #[test]
+    fn websocket_tls_uses_rustls_configuration() {
+        assert!(matches!(
+            build_websocket_tls(false),
+            TlsConfiguration::Rustls(_)
+        ));
+        assert!(matches!(
+            build_websocket_tls(true),
+            TlsConfiguration::Rustls(_)
+        ));
     }
 }
