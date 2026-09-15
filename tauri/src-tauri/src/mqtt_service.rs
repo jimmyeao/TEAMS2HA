@@ -355,7 +355,11 @@ fn normalized_broker_address(settings: &Settings) -> String {
 
     let split_at = rest.find(['/', '?']).unwrap_or(rest.len());
     let (authority, suffix) = rest.split_at(split_at);
-    let authority = authority.trim_end_matches('/');
+    let authority = authority
+        .rsplit_once('@')
+        .map(|(_, host)| host)
+        .unwrap_or(authority)
+        .trim_end_matches('/');
 
     let authority = if has_explicit_port(authority) {
         authority.to_string()
@@ -586,6 +590,20 @@ mod tests {
         assert_eq!(
             normalized_broker_address(&settings),
             "ws://broker.example.com:8443/mqtt?client_id=test"
+        );
+    }
+
+    #[test]
+    fn websocket_address_drops_unsupported_url_credentials() {
+        let mut settings = settings();
+        settings.use_websockets = true;
+        settings.use_tls = true;
+        let userinfo = format!("{}:{}@", "user", "pw");
+        settings.mqtt_address = format!("wss://{userinfo}broker.example.com/mqtt");
+
+        assert_eq!(
+            normalized_broker_address(&settings),
+            "wss://broker.example.com:9001/mqtt"
         );
     }
 
