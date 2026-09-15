@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader, Seek, SeekFrom};
-use std::path::PathBuf;
-use std::time::Duration;
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, watch};
-use tokio::time::interval;
+use tokio::time::{interval, MissedTickBehavior};
 
 #[derive(Debug, Clone)]
 pub enum LogEvent {
@@ -164,15 +164,28 @@ pub fn start(tx: mpsc::Sender<LogEvent>, teams_running: watch::Receiver<bool>) {
     tauri::async_runtime::spawn(poll_loop(tx, teams_running));
 }
 
+/// Waiting this long for a 250 ms tick means the process was frozen in between:
+/// the machine slept. Same signal, and the same reasoning, as `registry_monitor`.
+/// Only the wait is timed, never the work done in an iteration (see `poll_loop`).
+const RESUME_GAP: Duration = Duration::from_secs(60);
+
 async fn poll_loop(tx: mpsc::Sender<LogEvent>, mut teams_running: watch::Receiver<bool>) {
     let mut current_file: Option<PathBuf> = None;
-    let mut file_handle: Option<(BufReader<File>, u64)> = None;
+    let mut file_handle: Option<BufReader<File>> = None;
     let mut calls = CallState::default();
 
     let mut tick = interval(Duration::from_millis(250));
+    // No catch-up burst of ticks after a suspend — that burst is also what
+    // would hide the clock gap the resume check below looks for.
+    tick.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
     loop {
+        // Time only the wait for the tick. A slow iteration — a large drain, a
+        // channel send that had to wait for the receiver — must not read as a
+        // suspend; with `Delay` the tick after such an iteration fires at once.
+        let waiting_since = Instant::now();
         tick.tick().await;
+        let waited = waiting_since.elapsed();
 
         // A Teams exit (crash or quit) never writes end-lines for calls that
         // were still running — drop them, or a stale id would keep the call
@@ -195,41 +208,109 @@ async fn poll_loop(tx: mpsc::Sender<LogEvent>, mut teams_running: watch::Receive
 
         // Switched to a new log file
         if current_file.as_deref() != Some(&latest) {
-            log::info!("LogWatcher: opening {}", latest.display());
-            match File::open(&latest) {
-                Ok(f) => {
-                    let mut reader = BufReader::new(f);
-                    // Scan the last 256 KB for the most recent presence entry
-                    // before tailing, so we report current status immediately.
-                    if let Some(presence) = scan_last_presence(&mut reader) {
-                        log::info!("LogWatcher: initial presence → {presence}");
-                        let _ = tx.send(LogEvent::PresenceChanged(presence)).await;
-                    }
-                    let end = reader.seek(SeekFrom::End(0)).unwrap_or(0);
-                    file_handle = Some((reader, end));
+            match switch_to(&latest, file_handle.as_mut(), &tx, &mut calls).await {
+                Some(reader) => {
+                    file_handle = Some(reader);
                     current_file = Some(latest);
                 }
-                Err(e) => {
-                    log::warn!("LogWatcher: cannot open log: {e}");
-                    continue;
-                }
+                None => continue,
             }
         }
 
-        if let Some((reader, _pos)) = &mut file_handle {
-            let mut line = String::new();
-            loop {
-                line.clear();
-                match reader.read_line(&mut line) {
-                    Ok(0) => break,
-                    Ok(_) => {
-                        process_line(line.trim(), &tx, &mut calls).await;
-                    }
-                    Err(e) => {
-                        log::warn!("LogWatcher: read error: {e}");
-                        break;
-                    }
-                }
+        if let Some(reader) = &mut file_handle {
+            drain(reader, &tx, &mut calls).await;
+        }
+
+        // A call cannot survive a suspend: the network drops and Teams tears it
+        // down, usually without us ever reading the end-line. This runs *after*
+        // the drain above so a call-start line that was buffered but unread at
+        // the moment of suspend gets processed first — clearing before draining
+        // would immediately be undone by that replayed start, pinning the
+        // meeting on again via the very race this whole check exists to close.
+        // Whatever is still "active" once the backlog is caught up is stale by
+        // definition: even a start line that only just arrived here describes a
+        // call that could not have survived the suspend either.
+        if waited > RESUME_GAP {
+            let was = calls.in_call();
+            calls.clear();
+            if was {
+                log::info!("LogWatcher: resume detected — clearing active call state");
+                let _ = tx.send(LogEvent::MeetingChanged(false)).await;
+            }
+        }
+    }
+}
+
+/// Move the tail from `old` to the log at `path`.
+///
+/// Teams rotates at 2 MB, which under call load is every few minutes, and a
+/// rotation loses two stretches of log unless both are handled here: whatever
+/// the old handle had not been read up to (drained first), and everything the
+/// new file already holds (read from byte 0, see `open_log`). A `NotifyCallEnded`
+/// in either stretch used to go missing and pin the meeting on.
+///
+/// `old` is `None` only for the first file of a run, which is tailed from EOF.
+async fn switch_to(
+    path: &Path,
+    old: Option<&mut BufReader<File>>,
+    tx: &mpsc::Sender<LogEvent>,
+    calls: &mut CallState,
+) -> Option<BufReader<File>> {
+    let rotated = old.is_some();
+    if let Some(reader) = old {
+        drain(reader, tx, calls).await;
+    }
+    open_log(path, rotated, tx).await
+}
+
+/// Open a log file for tailing, positioned according to why we are opening it.
+///
+/// `rotated` = we were already tailing a predecessor, so this file was created
+/// moments ago and every line in it is news: start at byte 0. Otherwise this is
+/// the first file of the run, which can be hours of history that must not be
+/// replayed as if it were happening now: take the last known presence from it
+/// and tail from the end.
+async fn open_log(
+    path: &Path,
+    rotated: bool,
+    tx: &mpsc::Sender<LogEvent>,
+) -> Option<BufReader<File>> {
+    let mut reader = match File::open(path) {
+        Ok(f) => BufReader::new(f),
+        Err(e) => {
+            log::warn!("LogWatcher: cannot open log: {e}");
+            return None;
+        }
+    };
+    if rotated {
+        log::info!("LogWatcher: rotation → {}", path.display());
+    } else {
+        log::info!("LogWatcher: opening {}", path.display());
+        // Scan the last 256 KB for the most recent presence entry before
+        // tailing, so we report current status immediately.
+        if let Some(presence) = scan_last_presence(&mut reader) {
+            log::info!("LogWatcher: initial presence → {presence}");
+            let _ = tx.send(LogEvent::PresenceChanged(presence)).await;
+        }
+        if let Err(e) = reader.seek(SeekFrom::End(0)) {
+            log::warn!("LogWatcher: cannot seek to end: {e}");
+        }
+    }
+    Some(reader)
+}
+
+/// Feed every line available on `reader` through the state machine, leaving the
+/// handle at EOF so the next call resumes exactly where this one stopped.
+async fn drain(reader: &mut BufReader<File>, tx: &mpsc::Sender<LogEvent>, calls: &mut CallState) {
+    let mut line = String::new();
+    loop {
+        line.clear();
+        match reader.read_line(&mut line) {
+            Ok(0) => break,
+            Ok(_) => process_line(line.trim(), tx, calls).await,
+            Err(e) => {
+                log::warn!("LogWatcher: read error: {e}");
+                break;
             }
         }
     }
@@ -559,5 +640,130 @@ mod tests {
         assert!(!calls.in_call());
         // A late end-line for the cleared call is ignored.
         assert_eq!(calls.apply(MEETING_ENDED), None);
+    }
+
+    /// Write `lines` to a file in the temp dir whose name is unique to this
+    /// process and call (pid + counter), so parallel or overlapping test runs
+    /// never share a file.
+    fn temp_log(name: &str, lines: &[&str]) -> std::path::PathBuf {
+        use std::io::Write;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static COUNTER: AtomicUsize = AtomicUsize::new(0);
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let path = std::env::temp_dir().join(format!(
+            "teams2ha-test-{}-{n}-{name}.log",
+            std::process::id()
+        ));
+        let mut f = std::fs::File::create(&path).expect("create temp log");
+        for line in lines {
+            writeln!(f, "{line}").expect("write temp log");
+        }
+        path
+    }
+
+    // The bug this PR is about: Teams rotates its log every few minutes while a
+    // call runs, and the watcher used to seek to the end of every file it opened
+    // — including a rotated one, discarding everything written before it noticed.
+    // A NotifyCallEnded landing in that window pins the meeting on.
+    #[tokio::test]
+    async fn a_rotated_file_is_read_from_the_start() {
+        let path = temp_log("rotated", &[ACTIVE_MEETING, MEETING_ENDED]);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let mut calls = CallState::default();
+
+        let mut reader = open_log(&path, true, &tx).await.expect("open");
+        drain(&mut reader, &tx, &mut calls).await;
+
+        assert!(matches!(rx.try_recv(), Ok(LogEvent::MeetingChanged(true))));
+        assert!(matches!(rx.try_recv(), Ok(LogEvent::MeetingChanged(false))));
+        assert!(!calls.in_call());
+        let _ = std::fs::remove_file(path);
+    }
+
+    // The other loss window: lines written to the old file after our last read
+    // and before we noticed the rotation. They must be processed — in order —
+    // before anything from the new file.
+    #[tokio::test]
+    async fn the_old_files_unread_tail_is_drained_before_switching() {
+        use std::io::Write;
+        let old = temp_log("old", &[]);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let mut calls = CallState::default();
+
+        // First file of the run: tailed from the end, nothing to report yet.
+        let mut reader = open_log(&old, false, &tx).await.expect("open old");
+        drain(&mut reader, &tx, &mut calls).await;
+        assert!(rx.try_recv().is_err());
+
+        // Teams writes the call start into the old file after our last read,
+        // then rotates and writes the end into the new file.
+        {
+            let mut f = std::fs::OpenOptions::new().append(true).open(&old).expect("append");
+            writeln!(f, "{ACTIVE_MEETING}").expect("write");
+        }
+        let new = temp_log("new", &[MEETING_ENDED]);
+
+        let mut reader = switch_to(&new, Some(&mut reader), &tx, &mut calls)
+            .await
+            .expect("switch");
+        // The old tail was drained during the switch: the start is already in.
+        assert!(matches!(rx.try_recv(), Ok(LogEvent::MeetingChanged(true))));
+        assert!(calls.in_call());
+        // The new file is read from byte 0: the end follows.
+        drain(&mut reader, &tx, &mut calls).await;
+        assert!(matches!(rx.try_recv(), Ok(LogEvent::MeetingChanged(false))));
+        assert!(!calls.in_call());
+        let _ = std::fs::remove_file(old);
+        let _ = std::fs::remove_file(new);
+    }
+
+    #[tokio::test]
+    async fn the_first_file_of_the_run_is_not_replayed() {
+        // Same content, but this file predates the app: replaying it would
+        // announce a meeting that ended before the app was even started.
+        let path = temp_log("first-open", &[ACTIVE_MEETING, MEETING_ENDED]);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let mut calls = CallState::default();
+
+        let mut reader = open_log(&path, false, &tx).await.expect("open");
+        drain(&mut reader, &tx, &mut calls).await;
+
+        assert!(rx.try_recv().is_err(), "history must not be replayed");
+        assert!(!calls.in_call());
+        let _ = std::fs::remove_file(path);
+    }
+
+    // A call-start line can be sitting unread in the file at the exact moment
+    // the process is frozen for suspend — written before sleep, but not yet
+    // polled. `poll_loop` must drain the backlog before applying the resume
+    // clear, or that buffered start gets replayed straight back into an
+    // "active" state the clear just emptied, pinning the meeting on again via
+    // the same class of race this PR exists to close. This mirrors poll_loop's
+    // order: drain the file, then clear whatever is still active.
+    #[tokio::test]
+    async fn a_pending_start_line_does_not_survive_a_resume_clear() {
+        let path = temp_log("pending-start-at-suspend", &[ACTIVE_MEETING]);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let mut calls = CallState::default();
+
+        // Backlog is on disk before the loop ever wakes up post-resume — same
+        // as `open_log(rotated = true, ...)` for a file already mid-tail.
+        let mut reader = open_log(&path, true, &tx).await.expect("open");
+
+        // poll_loop's post-fix order: drain first...
+        drain(&mut reader, &tx, &mut calls).await;
+        assert!(matches!(rx.try_recv(), Ok(LogEvent::MeetingChanged(true))));
+        assert!(calls.in_call(), "the buffered start was processed");
+
+        // ...then the resume check, which must still find it and clear it.
+        let was = calls.in_call();
+        calls.clear();
+        if was {
+            let _ = tx.send(LogEvent::MeetingChanged(false)).await;
+        }
+
+        assert!(matches!(rx.try_recv(), Ok(LogEvent::MeetingChanged(false))));
+        assert!(!calls.in_call(), "a call cannot survive a suspend");
+        let _ = std::fs::remove_file(path);
     }
 }
