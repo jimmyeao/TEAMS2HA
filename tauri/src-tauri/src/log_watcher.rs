@@ -201,18 +201,6 @@ async fn poll_loop(tx: mpsc::Sender<LogEvent>, mut teams_running: watch::Receive
             }
         }
 
-        // A call cannot survive a suspend: the network drops and Teams tears it
-        // down, usually without us ever reading the end-line. Whatever is still
-        // "active" here is therefore stale by definition.
-        if waited > RESUME_GAP {
-            let was = calls.in_call();
-            calls.clear();
-            if was {
-                log::info!("LogWatcher: resume detected — clearing active call state");
-                let _ = tx.send(LogEvent::MeetingChanged(false)).await;
-            }
-        }
-
         let latest = match find_latest_log() {
             Some(p) => p,
             None => continue,
@@ -231,6 +219,24 @@ async fn poll_loop(tx: mpsc::Sender<LogEvent>, mut teams_running: watch::Receive
 
         if let Some(reader) = &mut file_handle {
             drain(reader, &tx, &mut calls).await;
+        }
+
+        // A call cannot survive a suspend: the network drops and Teams tears it
+        // down, usually without us ever reading the end-line. This runs *after*
+        // the drain above so a call-start line that was buffered but unread at
+        // the moment of suspend gets processed first — clearing before draining
+        // would immediately be undone by that replayed start, pinning the
+        // meeting on again via the very race this whole check exists to close.
+        // Whatever is still "active" once the backlog is caught up is stale by
+        // definition: even a start line that only just arrived here describes a
+        // call that could not have survived the suspend either.
+        if waited > RESUME_GAP {
+            let was = calls.in_call();
+            calls.clear();
+            if was {
+                log::info!("LogWatcher: resume detected — clearing active call state");
+                let _ = tx.send(LogEvent::MeetingChanged(false)).await;
+            }
         }
     }
 }
@@ -724,6 +730,40 @@ mod tests {
 
         assert!(rx.try_recv().is_err(), "history must not be replayed");
         assert!(!calls.in_call());
+        let _ = std::fs::remove_file(path);
+    }
+
+    // A call-start line can be sitting unread in the file at the exact moment
+    // the process is frozen for suspend — written before sleep, but not yet
+    // polled. `poll_loop` must drain the backlog before applying the resume
+    // clear, or that buffered start gets replayed straight back into an
+    // "active" state the clear just emptied, pinning the meeting on again via
+    // the same class of race this PR exists to close. This mirrors poll_loop's
+    // order: drain the file, then clear whatever is still active.
+    #[tokio::test]
+    async fn a_pending_start_line_does_not_survive_a_resume_clear() {
+        let path = temp_log("pending-start-at-suspend", &[ACTIVE_MEETING]);
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let mut calls = CallState::default();
+
+        // Backlog is on disk before the loop ever wakes up post-resume — same
+        // as `open_log(rotated = true, ...)` for a file already mid-tail.
+        let mut reader = open_log(&path, true, &tx).await.expect("open");
+
+        // poll_loop's post-fix order: drain first...
+        drain(&mut reader, &tx, &mut calls).await;
+        assert!(matches!(rx.try_recv(), Ok(LogEvent::MeetingChanged(true))));
+        assert!(calls.in_call(), "the buffered start was processed");
+
+        // ...then the resume check, which must still find it and clear it.
+        let was = calls.in_call();
+        calls.clear();
+        if was {
+            let _ = tx.send(LogEvent::MeetingChanged(false)).await;
+        }
+
+        assert!(matches!(rx.try_recv(), Ok(LogEvent::MeetingChanged(false))));
+        assert!(!calls.in_call(), "a call cannot survive a suspend");
         let _ = std::fs::remove_file(path);
     }
 }
