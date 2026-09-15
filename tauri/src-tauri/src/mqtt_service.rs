@@ -624,4 +624,239 @@ mod tests {
             TlsConfiguration::Rustls(_)
         ));
     }
+
+    // --- Live-broker checks against a local mosquitto (not part of the PR; run
+    // manually with `cargo test --lib -- --ignored live_broker_tests`) ---
+    mod live_broker_tests {
+        use super::*;
+        use rumqttc::{AsyncClient, ConnectionError, Event, MqttOptions, Packet, Transport};
+        use tokio::time::{timeout, Duration};
+
+        fn base_settings(port: u16) -> Settings {
+            let mut s = settings();
+            s.mqtt_address = "127.0.0.1".into();
+            s.mqtt_port = port;
+            s
+        }
+
+        /// Builds `MqttOptions` exactly the way `MqttService::connect` does, then
+        /// drives the real rumqttc eventloop against a live broker: connect, publish
+        /// a retained probe message, receive our own echo via a subscription, then
+        /// disconnect. `Ok(())` only once the echo is observed.
+        async fn probe(settings: &Settings) -> std::result::Result<(), String> {
+            let broker_addr = normalized_broker_address(settings);
+            let mut opts = MqttOptions::new("teams2ha-probe", &broker_addr, settings.mqtt_port);
+            opts.set_keep_alive(Duration::from_secs(5));
+
+            if !settings.mqtt_username.is_empty() {
+                opts.set_credentials(&settings.mqtt_username, &settings.mqtt_password);
+            }
+
+            if settings.use_websockets {
+                if settings.use_tls {
+                    opts.set_transport(Transport::Wss(build_websocket_tls(
+                        settings.ignore_cert_errors,
+                    )));
+                } else {
+                    opts.set_transport(Transport::Ws);
+                }
+            } else if settings.use_tls {
+                let tls = if settings.ignore_cert_errors {
+                    build_permissive_tls()
+                } else {
+                    TlsConfiguration::Native
+                };
+                opts.set_transport(Transport::Tls(tls));
+            }
+
+            let (client, mut eventloop) = AsyncClient::new(opts, 16);
+            let topic = format!(
+                "teams2ha/probe/{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            );
+
+            let deadline = Duration::from_secs(8);
+
+            loop {
+                let event = timeout(deadline, eventloop.poll())
+                    .await
+                    .map_err(|_| "timed out waiting for broker".to_string())?;
+                match event {
+                    Ok(Event::Incoming(Packet::ConnAck(ack))) => {
+                        if ack.code != rumqttc::ConnectReturnCode::Success {
+                            return Err(format!("broker refused connection: {:?}", ack.code));
+                        }
+                        client
+                            .subscribe(&topic, QoS::AtLeastOnce)
+                            .await
+                            .map_err(|e| format!("subscribe failed: {e}"))?;
+                    }
+                    Ok(Event::Incoming(Packet::SubAck(_))) => {
+                        client
+                            .publish(&topic, QoS::AtLeastOnce, false, b"probe".to_vec())
+                            .await
+                            .map_err(|e| format!("publish failed: {e}"))?;
+                    }
+                    Ok(Event::Incoming(Packet::Publish(p))) if p.topic == topic => {
+                        let _ = client.disconnect().await;
+                        return Ok(());
+                    }
+                    Ok(_) => {}
+                    Err(ConnectionError::Io(e)) => return Err(format!("io error: {e}")),
+                    Err(e) => return Err(format!("connection error: {e}")),
+                }
+            }
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn plain_tcp_anonymous() {
+            let s = base_settings(1883);
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn plain_tcp_with_auth() {
+            let mut s = base_settings(1884);
+            s.mqtt_username = "testuser".into();
+            s.mqtt_password = "testpass".into();
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn plain_tcp_with_wrong_password_is_rejected() {
+            let mut s = base_settings(1884);
+            s.mqtt_username = "testuser".into();
+            s.mqtt_password = "wrong".into();
+            assert!(probe(&s).await.is_err());
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn tls_self_signed_rejected_without_ignore_flag() {
+            let mut s = base_settings(8883);
+            s.use_tls = true;
+            assert!(
+                probe(&s).await.is_err(),
+                "a self-signed cert must be rejected when ignore_cert_errors is off"
+            );
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn tls_self_signed_accepted_with_ignore_flag() {
+            let mut s = base_settings(8883);
+            s.use_tls = true;
+            s.ignore_cert_errors = true;
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn tls_with_auth_and_ignore_flag() {
+            let mut s = base_settings(8884);
+            s.use_tls = true;
+            s.ignore_cert_errors = true;
+            s.mqtt_username = "testuser".into();
+            s.mqtt_password = "testpass".into();
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn websocket_plain_anonymous() {
+            let mut s = base_settings(9001);
+            s.use_websockets = true;
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn websocket_tls_self_signed_rejected_without_ignore_flag() {
+            let mut s = base_settings(9002);
+            s.use_websockets = true;
+            s.use_tls = true;
+            assert!(
+                probe(&s).await.is_err(),
+                "WSS to a self-signed broker must be rejected when ignore_cert_errors is off"
+            );
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn websocket_tls_self_signed_accepted_with_ignore_flag() {
+            let mut s = base_settings(9002);
+            s.use_websockets = true;
+            s.use_tls = true;
+            s.ignore_cert_errors = true;
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn websocket_tls_with_auth_and_ignore_flag() {
+            let mut s = base_settings(9003);
+            s.use_websockets = true;
+            s.use_tls = true;
+            s.ignore_cert_errors = true;
+            s.mqtt_username = "testuser".into();
+            s.mqtt_password = "testpass".into();
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        #[tokio::test]
+        #[ignore]
+        async fn websocket_tls_with_wrong_password_is_rejected() {
+            let mut s = base_settings(9003);
+            s.use_websockets = true;
+            s.use_tls = true;
+            s.ignore_cert_errors = true;
+            s.mqtt_username = "testuser".into();
+            s.mqtt_password = "wrong".into();
+            assert!(probe(&s).await.is_err());
+        }
+
+        /// The exact scenario the PR fixes: a websocket address that already has a
+        /// `ws://`/`wss://` scheme, a non-default path, and its own port, as typically
+        /// pasted from a reverse-proxy setup — normalized_broker_address must leave it
+        /// alone rather than mangling it, and the connection must still succeed.
+        #[tokio::test]
+        #[ignore]
+        async fn websocket_with_explicit_url_and_path() {
+            let mut s = base_settings(9001);
+            s.use_websockets = true;
+            s.mqtt_address = "ws://127.0.0.1:9001/mqtt".into();
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        /// URL-embedded userinfo (`wss://user:pass@host/...`) must be stripped from
+        /// the address used for the websocket handshake — it isn't valid there — and
+        /// the app's own username/password settings remain the actual credential
+        /// source. Same broker/credentials as `websocket_tls_with_auth_and_ignore_flag`,
+        /// but with (different, wrong-for-the-broker) userinfo baked into the address
+        /// to prove it's discarded rather than sent instead of the real credentials.
+        #[tokio::test]
+        #[ignore]
+        async fn websocket_url_embedded_userinfo_is_ignored_in_favor_of_settings() {
+            let mut s = base_settings(9003);
+            s.use_websockets = true;
+            s.use_tls = true;
+            s.ignore_cert_errors = true;
+            s.mqtt_address = "wss://decoy:decoy@127.0.0.1/mqtt".into();
+            s.mqtt_username = "testuser".into();
+            s.mqtt_password = "testpass".into();
+            assert_eq!(probe(&s).await, Ok(()));
+        }
+
+        // IPv6 (has_explicit_port's bracketed-host branch) is not exercised live here:
+        // this test environment's Docker-on-WSL2 port publishing doesn't forward ::1
+        // to the Windows host (confirmed independent of the app — a raw TCP connect
+        // to [::1]:1883 also times out). Covered as a string-level unit test instead
+        // (`detects_explicit_ipv6_port`, above).
+    }
 }
