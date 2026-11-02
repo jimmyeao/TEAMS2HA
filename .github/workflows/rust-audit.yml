@@ -27,11 +27,12 @@ jobs:
 
       - name: Run audit
         working-directory: tauri/src-tauri
-        # All ignored advisories are for crates pinned deep in Tauri's own
-        # dependency tree that we cannot upgrade directly:
+        # All ignored advisories are for crates pinned deep in our dependency
+        # tree that we cannot upgrade directly:
         #
-        #  - RUSTSEC-2026-0049/0098/0099/0104: rustls-webpki 0.102.8. The patched
-        #    0.103.13 is also resolved; only the 0.102.x copy we can't control remains.
+        #  - RUSTSEC-2026-0049/0098/0099/0104/0382: rustls-webpki 0.102.8, pinned
+        #    by rumqttc (latest release). The patched 0.103.x copy is also
+        #    resolved; only the 0.102.x copy we can't control remains.
         #  - RUSTSEC-2026-0194/0195: quick-xml 0.37.5, pulled via
         #    tauri-winrt-notification -> notify-rust (latest release, no upgrade
         #    available). It only parses toast XML this app generates itself, so the
@@ -45,6 +46,7 @@ jobs:
           --ignore RUSTSEC-2026-0098
           --ignore RUSTSEC-2026-0099
           --ignore RUSTSEC-2026-0104
+          --ignore RUSTSEC-2026-0382
           --ignore RUSTSEC-2026-0194
           --ignore RUSTSEC-2026-0195
 
