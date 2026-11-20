@@ -12,6 +12,9 @@ pub enum LogEvent {
     MeetingChanged(bool),
     PresenceChanged(String),
     UnreadMessages(bool),
+    /// The OS is refusing us read access to Teams' log folder (macOS Full Disk Access).
+    /// Sent only when the state changes.
+    AccessDenied(bool),
 }
 
 /// Call-lifecycle bookkeeping keyed on Teams' own call ids.
@@ -173,6 +176,7 @@ async fn poll_loop(tx: mpsc::Sender<LogEvent>, mut teams_running: watch::Receive
     let mut current_file: Option<PathBuf> = None;
     let mut file_handle: Option<BufReader<File>> = None;
     let mut calls = CallState::default();
+    let mut access_denied = false;
 
     let mut tick = interval(Duration::from_millis(250));
     // No catch-up burst of ticks after a suspend — that burst is also what
@@ -201,10 +205,16 @@ async fn poll_loop(tx: mpsc::Sender<LogEvent>, mut teams_running: watch::Receive
             }
         }
 
-        let latest = match find_latest_log() {
-            Some(p) => p,
-            None => continue,
-        };
+        let latest = find_latest_log();
+        let denied = latest.is_none() && log_access_denied();
+        if denied != access_denied {
+            access_denied = denied;
+            if denied {
+                log::warn!("LogWatcher: access to the Teams log folder was denied by the OS");
+            }
+            let _ = tx.send(LogEvent::AccessDenied(denied)).await;
+        }
+        let Some(latest) = latest else { continue };
 
         // Switched to a new log file
         if current_file.as_deref() != Some(&latest) {
@@ -423,6 +433,20 @@ fn log_dirs() -> Vec<PathBuf> {
 #[cfg(not(any(windows, target_os = "macos")))]
 fn log_dirs() -> Vec<PathBuf> {
     Vec::new()
+}
+
+/// macOS reports a TCC block on another app's container as `PermissionDenied`, which is
+/// distinguishable from the folder simply not existing (Teams not installed / never run).
+#[cfg(target_os = "macos")]
+fn log_access_denied() -> bool {
+    log_dirs().iter().any(|dir| {
+        matches!(std::fs::read_dir(dir), Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied)
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn log_access_denied() -> bool {
+    false
 }
 
 fn find_latest_log() -> Option<PathBuf> {
