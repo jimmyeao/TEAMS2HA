@@ -390,37 +390,77 @@ fn extract_presence(line: &str) -> Option<String> {
     None
 }
 
-fn find_latest_log() -> Option<PathBuf> {
-    let teams_appdata = std::env::var("LOCALAPPDATA").ok()?;
-    let log_dir = PathBuf::from(&teams_appdata).join("Packages")
+#[cfg(target_os = "macos")]
+fn log_dirs() -> Vec<PathBuf> {
+    let home = std::env::var("HOME").ok();
+    home.into_iter()
+        .map(|home| {
+            PathBuf::from(home)
+                .join("Library")
+                .join("Group Containers")
+                .join("UBF8T346G9.com.microsoft.teams")
+                .join("Library")
+                .join("Application Support")
+                .join("Logs")
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn log_dirs() -> Vec<PathBuf> {
+    let Some(teams_appdata) = std::env::var("LOCALAPPDATA").ok() else {
+        return Vec::new();
+    };
+    vec![PathBuf::from(&teams_appdata)
+        .join("Packages")
         .join("MSTeams_8wekyb3d8bbwe")
         .join("LocalCache")
         .join("Microsoft")
         .join("MSTeams")
-        .join("Logs");
+        .join("Logs")]
+}
 
-    if !log_dir.exists() {
-        // Fallback: classic Teams log location
-        let classic = PathBuf::from(&teams_appdata)
-            .join("Microsoft")
-            .join("Teams")
-            .join("logs.txt");
-        if classic.exists() {
-            return Some(classic);
+#[cfg(not(any(windows, target_os = "macos")))]
+fn log_dirs() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+fn find_latest_log() -> Option<PathBuf> {
+    for log_dir in log_dirs() {
+        if !log_dir.exists() {
+            continue;
         }
-        return None;
+
+        let latest = std::fs::read_dir(&log_dir)
+            .ok()
+            .and_then(|entries| {
+                entries
+                    .filter_map(|e| e.ok())
+                    .filter(|e| e.file_name().to_string_lossy().starts_with("MSTeams_"))
+                    .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
+                    .map(|e| e.path())
+            });
+
+        if latest.is_some() {
+            return latest;
+        }
     }
 
-    std::fs::read_dir(&log_dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .starts_with("MSTeams_")
-        })
-        .max_by_key(|e| e.metadata().and_then(|m| m.modified()).ok())
-        .map(|e| e.path())
+    // Fallback: classic Windows Teams log location.
+    #[cfg(windows)]
+    {
+        if let Ok(teams_appdata) = std::env::var("LOCALAPPDATA") {
+            let classic = PathBuf::from(&teams_appdata)
+                .join("Microsoft")
+                .join("Teams")
+                .join("logs.txt");
+            if classic.exists() {
+                return Some(classic);
+            }
+        }
+    }
+
+    None
 }
 
 // Tests last: clippy's items_after_test_module rejects anything defined below them.
