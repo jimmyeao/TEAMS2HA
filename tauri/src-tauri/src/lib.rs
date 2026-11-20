@@ -127,6 +127,11 @@ async fn connect_mqtt(
 }
 
 #[tauri::command]
+async fn get_log_access_denied(shared: State<'_, SharedState>) -> Result<bool, String> {
+    Ok(shared.read().await.log_access_denied)
+}
+
+#[tauri::command]
 async fn get_state(shared: State<'_, SharedState>) -> Result<MeetingState, String> {
     Ok(shared.read().await.meeting.clone())
 }
@@ -346,7 +351,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_state, get_mqtt_status, get_current_gateway_mac, get_app_version])
+        .invoke_handler(tauri::generate_handler![get_settings, save_settings, get_state, get_mqtt_status, get_current_gateway_mac, get_app_version, get_log_access_denied])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
@@ -457,6 +462,10 @@ async fn handle_log_event(ev: LogEvent, shared: &SharedState, mqtt: &MqttHandle,
         }
         LogEvent::PresenceChanged(p) => s.meeting.presence = p,
         LogEvent::UnreadMessages(u) => s.meeting.has_unread_messages = u,
+        LogEvent::AccessDenied(denied) => {
+            s.log_access_denied = denied;
+            app.emit("log-access-denied", denied).ok();
+        }
     }
     drop(s);
     publish(mqtt, app, shared, false).await;
