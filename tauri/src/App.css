@@ -141,6 +141,18 @@ body {
 .conn-warn .conn-label { color: var(--warn); }
 .conn-err  .conn-label { color: var(--err); }
 
+.access-banner {
+  flex-shrink: 0;
+  padding: 10px 20px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text);
+  background: color-mix(in srgb, var(--warn) 12%, var(--bg));
+  border-bottom: 1px solid color-mix(in srgb, var(--warn) 40%, transparent);
+}
+.access-banner ol { margin: 6px 0 10px; padding-left: 20px; }
+.access-banner li { margin: 2px 0; }
+
 /* ----------------------------------------------------------- state strip */
 .state-strip {
   flex-shrink: 0;

@@ -34,6 +34,9 @@ pub struct AppState {
     /// an unchanged state on every monitor event. Only set after a successful
     /// publish, so a failed publish is retried on the next event.
     pub last_published: Option<MeetingState>,
+    /// macOS: the OS is blocking reads of Teams' log folder (Full Disk Access missing).
+    /// UI-only; never published to MQTT.
+    pub log_access_denied: bool,
 }
 
 pub type SharedState = Arc<RwLock<AppState>>;
