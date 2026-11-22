@@ -109,7 +109,7 @@ jobs:
     # Gated on the Windows release job so the GitHub Release already exists by the time
     # this uploads to it — `gh release upload` doesn't create one, only attaches to it.
     needs: release
-    runs-on: macos-14
+    runs-on: macos-15
     name: Build (macOS arm64)
     # A build failure here (e.g. a bad cert, or the still-WIP macOS port hitting a real
     # compile issue) must not take down the Windows release that already succeeded.

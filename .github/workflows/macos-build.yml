@@ -7,18 +7,40 @@ name: macOS Build (manual)
 # folded into release.yml's matrix alongside the existing Windows x64/arm64 jobs.
 on:
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Optional X.Y.Z to stamp into the build (e.g. to backfill a release's dmg). Blank = leave config version."
+        required: false
+        default: ""
 
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15
     name: Build (arm64)
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      # Same stamping as release.yml, so a backfilled dmg carries the release's version
+      # (filename and in-app) instead of the placeholder in tauri.conf.json.
+      - name: Set version from input
+        if: ${{ inputs.version != '' }}
+        shell: bash
+        working-directory: tauri
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version '$VERSION' must be X.Y.Z semver. Aborting."
+            exit 1
+          fi
+          perl -pi -e "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json package.json
+          perl -pi -e "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
